@@ -67,12 +67,15 @@ if [[ ! -f "$LIMITS_DEFAULT" ]]; then
 # Tune these to match your Claude subscription tier.
 # After editing, run: systemctl --user restart claude-quota.service
 #
-# Rough starting points:
-#   Pro     : FIVE_HOUR_CAP_TOKENS=20000000   WEEKLY_CAP_TOKENS=400000000
-#   Max 5x  : FIVE_HOUR_CAP_TOKENS=70000000   WEEKLY_CAP_TOKENS=1000000000
-#   Max 20x : FIVE_HOUR_CAP_TOKENS=140000000  WEEKLY_CAP_TOKENS=2000000000
-FIVE_HOUR_CAP_TOKENS=140000000
-WEEKLY_CAP_TOKENS=2000000000
+# These caps are calibrated so widget % roughly matches `/usage` in Claude Code.
+# /usage reads Anthropic's authoritative numbers; this widget parses local JSONL
+# via ccusage — they won't perfectly agree, but should be in the same ballpark.
+# Rough starting points (eyeball calibrated against /usage on Max 20x):
+#   Pro     : FIVE_HOUR_CAP_TOKENS=50000000   WEEKLY_CAP_TOKENS=200000000
+#   Max 5x  : FIVE_HOUR_CAP_TOKENS=200000000  WEEKLY_CAP_TOKENS=600000000
+#   Max 20x : FIVE_HOUR_CAP_TOKENS=400000000  WEEKLY_CAP_TOKENS=1200000000
+FIVE_HOUR_CAP_TOKENS=400000000
+WEEKLY_CAP_TOKENS=1200000000
 WARN_PCT=60
 CRIT_PCT=85
 EOF

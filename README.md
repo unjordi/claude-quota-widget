@@ -67,13 +67,15 @@ Rough starting points:
 
 | Plan | `FIVE_HOUR_CAP_TOKENS` | `WEEKLY_CAP_TOKENS` |
 |---|---|---|
-| Pro | 20,000,000 | 400,000,000 |
-| Max 5x | 70,000,000 | 1,000,000,000 |
-| Max 20x | 140,000,000 | 2,000,000,000 |
+| Pro | 50,000,000 | 200,000,000 |
+| Max 5x | 200,000,000 | 600,000,000 |
+| Max 20x | 400,000,000 | 1,200,000,000 |
 
-These are approximations — ccusage doesn't expose Anthropic's exact subscription
-ceilings. Watch the icon over a real working day and tune until the color tier
-matches your gut sense of "getting close."
+These are eyeball-calibrated against Claude Code's `/usage` command, which
+reads Anthropic's authoritative numbers via API. This widget parses local
+JSONL transcripts via ccusage, so the numbers won't perfectly agree — but
+they should be in the same ballpark. Run `/usage` once and adjust the caps
+in `limits.env` so your widget's percentage roughly matches.
 
 ## Debug
 
