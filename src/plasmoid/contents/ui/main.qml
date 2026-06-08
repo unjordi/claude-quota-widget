@@ -3,29 +3,23 @@ import QtQuick
 import QtQuick.Layouts
 import org.kde.plasma.plasmoid
 import org.kde.plasma.plasma5support as P5Support
+import org.kde.plasma.core as PlasmaCore
 import org.kde.kirigami as Kirigami
 import org.kde.plasma.components as PC3
 
 PlasmoidItem {
     id: root
 
-    // --- Data ---
+    // ---------- Data ----------
     property var snapshot: null
     property string snapshotError: ""
 
-    // Qt's StandardPaths.GenericCacheLocation can come back as a path or a
-    // file:// URL depending on the Qt minor version — normalize to a plain path
-    // so we can hand it to the executable engine below.
     readonly property string stateFilePath: {
-        // StandardPaths.writableLocation returns a QUrl in QML; coerce to string first.
         const raw = "" + StandardPaths.writableLocation(StandardPaths.GenericCacheLocation)
         const stripped = raw.startsWith("file://") ? raw.substring("file://".length) : raw
         return stripped + "/claude-quota/state.json"
     }
 
-    // Read the cache file via a one-shot `cat` through Plasma's executable
-    // DataSource. Qt 6 blocks file:// reads from QML's XMLHttpRequest, so we
-    // can't go through XHR.
     P5Support.DataSource {
         id: catSource
         engine: "executable"
@@ -50,21 +44,6 @@ PlasmoidItem {
         catSource.connectSource("cat " + stateFilePath)
     }
 
-    // --- Status derivation ---
-    readonly property string statusKey: {
-        if (snapshotError !== "" || snapshot === null) return "error"
-        if (snapshot.status) return snapshot.status
-        return "error"
-    }
-    readonly property var statusVisuals: ({
-        "ok":    { icon: "emblem-success",  label: "OK" },
-        "warn":  { icon: "emblem-warning",  label: "Warning" },
-        "crit":  { icon: "emblem-error",    label: "Critical" },
-        "error": { icon: "dialog-question", label: "No data" }
-    })
-
-    // --- Refresh loop: re-read cache file every 10s. The systemd timer
-    //     refreshes the cache itself every 5min — this just picks up changes.
     Timer {
         interval: 10000
         repeat: true
@@ -73,45 +52,87 @@ PlasmoidItem {
         onTriggered: loadSnapshot()
     }
 
-    // --- Compact (panel/tray) representation ---
-    compactRepresentation: Item {
-        Kirigami.Icon {
-            anchors.fill: parent
-            source: statusVisuals[statusKey].icon
-            active: hoverHandler.hovered
+    // ---------- Status derivation ----------
+    readonly property string statusKey: {
+        if (snapshotError !== "" || snapshot === null) return "error"
+        if (snapshot.status) return snapshot.status
+        return "error"
+    }
+    readonly property color statusColor: {
+        switch (statusKey) {
+            case "ok":    return "#3aa757"  // green
+            case "warn":  return "#e0a800"  // amber
+            case "crit":  return "#dc3545"  // red
+            case "error": return "#666666"  // gray
         }
-        HoverHandler { id: hoverHandler }
-        TapHandler { onTapped: root.expanded = !root.expanded }
+        return "#666666"
+    }
+    readonly property string compactText: {
+        if (snapshot && snapshot.five_hour)
+            return Math.round(snapshot.five_hour.percent) + "%"
+        if (snapshotError) return "!"
+        return "…"
     }
 
-    preferredRepresentation: compactRepresentation
-    fullRepresentation: null
+    Plasmoid.status: PlasmaCore.Types.ActiveStatus
+    Plasmoid.icon: "applications-development"
 
-    // --- Tooltip header (always available) ---
-    toolTipMainText: {
-        if (statusKey === "error") return "Claude Code quota — no data"
-        const five = snapshot && snapshot.five_hour
-                     ? snapshot.five_hour.percent.toFixed(0) + "%" : "—"
-        const wk   = snapshot && snapshot.weekly
-                     ? snapshot.weekly.percent.toFixed(0)    + "%" : "—"
-        return "Claude Code: 5h " + five + " · wk " + wk
+    // ---------- Compact representation (panel/tray) ----------
+    // Self-contained colored pill — no icon-theme dependency. Renders even if
+    // Kirigami.Icon fails to resolve (which it does in some Plasma 6 builds for
+    // emblem-* names on certain themes).
+    compactRepresentation: Item {
+        id: compactRoot
+        implicitWidth: Math.max(Kirigami.Units.iconSizes.medium, pillText.implicitWidth + Kirigami.Units.smallSpacing * 2)
+        implicitHeight: Kirigami.Units.iconSizes.medium
+
+        Rectangle {
+            id: pill
+            anchors.centerIn: parent
+            width: Math.max(parent.height, pillText.implicitWidth + Kirigami.Units.smallSpacing * 2)
+            height: parent.height
+            radius: height / 2
+            color: root.statusColor
+            border.color: Qt.darker(color, 1.3)
+            border.width: 1
+        }
+
+        PC3.Label {
+            id: pillText
+            anchors.centerIn: pill
+            text: root.compactText
+            color: "white"
+            font.pixelSize: Math.max(9, pill.height * 0.55)
+            font.bold: true
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            onClicked: root.expanded = !root.expanded
+        }
     }
 
-    // --- Rich hover tooltip body ---
-    toolTipItem: ColumnLayout {
-        width: Kirigami.Units.gridUnit * 16
-        spacing: Kirigami.Units.smallSpacing
+    // ---------- Full representation (click-to-expand popup) ----------
+    fullRepresentation: ColumnLayout {
+        Layout.preferredWidth: Kirigami.Units.gridUnit * 20
+        Layout.preferredHeight: Kirigami.Units.gridUnit * 14
+        spacing: Kirigami.Units.largeSpacing
 
         Kirigami.Heading {
-            level: 4
+            level: 3
             text: "Claude Code quota"
             Layout.fillWidth: true
+            Layout.leftMargin: Kirigami.Units.largeSpacing
+            Layout.rightMargin: Kirigami.Units.largeSpacing
+            Layout.topMargin: Kirigami.Units.largeSpacing
         }
 
-        Item { Layout.preferredHeight: Kirigami.Units.smallSpacing }
-
+        // 5-hour block
         ColumnLayout {
             Layout.fillWidth: true
+            Layout.leftMargin: Kirigami.Units.largeSpacing
+            Layout.rightMargin: Kirigami.Units.largeSpacing
             spacing: 2
             RowLayout {
                 Layout.fillWidth: true
@@ -128,28 +149,25 @@ PlasmoidItem {
             }
             PC3.ProgressBar {
                 Layout.fillWidth: true
-                from: 0
-                to: 100
-                value: root.snapshot && root.snapshot.five_hour
-                       ? root.snapshot.five_hour.percent : 0
+                from: 0; to: 100
+                value: root.snapshot && root.snapshot.five_hour ? root.snapshot.five_hour.percent : 0
             }
             PC3.Label {
                 Layout.fillWidth: true
-                font.pointSize: Kirigami.Theme.smallFont.pointSize
                 opacity: 0.7
                 text: {
                     if (!root.snapshot || !root.snapshot.five_hour) return ""
                     const f = root.snapshot.five_hour
-                    return "resets " + relativeTime(f.resets_at) +
-                           " · $" + f.cost_usd.toFixed(2)
+                    return "resets " + relativeTime(f.resets_at) + " · $" + f.cost_usd.toFixed(2)
                 }
             }
         }
 
-        Item { Layout.preferredHeight: Kirigami.Units.smallSpacing }
-
+        // Weekly
         ColumnLayout {
             Layout.fillWidth: true
+            Layout.leftMargin: Kirigami.Units.largeSpacing
+            Layout.rightMargin: Kirigami.Units.largeSpacing
             spacing: 2
             RowLayout {
                 Layout.fillWidth: true
@@ -166,30 +184,29 @@ PlasmoidItem {
             }
             PC3.ProgressBar {
                 Layout.fillWidth: true
-                from: 0
-                to: 100
-                value: root.snapshot && root.snapshot.weekly
-                       ? root.snapshot.weekly.percent : 0
+                from: 0; to: 100
+                value: root.snapshot && root.snapshot.weekly ? root.snapshot.weekly.percent : 0
             }
             PC3.Label {
                 Layout.fillWidth: true
-                font.pointSize: Kirigami.Theme.smallFont.pointSize
                 opacity: 0.7
                 text: {
                     if (!root.snapshot || !root.snapshot.weekly) return ""
                     const w = root.snapshot.weekly
-                    return "resets " + relativeTime(w.resets_at) +
-                           " · $" + w.cost_usd.toFixed(2)
+                    return "resets " + relativeTime(w.resets_at) + " · $" + w.cost_usd.toFixed(2)
                 }
             }
         }
 
-        Item { Layout.preferredHeight: Kirigami.Units.smallSpacing }
+        Item { Layout.fillHeight: true }
 
         PC3.Label {
             Layout.fillWidth: true
-            font.pointSize: Kirigami.Theme.smallFont.pointSize
+            Layout.leftMargin: Kirigami.Units.largeSpacing
+            Layout.rightMargin: Kirigami.Units.largeSpacing
+            Layout.bottomMargin: Kirigami.Units.largeSpacing
             opacity: 0.5
+            font.pointSize: Kirigami.Theme.smallFont.pointSize
             text: {
                 if (root.snapshotError) return "error: " + root.snapshotError
                 if (!root.snapshot) return "loading…"
@@ -197,6 +214,17 @@ PlasmoidItem {
             }
         }
     }
+
+    // ---------- Hover tooltip ----------
+    toolTipMainText: {
+        if (statusKey === "error") return "Claude Code quota — no data"
+        const five = snapshot && snapshot.five_hour ? snapshot.five_hour.percent.toFixed(0) + "%" : "—"
+        const wk   = snapshot && snapshot.weekly    ? snapshot.weekly.percent.toFixed(0)    + "%" : "—"
+        return "Claude Code: 5h " + five + " · wk " + wk
+    }
+    toolTipSubText: snapshot && snapshot.five_hour
+                    ? "resets in " + relativeTime(snapshot.five_hour.resets_at).replace("in ", "")
+                    : ""
 
     function relativeTime(iso) {
         if (!iso) return ""
