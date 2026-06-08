@@ -17,7 +17,8 @@ PlasmoidItem {
     // file:// URL depending on the Qt minor version — normalize to a plain path
     // so we can hand it to the executable engine below.
     readonly property string stateFilePath: {
-        const raw = StandardPaths.writableLocation(StandardPaths.GenericCacheLocation)
+        // StandardPaths.writableLocation returns a QUrl in QML; coerce to string first.
+        const raw = "" + StandardPaths.writableLocation(StandardPaths.GenericCacheLocation)
         const stripped = raw.startsWith("file://") ? raw.substring("file://".length) : raw
         return stripped + "/claude-quota/state.json"
     }
