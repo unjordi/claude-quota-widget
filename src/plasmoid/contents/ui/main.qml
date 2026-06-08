@@ -2,6 +2,7 @@ import QtCore
 import QtQuick
 import QtQuick.Layouts
 import org.kde.plasma.plasmoid
+import org.kde.plasma.plasma5support as P5Support
 import org.kde.kirigami as Kirigami
 import org.kde.plasma.components as PC3
 
@@ -12,33 +13,40 @@ PlasmoidItem {
     property var snapshot: null
     property string snapshotError: ""
 
-    readonly property string stateFilePath:
-        StandardPaths.writableLocation(StandardPaths.GenericCacheLocation) +
-        "/claude-quota/state.json"
-    readonly property string stateFileUrl: {
-        // GenericCacheLocation can be a path or a file:// URL depending on Qt version; normalize.
-        const p = stateFilePath
-        return p.startsWith("file://") ? p : "file://" + p
+    // Qt's StandardPaths.GenericCacheLocation can come back as a path or a
+    // file:// URL depending on the Qt minor version — normalize to a plain path
+    // so we can hand it to the executable engine below.
+    readonly property string stateFilePath: {
+        const raw = StandardPaths.writableLocation(StandardPaths.GenericCacheLocation)
+        const stripped = raw.startsWith("file://") ? raw.substring("file://".length) : raw
+        return stripped + "/claude-quota/state.json"
+    }
+
+    // Read the cache file via a one-shot `cat` through Plasma's executable
+    // DataSource. Qt 6 blocks file:// reads from QML's XMLHttpRequest, so we
+    // can't go through XHR.
+    P5Support.DataSource {
+        id: catSource
+        engine: "executable"
+        connectedSources: []
+        onNewData: function(source, data) {
+            if (data["exit code"] === 0 && data.stdout) {
+                try {
+                    root.snapshot = JSON.parse(data.stdout)
+                    root.snapshotError = ""
+                } catch (e) {
+                    root.snapshotError = "parse: " + e
+                }
+            } else {
+                root.snapshotError = "cat rc=" + data["exit code"] +
+                    (data.stderr ? " " + data.stderr : "")
+            }
+            disconnectSource(source)
+        }
     }
 
     function loadSnapshot() {
-        const xhr = new XMLHttpRequest();
-        xhr.open("GET", stateFileUrl);
-        xhr.onreadystatechange = function() {
-            if (xhr.readyState !== XMLHttpRequest.DONE) return;
-            // file:// URLs return status 0 on success in QML's XHR
-            if (xhr.status === 0 || xhr.status === 200) {
-                try {
-                    root.snapshot = JSON.parse(xhr.responseText);
-                    root.snapshotError = "";
-                } catch (e) {
-                    root.snapshotError = "parse: " + e;
-                }
-            } else {
-                root.snapshotError = "http " + xhr.status;
-            }
-        };
-        xhr.send();
+        catSource.connectSource("cat " + stateFilePath)
     }
 
     // --- Status derivation ---
