@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+# Fetches Claude Code 5-hour and weekly usage via ccusage and writes a
+# normalized JSON snapshot to ~/Library/Caches/claude-quota/state.json.
+#
+# macOS port of the Linux fetch script: uses BSD `date` (-v adjustments)
+# and the native Caches location. The launchd agent enforces the 5-minute
+# refresh floor; this script just does one fetch per invocation.
+#
+# Tune caps to match your subscription tier in
+# ~/.config/claude-quota/limits.env (sourced below). Defaults assume Max-20x.
+
+set -euo pipefail
+
+# Source per-user caps if present (override the defaults below).
+LIMITS_FILE="${CLAUDE_QUOTA_LIMITS:-$HOME/.config/claude-quota/limits.env}"
+if [[ -f "$LIMITS_FILE" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  . "$LIMITS_FILE"
+  set +a
+fi
+
+# Percentages are basis = API-equivalent *cost*, not raw tokens. Raw ccusage
+# token totals are ~90-97% cache-read tokens, which Anthropic's limits weight
+# at ~0.1x — so token-based % over-reports several-fold and inconsistently
+# between the 5h and weekly windows. Cost already encodes Anthropic's price
+# weighting (cache-read 0.1x, output 5x, Opus 5x over Sonnet), so cost/cap
+# tracks `/usage` far more closely. Calibrate these USD caps against /usage.
+FIVE_HOUR_CAP_USD="${FIVE_HOUR_CAP_USD:-150}"
+WEEKLY_CAP_USD="${WEEKLY_CAP_USD:-9000}"
+WARN_PCT="${WARN_PCT:-60}"
+CRIT_PCT="${CRIT_PCT:-85}"
+
+CACHE_DIR="$HOME/Library/Caches/claude-quota"
+STATE_FILE="$CACHE_DIR/state.json"
+TMP_FILE="$CACHE_DIR/state.json.tmp"
+
+mkdir -p "$CACHE_DIR"
+
+write_error() {
+  local msg="$1"
+  jq -n --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg err "$msg" '{
+    updated_at: $ts,
+    status: "error",
+    error: $err,
+    five_hour: null,
+    weekly: null
+  }' > "$TMP_FILE"
+  mv "$TMP_FILE" "$STATE_FILE"
+}
+
+resolve_ccusage() {
+  if command -v ccusage >/dev/null 2>&1; then
+    echo "ccusage"
+  elif command -v npx >/dev/null 2>&1; then
+    echo "npx -y ccusage@latest"
+  else
+    return 1
+  fi
+}
+
+CCUSAGE="$(resolve_ccusage)" || { write_error "ccusage not found (install ccusage or npm/npx)"; exit 0; }
+
+BLOCKS_JSON="$($CCUSAGE blocks --json --active --offline 2>/dev/null || true)"
+# BSD date: 8 days ago, compact YYYYMMDD.
+SINCE="$(date -u -v-8d +%Y%m%d)"
+WEEKLY_JSON="$($CCUSAGE weekly --json --since "$SINCE" --offline 2>/dev/null || true)"
+
+if [[ -z "$BLOCKS_JSON" || -z "$WEEKLY_JSON" ]]; then
+  write_error "ccusage returned empty output"
+  exit 0
+fi
+
+NOW_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+# Next Monday 00:00 UTC — the ISO week boundary ccusage groups by.
+# BSD date has no "next Monday", so compute days-ahead from the weekday
+# number (%u: 1=Mon..7=Sun). On Monday this yields 7 (the *next* one),
+# matching GNU `date -d "next Monday"`.
+DOW="$(date -u +%u)"
+DAYS_AHEAD=$(( 8 - DOW ))
+NEXT_MONDAY="$(date -u -v+"${DAYS_AHEAD}"d -v0H -v0M -v0S +%Y-%m-%dT%H:%M:%SZ)"
+
+jq -n \
+  --argjson blocks "$BLOCKS_JSON" \
+  --argjson weekly "$WEEKLY_JSON" \
+  --arg ts "$NOW_ISO" \
+  --arg next_monday "$NEXT_MONDAY" \
+  --argjson five_cap "$FIVE_HOUR_CAP_USD" \
+  --argjson week_cap "$WEEKLY_CAP_USD" \
+  --argjson warn "$WARN_PCT" \
+  --argjson crit "$CRIT_PCT" '
+  def pct(used; cap): if cap > 0 then (used * 100 / cap) else 0 end;
+  def round1(x): (x * 10 | floor) / 10;
+  def round2(x): (x * 100 | floor) / 100;
+
+  ($blocks.blocks[0] // null) as $blk
+  | ($weekly.weekly[0] // null) as $wk
+  | (if $blk then ($blk.costUSD // 0) else 0 end) as $five_cost
+  | (if $wk then ($wk.totalCost // 0) else 0 end) as $week_cost
+  | pct($five_cost; $five_cap) as $five_pct
+  | pct($week_cost; $week_cap) as $week_pct
+  | ([$five_pct, $week_pct] | max) as $max_pct
+  | (if $max_pct >= $crit then "crit"
+     elif $max_pct >= $warn then "warn"
+     else "ok" end) as $status
+  | {
+      updated_at: $ts,
+      status: $status,
+      basis: "cost",
+      error: null,
+      five_hour: (if $blk then {
+        percent: round1($five_pct),
+        cost_usd: round2($five_cost),
+        cost_cap: $five_cap,
+        tokens_used: ($blk.totalTokens // 0),
+        resets_at: $blk.endTime,
+        is_active: ($blk.isActive // false),
+        models: ($blk.models // [])
+      } else null end),
+      weekly: (if $wk then {
+        percent: round1($week_pct),
+        cost_usd: round2($week_cost),
+        cost_cap: $week_cap,
+        tokens_used: ($wk.totalTokens // 0),
+        resets_at: $next_monday,
+        week_start: ($wk.period // $wk.week)
+      } else null end)
+    }
+' > "$TMP_FILE"
+
+mv "$TMP_FILE" "$STATE_FILE"

@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# Install the macOS Claude Code quota menu-bar app for the current user.
+#
+#   ./install.sh              # full install (fetch script + launchd agent + app)
+#   ./install.sh --no-app     # only the fetch script + launchd agent (headless)
+#   ./install.sh --no-ccusage # don't npm-install ccusage; fall back to npx at runtime
+#
+# Idempotent.
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+FETCH_SRC="$ROOT/bin/claude-quota-fetch"
+PLIST_SRC="$ROOT/launchd/io.github.fuziontech.claude-quota.plist"
+LABEL="io.github.fuziontech.claude-quota"
+
+FETCH_DEST="$HOME/.local/bin/claude-quota-fetch"
+PLIST_DEST="$HOME/Library/LaunchAgents/$LABEL.plist"
+LIMITS_DEFAULT="$HOME/.config/claude-quota/limits.env"
+APPS_DIR="$HOME/Applications"
+STATE_FILE="$HOME/Library/Caches/claude-quota/state.json"
+
+SKIP_APP=0
+SKIP_CCUSAGE=0
+for arg in "$@"; do
+  case "$arg" in
+    --no-app)      SKIP_APP=1 ;;
+    --no-ccusage)  SKIP_CCUSAGE=1 ;;
+    *) echo "unknown arg: $arg" >&2; exit 2 ;;
+  esac
+done
+
+echo "==> Checking prerequisites"
+need() { command -v "$1" >/dev/null 2>&1 || { echo "missing: $1" >&2; exit 1; }; }
+need jq
+if [[ "$SKIP_APP" -eq 0 ]]; then
+  need swift
+fi
+
+echo "==> Ensuring ccusage is available"
+if command -v ccusage >/dev/null 2>&1; then
+  echo "    already present ($(command -v ccusage))"
+elif [[ "$SKIP_CCUSAGE" -eq 1 ]]; then
+  if command -v npx >/dev/null 2>&1; then
+    echo "    --no-ccusage set; will fall back to 'npx -y ccusage@latest' at runtime"
+  else
+    echo "missing: ccusage and npx (need one); install Node.js or drop --no-ccusage" >&2
+    exit 1
+  fi
+elif command -v npm >/dev/null 2>&1; then
+  echo "    installing globally via npm"
+  npm i -g ccusage
+else
+  echo "missing: npm (needed to install ccusage); install Node.js or pass --no-ccusage if you have npx" >&2
+  exit 1
+fi
+
+echo "==> Installing fetch script -> $FETCH_DEST"
+install -d "$(dirname "$FETCH_DEST")"
+install -m 0755 "$FETCH_SRC" "$FETCH_DEST"
+
+if [[ ! -f "$LIMITS_DEFAULT" ]]; then
+  echo "==> Seeding default limits at $LIMITS_DEFAULT"
+  install -d "$(dirname "$LIMITS_DEFAULT")"
+  cat > "$LIMITS_DEFAULT" <<'EOF'
+# Tune these to match your Claude subscription tier.
+# After editing, reload the agent:
+#   launchctl kickstart -k gui/$(id -u)/io.github.fuziontech.claude-quota
+#
+# The percentage basis is API-EQUIVALENT COST (in USD), not raw tokens. ccusage
+# token totals are ~90-97% cache-read tokens, which Anthropic's limits weight at
+# ~0.1x, so a token-based % over-reports several-fold. Cost already encodes that
+# weighting (cache-read 0.1x, output 5x, Opus 5x over Sonnet), so cost/cap tracks
+# `/usage` far better.
+#
+# Calibrate: run `/usage`, then set CAP = (the popover's "$ used") / (the /usage
+# percentage). e.g. $642 weekly at /usage 7%  ->  WEEKLY_CAP_USD ~= 9000.
+# Rough starting points (eyeballed against /usage on Max 20x):
+#   Pro     : FIVE_HOUR_CAP_USD=12   WEEKLY_CAP_USD=600
+#   Max 5x  : FIVE_HOUR_CAP_USD=40   WEEKLY_CAP_USD=2300
+#   Max 20x : FIVE_HOUR_CAP_USD=150  WEEKLY_CAP_USD=9000
+FIVE_HOUR_CAP_USD=210
+WEEKLY_CAP_USD=9000
+WARN_PCT=60
+CRIT_PCT=85
+EOF
+fi
+
+echo "==> Installing launchd agent -> $PLIST_DEST"
+install -d "$(dirname "$PLIST_DEST")"
+sed "s#__FETCH__#$FETCH_DEST#g" "$PLIST_SRC" > "$PLIST_DEST"
+
+echo "==> (Re)loading launchd agent"
+launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+launchctl bootstrap "gui/$(id -u)" "$PLIST_DEST"
+launchctl kickstart -k "gui/$(id -u)/$LABEL" || true
+
+echo "==> Priming cache with one run"
+sleep 2
+if [[ -f "$STATE_FILE" ]]; then
+  echo "    state.json written:"
+  jq -c '{status, five: .five_hour.percent, wk: .weekly.percent}' "$STATE_FILE" | sed 's/^/    /'
+else
+  echo "    (no state.json yet — check /tmp/claude-quota.err.log)"
+fi
+
+if [[ "$SKIP_APP" -eq 0 ]]; then
+  echo "==> Building app bundle"
+  APP="$("$ROOT/make-app.sh")"
+  install -d "$APPS_DIR"
+  rm -rf "$APPS_DIR/$(basename "$APP")"
+  cp -R "$APP" "$APPS_DIR/"
+  INSTALLED_APP="$APPS_DIR/$(basename "$APP")"
+  echo "    installed -> $INSTALLED_APP"
+  echo "==> Launching"
+  open "$INSTALLED_APP"
+fi
+
+cat <<EOF
+
+Done.
+
+Next steps:
+  - Look for the colored % pill in your menu bar (top-right). Click it for the breakdown.
+  - Tune caps in: $LIMITS_DEFAULT
+  - To launch at login: System Settings -> General -> Login Items -> add "Claude Quota".
+
+Debug:
+  launchctl print gui/$(id -u)/$LABEL | grep -E 'state|last exit'
+  cat /tmp/claude-quota.err.log
+  jq . "$STATE_FILE"
+EOF

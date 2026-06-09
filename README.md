@@ -4,6 +4,30 @@ A KDE Plasma 6 widget for Linux that puts your Claude Code subscription usage in
 
 ![Panel pill + popup](screenshots/panel-and-popup.png)
 
+> **Two platforms:** this repo ships a **KDE Plasma 6 widget** (Linux — the rest of this README) and a native **macOS menu-bar app** (in [`macos/`](macos/)). Both share the same ccusage-based data pipeline and calibration logic.
+
+## macOS (menu-bar app)
+
+A native Swift status-bar app: a color-coded **% pill in the menu bar**, click for the 5-hour + weekly breakdown. Same fetch pipeline as the Linux widget, with a `launchd` agent instead of a systemd timer.
+
+![macOS menu-bar pill + popover](screenshots/macos-popup.png)
+
+```sh
+git clone https://github.com/fuziontech/claude-quota-widget
+cd claude-quota-widget/macos
+./install.sh          # or: just install
+```
+
+This builds `Claude Quota.app` into `~/Applications`, installs the fetch script + launchd agent, primes the cache, and launches the app. Look for the pill in your menu bar (top-right). To start it at login: **System Settings → General → Login Items → +**.
+
+**Prerequisites:** macOS 13+, Xcode command-line tools (`swift` — `xcode-select --install`), `jq` (`brew install jq`), and Node.js (for `ccusage`).
+
+Full details — calibration, the cost-vs-tokens explanation, development, and troubleshooting — are in **[macos/README.md](macos/README.md)**.
+
+---
+
+**The rest of this README covers the Linux / KDE Plasma 6 widget.**
+
 ## Why this exists
 
 Claude Code's built-in `/usage` command only works inside an interactive Claude Code session. If you want to glance at your 5-hour-block and weekly utilization from anywhere on your desktop — without launching a Claude prompt and typing a slash command — there's no native way to do it.

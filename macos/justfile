@@ -1,0 +1,69 @@
+# Claude Code Quota — macOS menu-bar app — task runner
+#
+# Run `just --list` to see all targets.
+
+LABEL := "io.github.fuziontech.claude-quota"
+STATE := "$HOME/Library/Caches/claude-quota/state.json"
+
+default: help
+
+# Show all available targets
+help:
+    @just --list
+
+# Compile the release binary
+build:
+    swift build -c release
+
+# Build the .app bundle under build/ (prints its path)
+app:
+    ./make-app.sh
+
+# Full install: fetch script, launchd agent, app
+install:
+    ./install.sh
+
+# Install only the fetch script + launchd agent (no menu-bar app)
+install-headless:
+    ./install.sh --no-app
+
+# Remove everything (keeps ~/.config/claude-quota/limits.env)
+uninstall:
+    ./uninstall.sh
+
+# Remove everything including config + cache
+purge:
+    ./uninstall.sh --purge
+
+# Rebuild the app and relaunch it (after editing Swift sources)
+reload: app
+    pkill -f "Claude Quota.app/Contents/MacOS/ClaudeQuota" 2>/dev/null || true
+    rm -rf "$HOME/Applications/Claude Quota.app"
+    cp -R "build/Claude Quota.app" "$HOME/Applications/"
+    open "$HOME/Applications/Claude Quota.app"
+
+# Run the just-built app in the foreground (logs to terminal; Ctrl-C to stop)
+run: build
+    "$(swift build -c release --show-bin-path)/ClaudeQuota"
+
+# Force one fetch cycle now (via launchd) and print the result
+refresh:
+    launchctl kickstart -k "gui/$(id -u)/{{LABEL}}"
+    sleep 2
+    jq . {{STATE}}
+
+# Show the launchd agent status + last exit code
+status:
+    launchctl print "gui/$(id -u)/{{LABEL}}" | grep -E 'state|last exit code|program ' || true
+
+# Tail the fetch agent logs
+logs:
+    tail -f /tmp/claude-quota.out.log /tmp/claude-quota.err.log
+
+# Lint shell scripts (requires shellcheck)
+lint:
+    shellcheck install.sh uninstall.sh make-app.sh bin/claude-quota-fetch
+
+# Wipe build artifacts
+clean:
+    rm -rf .build build

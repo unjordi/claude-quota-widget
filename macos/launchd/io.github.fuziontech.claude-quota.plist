@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  LaunchAgent for the quota fetcher. The 300s StartInterval is the macOS
+  equivalent of the systemd timer's OnUnitActiveSec=5min — it enforces the
+  5-minute refresh floor so we never poll the underlying data too aggressively.
+
+  __FETCH__ is substituted with the absolute path to claude-quota-fetch by
+  install.sh; the installed copy lives at
+  ~/Library/LaunchAgents/io.github.fuziontech.claude-quota.plist.
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>io.github.fuziontech.claude-quota</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>__FETCH__</string>
+	</array>
+	<key>StartInterval</key>
+	<integer>300</integer>
+	<key>RunAtLoad</key>
+	<true/>
+	<!-- Inherit a login-like PATH so node/npx/ccusage and jq resolve. -->
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+	</dict>
+	<key>StandardOutPath</key>
+	<string>/tmp/claude-quota.out.log</string>
+	<key>StandardErrorPath</key>
+	<string>/tmp/claude-quota.err.log</string>
+</dict>
+</plist>
