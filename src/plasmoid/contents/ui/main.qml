@@ -158,7 +158,7 @@ PlasmoidItem {
                 text: {
                     if (!root.snapshot || !root.snapshot.five_hour) return ""
                     const f = root.snapshot.five_hour
-                    return "resets " + relativeTime(f.resets_at) + " · $" + f.cost_usd.toFixed(2)
+                    return "resets " + relativeTime(f.resets_at) + " · ≈ $" + f.cost_usd.toFixed(2) + " API equiv."
                 }
             }
         }
@@ -193,7 +193,7 @@ PlasmoidItem {
                 text: {
                     if (!root.snapshot || !root.snapshot.weekly) return ""
                     const w = root.snapshot.weekly
-                    return "resets " + relativeTime(w.resets_at) + " · $" + w.cost_usd.toFixed(2)
+                    return "resets " + relativeTime(w.resets_at) + " · ≈ $" + w.cost_usd.toFixed(2) + " API equiv."
                 }
             }
         }
