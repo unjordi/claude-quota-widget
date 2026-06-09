@@ -6,7 +6,7 @@
 
 set -euo pipefail
 
-PLASMOID_ID="com.jamesh.claudequota"
+PLASMOID_ID="io.github.fuziontech.claude-quota-widget"
 KEEP_CFG=0
 for arg in "$@"; do
   case "$arg" in

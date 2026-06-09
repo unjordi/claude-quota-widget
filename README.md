@@ -1,69 +1,91 @@
 # Claude Code Quota Widget
 
-KDE Plasma 6 widget for Fedora that shows your Claude Code 5-hour block and
-weekly usage. Hover for a breakdown; the tray icon flips color as you approach
-the cap.
+A KDE Plasma 6 widget for Linux that puts your Claude Code subscription usage in your panel. Color-coded pill that turns green → amber → red as you approach the cap; click for the full breakdown.
+
+![Panel pill + popup](screenshots/panel-and-popup.png)
+
+## Why this exists
+
+Claude Code's built-in `/usage` command only works inside an interactive Claude Code session. If you want to glance at your 5-hour-block and weekly utilization from anywhere on your desktop — without launching a Claude prompt and typing a slash command — there's no native way to do it.
+
+This widget reads the same local transcripts Claude Code writes (via [ccusage](https://github.com/ryoppippi/ccusage)) and surfaces a calibrated approximation in your panel. It's a "is now a good time to start a long Opus session?" indicator.
+
+## What you see
+
+Compact (always visible in the panel):
+
+- A small color-coded pill showing your **5-hour block %**
+- Green ≤ 60 %, amber 60–85 %, red > 85 %
+
+Popup (click the pill):
+
+![Popup](screenshots/popup.png)
+
+- 5-hour block — progress bar, % used, resets-in, API-equivalent cost
+- Weekly — progress bar, % used, resets-in, API-equivalent cost
+- Last-refresh timestamp
+
+Hover gives a one-line tooltip: `Claude Code: 5h 18% · wk 6%`.
+
+## How it works
+
+Three pieces, intentionally separated:
 
 ```
-┌──────────────────────────────┐
-│  Claude Code quota           │
-│                              │
-│  5-hour block         31 %   │
-│  ███░░░░░░░░░░░░░░░░░░       │
-│  resets in 2h · $32.60       │
-│                              │
-│  Weekly                2 %   │
-│  ░░░░░░░░░░░░░░░░░░░░░       │
-│  resets in 6d · $32.60       │
-│                              │
-│  updated 4s ago              │
-└──────────────────────────────┘
+┌────────────────────────────────┐
+│ 1. claude-quota-fetch          │ bash + jq + ccusage
+│    runs every 5 min via        │     ↓ writes
+│    systemd --user timer        │ ~/.cache/claude-quota/state.json
+└────────────────────────────────┘            ↑ reads
+                                              │ (every 10s)
+┌────────────────────────────────┐            │
+│ 2. plasmoid (QML, Plasma 6)    │────────────┘
+│    panel pill + popup + tip    │
+└────────────────────────────────┘
 ```
 
-## Architecture
+The **systemd timer enforces the 5-minute refresh floor** at the kernel level — Anthropic's API issues abuse warnings if you poll the underlying data too aggressively, so the timer is the single source of truth for cadence (`OnUnitActiveSec=5min`, `Persistent=true`). The plasmoid is a pure view: it reads the cache file every 10 s and renders.
 
-Three pieces, each independently testable:
+## ⚠ The percentages are approximations
 
-| Piece | Role |
-|---|---|
-| `claude-quota-fetch` (bash + jq) | Runs `ccusage`, normalizes JSON, atomically writes `~/.cache/claude-quota/state.json`. |
-| `claude-quota.{service,timer}` (systemd user) | Fires the fetch script every 5 min — **the 5-minute floor lives here, not in the widget.** |
-| Plasma 6 plasmoid (`com.jamesh.claudequota`) | Polls the cache file every 10 s and renders the icon + hover tooltip. |
+ccusage parses local JSONL transcripts and multiplies by Anthropic's published per-model token rates. `/usage` reads Anthropic's own usage API. They will **not** match exactly — typically within a few percentage points for the 5-hour block and within ~10 % for the week.
 
-The systemd timer is the single source of truth for poll cadence. Anthropic
-issues API abuse warnings for tighter cadences, so the timer's
-`OnUnitActiveSec=5min` is treated as a hard floor.
+The dollar values shown in the popup are **API-equivalent** cost (what you'd have paid on pay-per-token), not your subscription billing. They're a "how much is my subscription saving me?" signal, not an invoice.
+
+Calibrate the caps in `~/.config/claude-quota/limits.env` against your own `/usage` reading on day one. See the **Tuning the caps** section below.
 
 ## Prerequisites
 
-- KDE Plasma 6 (Fedora 41+ ships it; this was developed on Fedora 44).
-- `systemd --user` (any modern Linux desktop).
-- `jq`.
-- `npm` (to install `ccusage`). The installer runs `npm i -g ccusage` unless
-  `ccusage` is already on `PATH`, or you pass `--no-ccusage` (in which case the
-  fetch script falls back to `npx -y ccusage@latest` at runtime — slower per
-  fire because of cold-start, ~7 s vs ~1 s).
+- **KDE Plasma 6** (Fedora 41+ / Kubuntu 24.04+ / Arch / others).
+- **`jq`** for JSON normalization.
+- **`npm`** to install `ccusage` (the installer runs `npm i -g ccusage` for you). If you already have `ccusage` on `PATH`, that's used directly. If neither is present, pass `--no-ccusage` to fall back to `npx -y ccusage@latest` at every fire (~7 s slower per refresh).
 
 ## Install
 
 ```sh
+git clone https://github.com/fuziontech/claude-quota-widget
+cd claude-quota-widget
 ./install.sh
 ```
 
-Then in Plasma: right-click your panel → **Add or Manage Widgets…** → search
-**Claude Code Quota** → drag onto the panel or into the system-tray slot.
-
-### Tuning the caps
-
-The fetch script reads token caps from `~/.config/claude-quota/limits.env`
-(seeded on first install with Max-20x defaults). Edit it to match your plan,
-then:
+Or with [just](https://github.com/casey/just):
 
 ```sh
+just install
+```
+
+Then in Plasma: right-click your panel → **Add or Manage Widgets…** → search **"Claude Code Quota"** → drag it onto the panel.
+
+## Tuning the caps
+
+`/usage` knows your authoritative ceilings; this widget only sees tokens. Right after install, run `/usage` once and edit the caps in `~/.config/claude-quota/limits.env` so the widget's percentages roughly match:
+
+```sh
+$EDITOR ~/.config/claude-quota/limits.env
 systemctl --user restart claude-quota.service
 ```
 
-Rough starting points:
+Starting points calibrated against `/usage` on the user's plan:
 
 | Plan | `FIVE_HOUR_CAP_TOKENS` | `WEEKLY_CAP_TOKENS` |
 |---|---|---|
@@ -71,36 +93,38 @@ Rough starting points:
 | Max 5x | 200,000,000 | 600,000,000 |
 | Max 20x | 400,000,000 | 1,200,000,000 |
 
-These are eyeball-calibrated against Claude Code's `/usage` command, which
-reads Anthropic's authoritative numbers via API. This widget parses local
-JSONL transcripts via ccusage, so the numbers won't perfectly agree — but
-they should be in the same ballpark. Run `/usage` once and adjust the caps
-in `limits.env` so your widget's percentage roughly matches.
-
-## Debug
+## Troubleshooting
 
 ```sh
-systemctl --user status claude-quota.timer
-journalctl --user -u claude-quota.service -n 20
-cat ~/.cache/claude-quota/state.json | jq .
+just status   # is the timer running? what was the last fetch?
+just logs     # follow the fetch service journal
+just refresh  # force a fetch right now and print the result
 ```
 
-To iterate on the QML without re-running ccusage:
+Common gotchas:
+
+- **Pill stays gray with `…` text** — the cache file hasn't been written yet. Check `just status`; the first fetch can take a few seconds while `ccusage` cold-starts.
+- **`error: cat rc=1`** — the fetch script crashed; check `journalctl --user -u claude-quota.service`. Usually a missing `jq` or `ccusage`.
+- **Percentages way off from `/usage`** — your caps need calibration. See above.
+- **Widget appears blank in the panel** — if you're seeing nothing at all (not even the colored pill), restart plasmashell once with `just reload-plasmashell`.
+
+## Development
 
 ```sh
-# Reinstall just the plasmoid
-kpackagetool6 -t Plasma/Applet -u src/plasmoid
-# Reload Plasma to pick up the changes
-kquitapp6 plasmashell && kstart plasmashell
+just upgrade-plasmoid    # rebuild + reinstall the plasmoid after editing main.qml
+just reload-plasmashell  # restart plasmashell to pick up changes
+just preview             # run the plasmoid standalone for visual debugging
+just lint                # shellcheck the bash scripts
+just package             # build dist/claude-quota-widget-X.Y.Z.plasmoid
 ```
 
 ## Uninstall
 
 ```sh
-./uninstall.sh                # removes everything
-./uninstall.sh --keep-cfg     # keep ~/.config/claude-quota/limits.env
+just uninstall              # remove everything
+just uninstall-keep-cfg     # keep ~/.config/claude-quota/limits.env
 ```
 
 ## License
 
-MIT.
+MIT. See [LICENSE](LICENSE).
