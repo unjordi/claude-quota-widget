@@ -58,17 +58,21 @@ struct PopoverView: View {
 
     private func caption(for bucket: Bucket?) -> String {
         guard let bucket else { return "" }
-        let resets = RelativeTime.format(bucket.resets_at)
-        // The % (shown large) is the calibrated position against the limit.
-        // The $ is standalone API-equivalent spend — NOT a budget, so we don't
-        // pretend there's a "$X of $Y" ceiling (the cap is just a calibration
-        // constant inflated ~10x by cheap cache-read tokens).
-        return "Resets \(resets) · \(money(bucket.cost_usd)) API-equiv."
+        var parts: [String] = []
+        if bucket.resets_at != nil {
+            parts.append("Resets \(RelativeTime.format(bucket.resets_at))")
+        }
+        // The $ is standalone API-equivalent spend (from ccusage) — NOT a
+        // budget, so we don't pretend there's a "$X of $Y" ceiling. It's
+        // absent when ccusage isn't installed, hence optional.
+        if let cost = bucket.cost_usd {
+            parts.append("\(money(cost)) API-equiv.")
+        }
+        return parts.joined(separator: " · ")
     }
 
     /// "$6.24" under $100, "$642" above — keeps the caption compact.
-    private func money(_ value: Double?) -> String {
-        let v = value ?? 0
-        return v >= 100 ? String(format: "$%.0f", v) : String(format: "$%.2f", v)
+    private func money(_ value: Double) -> String {
+        return value >= 100 ? String(format: "$%.0f", value) : String(format: "$%.2f", value)
     }
 }

@@ -64,18 +64,21 @@ if [[ ! -f "$LIMITS_DEFAULT" ]]; then
   echo "==> Seeding default limits at $LIMITS_DEFAULT"
   install -d "$(dirname "$LIMITS_DEFAULT")"
   cat > "$LIMITS_DEFAULT" <<'EOF'
-# Tune these to match your Claude subscription tier.
+# FALLBACK calibration — only used when the OAuth usage endpoint is
+# unreachable (offline, or no ~/.claude/.credentials.json). When Claude Code's
+# OAuth token is available the widget reads the exact /usage percentages and
+# these caps are ignored.
 # After editing, run: systemctl --user restart claude-quota.service
 #
-# These caps are calibrated so widget % roughly matches `/usage` in Claude Code.
-# /usage reads Anthropic's authoritative numbers; this widget parses local JSONL
-# via ccusage — they won't perfectly agree, but should be in the same ballpark.
-# Rough starting points (eyeball calibrated against /usage on Max 20x):
-#   Pro     : FIVE_HOUR_CAP_TOKENS=50000000   WEEKLY_CAP_TOKENS=200000000
-#   Max 5x  : FIVE_HOUR_CAP_TOKENS=200000000  WEEKLY_CAP_TOKENS=600000000
-#   Max 20x : FIVE_HOUR_CAP_TOKENS=400000000  WEEKLY_CAP_TOKENS=1200000000
-FIVE_HOUR_CAP_TOKENS=400000000
-WEEKLY_CAP_TOKENS=1200000000
+# Basis is API-EQUIVALENT COST (USD), not raw tokens — cache-read tokens
+# dominate raw counts and Anthropic weights them ~0.1x. Calibrate:
+#   CAP = (the popup's "$ used") / (the /usage fraction)
+# Rough starting points (eyeballed against /usage on Max 20x):
+#   Pro     : FIVE_HOUR_CAP_USD=2.5  WEEKLY_CAP_USD=250
+#   Max 5x  : FIVE_HOUR_CAP_USD=11   WEEKLY_CAP_USD=1200
+#   Max 20x : FIVE_HOUR_CAP_USD=45   WEEKLY_CAP_USD=4800
+FIVE_HOUR_CAP_USD=45
+WEEKLY_CAP_USD=4800
 WARN_PCT=60
 CRIT_PCT=85
 EOF

@@ -1,16 +1,27 @@
 #!/usr/bin/env bash
-# Fetches Claude Code 5-hour and weekly usage via ccusage and writes a
-# normalized JSON snapshot to ~/.cache/claude-quota/state.json.
+# Fetches Claude Code 5-hour and weekly usage and writes a normalized JSON
+# snapshot to ~/.cache/claude-quota/state.json.
 #
-# Tune caps to match your subscription tier. Override by exporting in
-# ~/.config/claude-quota/limits.env (the systemd unit sources it).
+# Primary source: Anthropic's OAuth usage endpoint — the same data `/usage`
+# shows inside Claude Code, read with the OAuth token Claude Code already
+# stores in ~/.claude/.credentials.json. This gives the EXACT utilization
+# percentages and reset times for your plan; no calibration.
 #
-# Rough defaults assume Max-20x; trim down for Pro/Max-5x.
+# Fallback (offline / no credentials): ccusage cost-basis estimation against
+# the *_CAP_USD calibration constants below. ccusage is also still used to
+# enrich the snapshot with API-equivalent $ figures when available.
+#
+# Override defaults by exporting in ~/.config/claude-quota/limits.env
+# (the systemd unit sources it).
 
 set -euo pipefail
 
-FIVE_HOUR_CAP_TOKENS="${FIVE_HOUR_CAP_TOKENS:-400000000}"
-WEEKLY_CAP_TOKENS="${WEEKLY_CAP_TOKENS:-1200000000}"
+# FALLBACK calibration only — used when the OAuth endpoint is unreachable.
+# Basis = API-equivalent *cost*, not raw tokens (cache-read tokens dominate
+# raw counts and are weighted ~0.1x by Anthropic's limits). Calibrate against
+# /usage: CAP = ($ shown in popup) / (/usage fraction). Defaults: Max-20x.
+FIVE_HOUR_CAP_USD="${FIVE_HOUR_CAP_USD:-150}"
+WEEKLY_CAP_USD="${WEEKLY_CAP_USD:-9000}"
 WARN_PCT="${WARN_PCT:-60}"
 CRIT_PCT="${CRIT_PCT:-85}"
 
@@ -32,6 +43,26 @@ write_error() {
   mv "$TMP_FILE" "$STATE_FILE"
 }
 
+# --- Primary: the OAuth usage endpoint /usage itself reads -------------------
+
+oauth_token() {
+  [[ -r "$HOME/.claude/.credentials.json" ]] || return 1
+  jq -er '.claudeAiOauth.accessToken // empty' "$HOME/.claude/.credentials.json"
+}
+
+USAGE_JSON=""
+if TOKEN="$(oauth_token 2>/dev/null)" && [[ -n "$TOKEN" ]]; then
+  USAGE_JSON="$(curl -fsS -m 15 "https://api.anthropic.com/api/oauth/usage" \
+    -H "Authorization: Bearer $TOKEN" \
+    -H "anthropic-beta: oauth-2025-04-20" 2>/dev/null || true)"
+  # Sanity check: must be JSON carrying the 5-hour utilization.
+  if ! jq -e '.five_hour.utilization != null' <<<"$USAGE_JSON" >/dev/null 2>&1; then
+    USAGE_JSON=""
+  fi
+fi
+
+# --- Secondary: ccusage (cost enrichment, and fallback percentages) ----------
+
 resolve_ccusage() {
   if command -v ccusage >/dev/null 2>&1; then
     echo "ccusage"
@@ -42,64 +73,87 @@ resolve_ccusage() {
   fi
 }
 
-CCUSAGE="$(resolve_ccusage)" || { write_error "ccusage not found (install ccusage or npm/npx)"; exit 0; }
+CCUSAGE="$(resolve_ccusage || true)"
+BLOCKS_JSON=""
+WEEKLY_JSON=""
+if [[ -n "$CCUSAGE" ]]; then
+  BLOCKS_JSON="$($CCUSAGE blocks --json --active --offline 2>/dev/null || true)"
+  SINCE="$(date -u -d '8 days ago' +%Y%m%d)"
+  WEEKLY_JSON="$($CCUSAGE weekly --json --since "$SINCE" --offline 2>/dev/null || true)"
+  # Discard anything that isn't valid JSON so jq --argjson can't blow up.
+  jq -e . <<<"$BLOCKS_JSON" >/dev/null 2>&1 || BLOCKS_JSON=""
+  jq -e . <<<"$WEEKLY_JSON" >/dev/null 2>&1 || WEEKLY_JSON=""
+fi
 
-BLOCKS_JSON="$($CCUSAGE blocks --json --active --token-limit "$FIVE_HOUR_CAP_TOKENS" --offline 2>/dev/null || true)"
-SINCE="$(date -u -d '8 days ago' +%Y%m%d)"
-WEEKLY_JSON="$($CCUSAGE weekly --json --since "$SINCE" --offline 2>/dev/null || true)"
-
-if [[ -z "$BLOCKS_JSON" || -z "$WEEKLY_JSON" ]]; then
-  write_error "ccusage returned empty output"
+if [[ -z "$USAGE_JSON" && -z "$BLOCKS_JSON" && -z "$WEEKLY_JSON" ]]; then
+  write_error "no data: OAuth usage endpoint unreachable and ccusage returned nothing"
   exit 0
 fi
 
 NOW_ISO="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-# Next Monday 00:00 UTC — ISO week boundary that ccusage groups by.
+# ccusage groups weeks Monday-start; compute this week's Monday so we pick the
+# CURRENT week bucket (the array is oldest-first, so [0] is last week).
+DOW="$(date -u +%u)"  # 1=Mon..7=Sun
+CURRENT_MONDAY="$(date -u -d "$((DOW - 1)) days ago" +%Y-%m-%d)"
+# Fallback weekly reset when the OAuth endpoint (which knows the real rolling
+# reset) is unavailable.
 NEXT_MONDAY="$(date -u -d "next Monday 00:00:00" +%Y-%m-%dT%H:%M:%SZ)"
 
 jq -n \
-  --argjson blocks "$BLOCKS_JSON" \
-  --argjson weekly "$WEEKLY_JSON" \
+  --argjson usage "${USAGE_JSON:-null}" \
+  --argjson blocks "${BLOCKS_JSON:-null}" \
+  --argjson weekly "${WEEKLY_JSON:-null}" \
   --arg ts "$NOW_ISO" \
+  --arg cur_week "$CURRENT_MONDAY" \
   --arg next_monday "$NEXT_MONDAY" \
-  --argjson five_cap "$FIVE_HOUR_CAP_TOKENS" \
-  --argjson week_cap "$WEEKLY_CAP_TOKENS" \
+  --argjson five_cap "$FIVE_HOUR_CAP_USD" \
+  --argjson week_cap "$WEEKLY_CAP_USD" \
   --argjson warn "$WARN_PCT" \
   --argjson crit "$CRIT_PCT" '
   def pct(used; cap): if cap > 0 then (used * 100 / cap) else 0 end;
   def round1(x): (x * 10 | floor) / 10;
+  def round2(x): (x * 100 | floor) / 100;
+  # "2026-06-10T00:00:00.070837+00:00" -> "2026-06-10T00:00:00Z"
+  def isoz: sub("\\.[0-9]+"; "") | sub("\\+00:00$"; "Z");
 
   ($blocks.blocks[0] // null) as $blk
-  | ($weekly.weekly[0] // null) as $wk
-  | (if $blk then $blk.totalTokens else 0 end) as $five_used
-  | (if $wk then $wk.totalTokens else 0 end) as $week_used
-  | pct($five_used; $five_cap) as $five_pct
-  | pct($week_used; $week_cap) as $week_pct
+  | ([$weekly.weekly[]? | select((.week // .period) == $cur_week)] | first) as $wk
+  | (if $blocks != null then round2(if $blk then ($blk.costUSD // 0) else 0 end) else null end) as $five_cost
+  | (if $weekly != null then round2(if $wk then ($wk.totalCost // 0) else 0 end) else null end) as $week_cost
+  | (if $usage != null then ($usage.five_hour.utilization // 0)
+     else pct($five_cost // 0; $five_cap) end) as $five_pct
+  | (if $usage != null then ($usage.seven_day.utilization // 0)
+     else pct($week_cost // 0; $week_cap) end) as $week_pct
   | ([$five_pct, $week_pct] | max) as $max_pct
   | (if $max_pct >= $crit then "crit"
      elif $max_pct >= $warn then "warn"
      else "ok" end) as $status
+  | (if ($usage != null and $usage.five_hour.resets_at != null) then ($usage.five_hour.resets_at | isoz)
+     elif $blk != null then $blk.endTime
+     else null end) as $five_reset
+  | (if ($usage != null and $usage.seven_day.resets_at != null) then ($usage.seven_day.resets_at | isoz)
+     else $next_monday end) as $week_reset
   | {
       updated_at: $ts,
       status: $status,
+      basis: (if $usage != null then "oauth" else "cost" end),
       error: null,
-      five_hour: (if $blk then {
-        tokens_used: $five_used,
-        tokens_cap: $five_cap,
+      five_hour: (if ($usage != null or $blocks != null) then {
         percent: round1($five_pct),
-        cost_usd: round1($blk.costUSD // 0),
-        resets_at: $blk.endTime,
-        is_active: ($blk.isActive // false),
-        models: ($blk.models // []),
-        burn_tokens_per_minute: round1($blk.burnRate.tokensPerMinute // 0)
+        cost_usd: $five_cost,
+        cost_cap: $five_cap,
+        tokens_used: (if $blk != null then ($blk.totalTokens // 0) else null end),
+        resets_at: $five_reset,
+        is_active: (if $blk != null then ($blk.isActive // false) else true end),
+        models: (if $blk != null then ($blk.models // []) else [] end)
       } else null end),
-      weekly: (if $wk then {
-        tokens_used: $week_used,
-        tokens_cap: $week_cap,
+      weekly: (if ($usage != null or $weekly != null) then {
         percent: round1($week_pct),
-        cost_usd: round1($wk.totalCost // 0),
-        resets_at: $next_monday,
-        week_start: ($wk.period // $wk.week)
+        cost_usd: $week_cost,
+        cost_cap: $week_cap,
+        tokens_used: (if $wk != null then ($wk.totalTokens // 0) else null end),
+        resets_at: $week_reset,
+        week_start: (if $wk != null then ($wk.week // $wk.period) else null end)
       } else null end)
     }
 ' > "$TMP_FILE"

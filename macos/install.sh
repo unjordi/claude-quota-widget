@@ -63,24 +63,22 @@ if [[ ! -f "$LIMITS_DEFAULT" ]]; then
   echo "==> Seeding default limits at $LIMITS_DEFAULT"
   install -d "$(dirname "$LIMITS_DEFAULT")"
   cat > "$LIMITS_DEFAULT" <<'EOF'
-# Tune these to match your Claude subscription tier.
+# FALLBACK calibration — only used when the OAuth usage endpoint is
+# unreachable (offline, or no Claude Code credentials in the Keychain). When
+# the OAuth token is available the widget reads the exact /usage percentages
+# and these caps are ignored.
 # After editing, reload the agent:
 #   launchctl kickstart -k gui/$(id -u)/io.github.fuziontech.claude-quota
 #
-# The percentage basis is API-EQUIVALENT COST (in USD), not raw tokens. ccusage
-# token totals are ~90-97% cache-read tokens, which Anthropic's limits weight at
-# ~0.1x, so a token-based % over-reports several-fold. Cost already encodes that
-# weighting (cache-read 0.1x, output 5x, Opus 5x over Sonnet), so cost/cap tracks
-# `/usage` far better.
-#
-# Calibrate: run `/usage`, then set CAP = (the popover's "$ used") / (the /usage
-# percentage). e.g. $642 weekly at /usage 7%  ->  WEEKLY_CAP_USD ~= 9000.
+# Basis is API-EQUIVALENT COST (in USD), not raw tokens — cache-read tokens
+# dominate raw counts and Anthropic weights them ~0.1x. Calibrate:
+#   CAP = (the popover's "$ used") / (the /usage fraction)
 # Rough starting points (eyeballed against /usage on Max 20x):
-#   Pro     : FIVE_HOUR_CAP_USD=12   WEEKLY_CAP_USD=600
-#   Max 5x  : FIVE_HOUR_CAP_USD=40   WEEKLY_CAP_USD=2300
-#   Max 20x : FIVE_HOUR_CAP_USD=150  WEEKLY_CAP_USD=9000
-FIVE_HOUR_CAP_USD=210
-WEEKLY_CAP_USD=9000
+#   Pro     : FIVE_HOUR_CAP_USD=2.5  WEEKLY_CAP_USD=250
+#   Max 5x  : FIVE_HOUR_CAP_USD=11   WEEKLY_CAP_USD=1200
+#   Max 20x : FIVE_HOUR_CAP_USD=45   WEEKLY_CAP_USD=4800
+FIVE_HOUR_CAP_USD=45
+WEEKLY_CAP_USD=4800
 WARN_PCT=60
 CRIT_PCT=85
 EOF
