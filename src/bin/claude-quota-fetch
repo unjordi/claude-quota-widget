@@ -74,12 +74,23 @@ resolve_ccusage() {
 }
 
 CCUSAGE="$(resolve_ccusage || true)"
+
+# Live pricing first: the bundled --offline table lags new models, whose
+# tokens are then costed at $0 — silently deflating both the $ enrichment
+# and the fallback percentages. --offline is the no-network retry.
+ccusage_json() {
+  local out
+  out="$($CCUSAGE "$@" 2>/dev/null || true)"
+  [[ -z "$out" ]] && out="$($CCUSAGE "$@" --offline 2>/dev/null || true)"
+  printf '%s' "$out"
+}
+
 BLOCKS_JSON=""
 WEEKLY_JSON=""
 if [[ -n "$CCUSAGE" ]]; then
-  BLOCKS_JSON="$($CCUSAGE blocks --json --active --offline 2>/dev/null || true)"
+  BLOCKS_JSON="$(ccusage_json blocks --json --active)"
   SINCE="$(date -u -d '8 days ago' +%Y%m%d)"
-  WEEKLY_JSON="$($CCUSAGE weekly --json --since "$SINCE" --offline 2>/dev/null || true)"
+  WEEKLY_JSON="$(ccusage_json weekly --json --since "$SINCE")"
   # Discard anything that isn't valid JSON so jq --argjson can't blow up.
   jq -e . <<<"$BLOCKS_JSON" >/dev/null 2>&1 || BLOCKS_JSON=""
   jq -e . <<<"$WEEKLY_JSON" >/dev/null 2>&1 || WEEKLY_JSON=""
