@@ -11,8 +11,8 @@
             }
         ],
         "Category": "System Information",
-        "Description": "Shows Claude Code 5-hour block and weekly usage on hover",
-        "Icon": "applications-development",
+        "Description": "Muestra el uso de tu sesión (5 h) y el límite semanal de Claude",
+        "Icon": "speedometer",
         "Id": "io.github.unjordi.claude-quota-widget",
         "License": "MIT",
         "Name": "Claude Code Quota",

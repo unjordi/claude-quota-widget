@@ -84,7 +84,7 @@ PlasmoidItem {
     readonly property real weekPct: snapshot && snapshot.weekly    ? snapshot.weekly.percent    : -1
 
     Plasmoid.status: PlasmaCore.Types.ActiveStatus
-    Plasmoid.icon: "applications-development"
+    Plasmoid.icon: "speedometer"
 
     // ---------- Compact representation (panel) — two rows w/ mini bars, FelixDes-style ----------
     compactRepresentation: MouseArea {
