@@ -1,9 +1,10 @@
 # Claude Code Quota — macOS menu-bar app
 
 The macOS sibling of the [KDE Plasma widget](../README.md). Puts your Claude
-Code subscription usage in the menu bar: a small color-coded pill showing your
-5-hour-block %, green → amber → red as you approach the cap. Click it for the
-full breakdown.
+Code subscription usage in the menu bar: a two-row `5h` / `7d` indicator with a
+mini progress bar and % per row, orange normally and red only once a bucket is
+about to throttle (> 90 %). Click it for a 3-tab popover with the full
+breakdown, in Spanish, matching the plasmoid's look.
 
 It shares the Linux port's design and the **same calibration logic** — only the
 view layer (a native Swift status-bar app instead of a QML plasmoid) and the
@@ -21,17 +22,35 @@ transcripts via [ccusage](https://github.com/ryoppippi/ccusage).
 
 ## What you see
 
-In the menu bar (always visible):
+In the menu bar (always visible): a **two-row indicator**, one row per bucket —
 
-- A small color-coded pill showing your **5-hour block %**
-- Green ≤ 60 %, amber 60–85 %, red > 85 %
-- Hover for a tooltip: `Claude Code: 5h 18% · wk 6%`
+```
+5h ▬▬▬▬▬░░░ 18% ⟳4h
+7d ▬▬░░░░░░  6% ⟳3d
+```
 
-Click the pill for the popover:
+- Label + mini progress bar + `N%` + `⟳` and a compact countdown to reset.
+- Accent color is **orange** (`#e8884a`) always, switching to **red**
+  (`#dc3545`) only once a bucket is **> 90 %** (throttle warning) — there's no
+  green/amber tier, this mirrors the plasmoid's `pctColor()` exactly.
+- `…` while the cache hasn't been written yet, `!` if the app can't read it.
+- Hover for a tooltip: `Claude: 5h 18% · 7d 6%`
 
-- **5-hour block** — progress bar, % used, resets-in, API-equivalent cost
-- **Weekly** — progress bar, % used, resets-in, API-equivalent cost
-- Last-refresh timestamp, plus **Refresh** and **Quit** buttons
+Click the indicator for a **3-tab popover**, UI in Spanish, with a vertical
+tab rail on the left:
+
+- **Límites** — Sesión (5 h) and Semanal (7 d), each an animated progress bar,
+  `%` used, "Se restablece en Xh" and "≈ $Y.YY (API equiv local)"; footer
+  shows `datos reales` (OAuth) or `estimado local` (ccusage fallback), the
+  5-minute refresh cadence, and how long ago it last updated.
+- **Resumen** — 9 stat cards (Sesiones, Mensajes, Tokens totales, Días
+  activos, Racha actual, Racha más larga, Hora pico, Modelo favorito, Costo
+  API-equiv) plus a GitHub-style daily-activity heatmap, all from **local**
+  Claude Code usage on this machine (via `ccusage` + transcript parsing).
+- **Modelos** — a stacked bar chart of daily token usage colored per model,
+  plus a table with in/out tokens and % share per model.
+- The rail's bottom buttons: **refresh** (kicks off a real fetch via
+  `~/.local/bin/claude-quota-fetch`, not just a cache re-read) and **quit**.
 
 ## How it works
 
@@ -42,18 +61,27 @@ Three pieces, intentionally separated — the same shape as the Linux port:
 │ 1. claude-quota-fetch          │ bash + jq + curl (OAuth) + ccusage
 │    runs every 5 min via        │     ↓ writes
 │    a launchd LaunchAgent        │ ~/Library/Caches/claude-quota/state.json
+│                                  │ ~/Library/Caches/claude-quota/stats.json
 └────────────────────────────────┘            ↑ reads
                                               │ (every 10s)
 ┌────────────────────────────────┐            │
 │ 2. ClaudeQuota.app (Swift)     │────────────┘
-│    NSStatusItem pill + popover │
+│    NSStatusItem 2-row indicator│
+│    + 3-tab SwiftUI popover     │
 └────────────────────────────────┘
 ```
 
 The **launchd agent enforces the 5-minute refresh floor** (`StartInterval=300`)
 — Anthropic's API issues abuse warnings if you poll the underlying data too
 aggressively, so the agent is the single source of truth for cadence. The app is
-a pure view: it reads the cache file every 10 s and renders the pill.
+a pure view: it reads the cache files every 10 s and redraws the menu-bar
+indicator.
+
+`state.json` (limits) comes from the OAuth `/usage` endpoint — see below.
+`stats.json` (Resumen/Modelos tabs) is a separate write, built from
+`ccusage daily --json --breakdown` plus a `grep`/`awk` pass over the raw
+`~/.claude/projects/**/*.jsonl` transcripts (session count, message count,
+peak local hour) — all local to this machine, not the same data as `/usage`.
 
 ## Where the percentage comes from
 
@@ -111,7 +139,7 @@ just install
 
 This builds `Claude Quota.app` into `~/Applications`, installs the fetch script
 and launchd agent, primes the cache with one run, and launches the app. Look for
-the colored % pill in your menu bar.
+the `5h` / `7d` indicator in your menu bar.
 
 To launch at login: **System Settings → General → Login Items → +** and add
 **Claude Quota**.
@@ -159,17 +187,23 @@ binary, `make-app.sh` wraps it in a `.app` bundle with an `LSUIElement` Info.pli
 
 ## Troubleshooting
 
-- **Pill shows `…`** — the cache file hasn't been written yet. Run
+- **Indicator rows show `…`** — the cache file hasn't been written yet. Run
   `just refresh`; the first `ccusage` run can take a few seconds to cold-start.
-- **Pill shows `!`** — the app can't read `state.json`. Check the fetch agent:
-  `cat /tmp/claude-quota.err.log`.
-- **No pill at all** — confirm the app is running (`pgrep -lf ClaudeQuota`); if
-  not, `open "~/Applications/Claude Quota.app"`.
+- **Indicator rows show `!`** — the app can't read `state.json`. Check the
+  fetch agent: `cat /tmp/claude-quota.err.log`.
+- **No indicator at all** — confirm the app is running
+  (`pgrep -lf ClaudeQuota`); if not, `open "~/Applications/Claude Quota.app"`.
 - **Percentages way off from `/usage`** — check `jq .basis` on
   `~/Library/Caches/claude-quota/state.json`. If it says `"cost"`, the OAuth
   endpoint isn't reachable (are Claude Code credentials in your Keychain? are
   you online?) and you're on the calibrated fallback — see above. If it says
   `"oauth"`, the numbers come straight from Anthropic and should match.
+- **Resumen/Modelos tabs empty or stale** — those come from `stats.json`, not
+  `state.json`. Check it exists and is fresh:
+  `jq .updated_at ~/Library/Caches/claude-quota/stats.json`. It's written by
+  the same `claude-quota-fetch` run but is best-effort (missing `ccusage` or
+  an empty `~/.claude/projects` just leaves it absent, without failing the
+  limits fetch).
 
 ## Uninstall
 

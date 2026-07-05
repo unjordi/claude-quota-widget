@@ -50,7 +50,7 @@ struct PopoverView: View {
             .padding(.bottom, 2)
         }
         .padding(6)
-        .frame(width: 118)
+        .frame(width: 132)
     }
 
     @ViewBuilder
@@ -236,7 +236,7 @@ private struct RailButton: View {
         let label = Color(nsColor: .labelColor)
         HStack(spacing: 8) {
             Image(systemName: system).frame(width: 16)
-            Text(text).fontWeight(active ? .bold : .regular)
+            Text(text).fontWeight(active ? .bold : .regular).lineLimit(1)
             Spacer(minLength: 0)
         }
         .foregroundStyle(active ? accent : label)
