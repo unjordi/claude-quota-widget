@@ -63,9 +63,29 @@ la KDE Store (`github.com/FelixDes/claude-kde-usage-widget`), conservando el cos
     - **`plasmoidviewer` cachea/ignora el default de propiedades** (ej. `currentTab`) y
       `spectacle -b -n -a/-f` en Wayland es inconsistente → para verificar pestañas
       distintas, **mejor en vivo en el panel (clic) y pedir screenshot a unjordi**.
-- **macOS:** `cd ~/code/claude-quota-widget/macos && ./install.sh`
-  (necesita Xcode CLT `xcode-select --install`, `jq` via brew, Node). App de barra de
-  menú en Swift + agente launchd. Bundle `io.github.unjordi.claude-quota`.
+- **macOS (PARIDAD COMPLETA con el plasmoid desde 2026-07-04, PR #2):**
+  `cd ~/code/claude-quota-widget/macos && ./install.sh` (necesita Xcode CLT
+  `xcode-select --install`, `jq` via brew, Node via brew + `npm i -g ccusage`).
+  App de barra de menú Swift (AppKit + SwiftUI, popover de 3 pestañas y barra de
+  2 filas idénticos al plasmoid) + agente launchd cada 5 min. Bundle
+  `io.github.unjordi.claude-quota`, app en `~/Applications/Claude Quota.app`.
+  - **Token OAuth:** en Mac sale del **Keychain** (`security find-generic-password
+    -s "Claude Code-credentials"`); no suele existir `~/.claude/.credentials.json`.
+  - **Iterar:** tras editar Swift, `pkill -f 'Claude Quota.app'` ANTES de re-correr
+    `./install.sh` — `open` sobre una app ya corriendo solo la activa, NO relanza
+    el binario nuevo.
+  - **Fetch:** el bloque de `stats.json` de `macos/bin/claude-quota-fetch` es
+    IDÉNTICO al de `src/bin/` (BSD-safe: bash 3.2, `date -v`, BSD grep) — si se
+    toca uno, replicar en el otro. Caches en `~/Library/Caches/claude-quota/`.
+  - **Icono:** `make-icon.sh` genera `AppIcon.icns` programáticamente (Swift
+    here-doc, gauge naranja sobre squircle grafito; sin binarios en el repo) y
+    `make-app.sh` lo mete al bundle. El **cache de iconos de macOS es terco**:
+    tras instalar, `killall Finder` y reabrir Ajustes; a veces solo aparece al
+    siguiente login. El script `claude-quota-fetch` en "Elementos de inicio"
+    siempre saldrá con icono "exec" genérico (macOS no da icono a scripts).
+  - Los helpers de UI (pctColor, relativeTime, fmtTok/fmtInt/fmtHour,
+    prettyModel, modelPalette, rachas, heatmap) viven en `QuotaModel.swift` y
+    replican el QML — las divisiones de tiempo REDONDEAN (`Math.round`), no truncan.
 - **Windows (VM):** NO existe upstream (fuziontech es solo KDE+macOS). Hay que
   **construir uno nuevo**: misma lógica (leer `~/.claude/.credentials.json` o
   `%USERPROFILE%\.claude\.credentials.json`, pegar al endpoint OAuth, parsear igual),
