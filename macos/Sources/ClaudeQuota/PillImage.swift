@@ -1,44 +1,122 @@
 import AppKit
 
-/// Renders the self-contained colored pill shown in the menu bar — a rounded
-/// rect filled with the status color and the percentage in white, with no
-/// dependency on the system icon theme. The AppKit analogue of the Rectangle +
-/// Label in the plasmoid's compactRepresentation.
+/// Renders the two-row menu-bar indicator (AppKit analogue of the plasmoid's
+/// compactRepresentation): a "5h" row and a "7d" row, each = label + mini bar +
+/// "N%" + "⟳{compactReset}". Height ≈ 22px (the usable menu-bar height); its
+/// width measures to the actual rendered content so the status item never
+/// collapses. isTemplate = false because it carries its own accent colors.
 enum PillImage {
-    static func render(text: String, color: NSColor) -> NSImage {
-        let font = NSFont.systemFont(ofSize: 11, weight: .bold)
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: NSColor.white,
-        ]
-        let textSize = (text as NSString).size(withAttributes: attrs)
+    struct RowData {
+        let label: String
+        let pct: Double?
+        let reset: String?
+    }
 
-        let height: CGFloat = 16          // leaves margin inside the ~22pt menu bar
-        let hPadding: CGFloat = 6
-        let width = max(height, ceil(textSize.width) + hPadding * 2)
+    private static let height: CGFloat = 22
+    private static let barW: CGFloat = 30
+    private static let barH: CGFloat = 4
+    private static let gap: CGFloat = 3
+    private static let labelFont = NSFont.systemFont(ofSize: 8, weight: .regular)
+    private static let pctFont   = NSFont.systemFont(ofSize: 8, weight: .bold)
+    private static let resetFont = NSFont.systemFont(ofSize: 7, weight: .regular)
 
-        let image = NSImage(size: NSSize(width: width, height: height))
-        image.lockFocus()
+    static func render(five: RowData, week: RowData, hasError: Bool,
+                       appearance: NSAppearance?) -> NSImage {
+        let rows = [five, week]
 
-        let rect = NSRect(x: 0, y: 0, width: width, height: height).insetBy(dx: 0.5, dy: 0.5)
-        let path = NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2)
-        color.setFill()
-        path.fill()
-        // Subtle darker border, matching Qt.darker(color, 1.3) in the plasmoid.
-        NSColor(white: 0, alpha: 0.25).setStroke()
-        path.lineWidth = 1
-        path.stroke()
+        // Column X where the label ends / the bar starts (aligned across rows).
+        let labelW = ceil(rows.map { width($0.label, labelFont) }.max() ?? 8)
+        let barX = labelW + gap
+        let pctX = barX + barW + gap
 
-        let textRect = NSRect(
-            x: (width - textSize.width) / 2,
-            y: (height - textSize.height) / 2,
-            width: textSize.width,
-            height: textSize.height
-        )
-        (text as NSString).draw(in: textRect, withAttributes: attrs)
+        // Per-row trailing content (pct + optional reset) → total width.
+        var maxWidth: CGFloat = pctX
+        for r in rows {
+            let pctW = ceil(width(pctText(r, hasError: hasError), pctFont))
+            var w = pctX + pctW
+            let rt = resetText(r)
+            if !rt.isEmpty { w += gap + ceil(width(rt, resetFont)) }
+            maxWidth = max(maxWidth, w)
+        }
+        let totalW = ceil(maxWidth) + 2   // tiny right breathing room
 
-        image.unlockFocus()
-        image.isTemplate = false          // keep the color — not a monochrome template
+        let image = NSImage(size: NSSize(width: totalW, height: height))
+        let draw = {
+            image.lockFocus()
+            // Two rows: top row center y=15, bottom row center y=6 (2px inner margins).
+            drawRow(rows[0], hasError: hasError, centerY: 15, barX: barX, pctX: pctX)
+            drawRow(rows[1], hasError: hasError, centerY: 6,  barX: barX, pctX: pctX)
+            image.unlockFocus()
+        }
+        if let appearance {
+            appearance.performAsCurrentDrawingAppearance(draw)
+        } else {
+            draw()
+        }
+        image.isTemplate = false
         return image
+    }
+
+    // MARK: - drawing
+
+    private static func drawRow(_ r: RowData, hasError: Bool, centerY: CGFloat,
+                                barX: CGFloat, pctX: CGFloat) {
+        let accent = NSColor(hex: pctHex(r.pct))
+
+        // label
+        drawText(r.label, font: labelFont,
+                 color: NSColor.labelColor.withAlphaComponent(0.7),
+                 x: 0, centerY: centerY)
+
+        // mini bar (solo si hay dato)
+        if let p = r.pct {
+            let barY = centerY - barH / 2
+            let bg = NSBezierPath(roundedRect: NSRect(x: barX, y: barY, width: barW, height: barH),
+                                  xRadius: barH / 2, yRadius: barH / 2)
+            NSColor.labelColor.withAlphaComponent(0.15).setFill()
+            bg.fill()
+            let fillW = barW * CGFloat(max(0, min(1, p / 100)))
+            if fillW > 0 {
+                let fg = NSBezierPath(roundedRect: NSRect(x: barX, y: barY, width: fillW, height: barH),
+                                      xRadius: barH / 2, yRadius: barH / 2)
+                accent.setFill()
+                fg.fill()
+            }
+        }
+
+        // "N%" (o "!"/"…")
+        let pt = pctText(r, hasError: hasError)
+        let pctW = drawText(pt, font: pctFont, color: accent, x: pctX, centerY: centerY)
+
+        // "⟳{compactReset}"
+        let rt = resetText(r)
+        if !rt.isEmpty {
+            drawText(rt, font: resetFont,
+                     color: NSColor.labelColor.withAlphaComponent(0.55),
+                     x: pctX + pctW + gap, centerY: centerY)
+        }
+    }
+
+    private static func pctText(_ r: RowData, hasError: Bool) -> String {
+        if let p = r.pct { return "\(Int(p.rounded()))%" }
+        return hasError ? "!" : "…"
+    }
+    private static func resetText(_ r: RowData) -> String {
+        guard let reset = r.reset, !reset.isEmpty, r.pct != nil else { return "" }
+        let c = RelativeTime.compactReset(reset)
+        return c.isEmpty ? "" : "⟳\(c)"
+    }
+
+    @discardableResult
+    private static func drawText(_ s: String, font: NSFont, color: NSColor,
+                                 x: CGFloat, centerY: CGFloat) -> CGFloat {
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+        let sz = (s as NSString).size(withAttributes: attrs)
+        (s as NSString).draw(at: NSPoint(x: x, y: centerY - sz.height / 2), withAttributes: attrs)
+        return sz.width
+    }
+
+    private static func width(_ s: String, _ font: NSFont) -> CGFloat {
+        (s as NSString).size(withAttributes: [.font: font]).width
     }
 }
