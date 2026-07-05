@@ -1,9 +1,10 @@
 import AppKit
 import SwiftUI
 
-/// Owns the menu-bar status item and the popover. Polls the cache file every
-/// 10s (the plasmoid's cadence) and redraws the pill; the launchd agent does
-/// the actual ccusage fetch on its own 5-minute floor.
+/// Owns the menu-bar status item and the popover. Polls the cache files every
+/// 10s (the plasmoid's cadence) and redraws the two-row pill; the launchd agent
+/// does the actual ccusage fetch on its own 5-minute floor, and the popover's
+/// "Actualizar ahora" button can force one on demand.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let popover = NSPopover()
@@ -27,7 +28,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         popover.behavior = .transient
-        popover.contentViewController = NSHostingController(rootView: PopoverView(model: model))
+        popover.contentSize = NSSize(width: 520, height: 340)
+        popover.contentViewController = NSHostingController(
+            rootView: PopoverView(model: model, onRefresh: { [weak self] in self?.forceFetch() })
+        )
 
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
@@ -38,15 +42,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func refresh() {
         model.reload()
         if let button = statusItem.button {
-            button.image = PillImage.render(text: model.compactText, color: model.statusColor)
+            let five = PillImage.RowData(label: "5h",
+                                         pct: model.fivePct,
+                                         reset: model.snapshot?.five_hour?.resets_at)
+            let week = PillImage.RowData(label: "7d",
+                                         pct: model.weekPct,
+                                         reset: model.snapshot?.weekly?.resets_at)
+            button.image = PillImage.render(five: five, week: week,
+                                            hasError: model.statusKey == "error",
+                                            appearance: button.effectiveAppearance)
             button.toolTip = model.tooltip
         }
-        if let age = model.ageSeconds, age > staleThreshold { fetchIfNeeded() }
+        if let age = model.ageSeconds, age > staleThreshold { runFetch() }
     }
+
+    /// Force a real fetch regardless of cache age (from the popover button).
+    private func forceFetch() { runFetch() }
 
     /// Run the fetch script off the main thread; reload the UI when it finishes.
     /// Guarded so only one fetch is ever in flight.
-    private func fetchIfNeeded() {
+    private func runFetch() {
         guard !fetching, FileManager.default.isExecutableFile(atPath: fetchScript) else { return }
         fetching = true
         let proc = Process()
@@ -71,7 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             popover.performClose(nil)
         } else {
             model.reload()
-            if let age = model.ageSeconds, age > staleThreshold { fetchIfNeeded() }
+            if let age = model.ageSeconds, age > staleThreshold { runFetch() }
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
         }
