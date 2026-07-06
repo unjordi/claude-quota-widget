@@ -21,7 +21,7 @@ public sealed class PopupForm : Form
     // logical → device scale (PerMonitorV2); all metrics below are in logical px.
     private float S => DeviceDpi / 96f;
 
-    private const int WLogical = 520, HLogical = 340, RailWLogical = 132;
+    private const int WLogical = 520, HLogical = 420, RailWLogical = 132;
 
     // theme
     private Color _bg, _fg;
@@ -30,7 +30,7 @@ public sealed class PopupForm : Form
     private readonly Panel _rail = new();
     private readonly Panel _content = new();
 
-    private static readonly string[] TabNames = { "Límites", "Resumen", "Modelos" };
+    private static readonly string[] TabNames = { "Límites", "Resumen", "Modelos", "Proyectos" };
 
     public PopupForm(QuotaService svc, Action onRefresh)
     {
@@ -114,7 +114,7 @@ public sealed class PopupForm : Form
         using var font = Px(12.5f, FontStyle.Regular);
         using var fontB = Px(12.5f, FontStyle.Bold);
 
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < TabNames.Length; i++)
         {
             var r = new Rectangle(pad, pad + i * (btnH + Sc(4)), _rail.Width - pad * 2, btnH);
             bool active = _tab == i;
@@ -153,7 +153,7 @@ public sealed class PopupForm : Form
     private void RailMouseDown(object? sender, MouseEventArgs e)
     {
         int pad = Sc(6), btnH = Sc(34);
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < TabNames.Length; i++)
         {
             var r = new Rectangle(pad, pad + i * (btnH + Sc(4)), _rail.Width - pad * 2, btnH);
             if (r.Contains(e.Location)) { SelectTab(i); return; }
@@ -167,7 +167,7 @@ public sealed class PopupForm : Form
     {
         int pad = Sc(6), btnH = Sc(34), was = _hoverRail;
         _hoverRail = -1;
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < TabNames.Length; i++)
         {
             var r = new Rectangle(pad, pad + i * (btnH + Sc(4)), _rail.Width - pad * 2, btnH);
             if (r.Contains(e.Location)) { _hoverRail = i; break; }
@@ -187,7 +187,8 @@ public sealed class PopupForm : Form
         {
             case 0: PaintLimites(g, pad); break;
             case 1: PaintResumen(g, pad); break;
-            default: PaintModelos(g, pad); break;
+            case 2: PaintModelos(g, pad); break;
+            default: PaintProyectos(g, pad); break;
         }
     }
 
@@ -407,6 +408,77 @@ public sealed class PopupForm : Form
                 if (h <= 0) continue;
                 yTop -= h;
                 using var b = new SolidBrush(StatsCompute.ModelColor(_svc.Stats, seg.Model));
+                g.FillRectangle(b, x, yTop, barW, h);
+            }
+        }
+    }
+
+    // ----- Tab 3: Proyectos -----
+
+    private void PaintProyectos(Graphics g, int pad)
+    {
+        int y = pad;
+        using (var h = Px(15f, FontStyle.Bold))
+        using (var b = new SolidBrush(_fg))
+            g.DrawString("Uso por proyecto", h, b, pad, y);
+        y += Sc(32);
+
+        int chartH = Sc(110);
+        StackedProjectChart(g, new Rectangle(pad, y, _content.Width - pad * 2, chartH));
+        y += chartH + Sc(12);
+
+        var projects = _svc.Stats?.Projects ?? new List<StatsProject>();
+        using var nameFont = Px(11.5f, FontStyle.Bold);
+        using var subFont = Px(10.5f, FontStyle.Regular);
+        int rowH = Sc(22);
+        foreach (var p in projects)
+        {
+            if (y + rowH > _content.Height - pad) break;
+            var col = StatsCompute.ProjectColor(_svc.Stats, p.Project);
+            using (var sw = new SolidBrush(col))
+                FillRounded(g, sw, new Rectangle(pad, y + Sc(4), Sc(10), Sc(10)), Sc(2));
+            using (var nb = new SolidBrush(_fg))
+            {
+                var nf = new StringFormat { Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap };
+                g.DrawString(p.Project ?? "—", nameFont, nb,
+                    new RectangleF(pad + Sc(16), y, _content.Width - pad * 2 - Sc(180), rowH), nf);
+            }
+
+            string sub = $"{Fmt.Tok(p.InTok)} in · {Fmt.Tok(p.OutTok)} out";
+            string pctT = p.Pct.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "%";
+            using (var pb = new SolidBrush(col))
+            {
+                var pf = new StringFormat { Alignment = StringAlignment.Far };
+                g.DrawString(pctT, nameFont, pb,
+                    new RectangleF(pad, y, _content.Width - pad * 2, rowH), pf);
+            }
+            using (var sb = new SolidBrush(Blend(_bg, _fg, 0.7)))
+            {
+                var sf = new StringFormat { Alignment = StringAlignment.Far };
+                g.DrawString(sub, subFont, sb,
+                    new RectangleF(pad, y, _content.Width - pad * 2 - Sc(52), rowH), sf);
+            }
+            y += rowH;
+        }
+    }
+
+    private void StackedProjectChart(Graphics g, Rectangle area)
+    {
+        var days = _svc.Stats?.Days ?? new List<StatsDay>();
+        if (days.Count == 0) return;
+        double maxTok = StatsCompute.MaxDayTokens(_svc.Stats);
+        int gap = Sc(2);
+        float barW = Math.Max(1f, (area.Width - gap * (days.Count - 1f)) / days.Count);
+        for (int i = 0; i < days.Count; i++)
+        {
+            float x = area.X + i * (barW + gap);
+            float yTop = area.Bottom;
+            foreach (var seg in days[i].Projects ?? new List<DayProject>())
+            {
+                float h = (float)(area.Height * (seg.Tokens / maxTok));
+                if (h <= 0) continue;
+                yTop -= h;
+                using var b = new SolidBrush(StatsCompute.ProjectColor(_svc.Stats, seg.Project));
                 g.FillRectangle(b, x, yTop, barW, h);
             }
         }

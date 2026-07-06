@@ -20,12 +20,13 @@ public sealed class Bucket
 /// <summary>The full state.json snapshot.</summary>
 public sealed class Snapshot
 {
-    [JsonPropertyName("updated_at")] public string? UpdatedAt { get; set; }
-    [JsonPropertyName("status")]     public string? Status { get; set; }
-    [JsonPropertyName("basis")]      public string? Basis { get; set; }   // "oauth" | "cost"
-    [JsonPropertyName("error")]      public string? Error { get; set; }
-    [JsonPropertyName("five_hour")]  public Bucket? FiveHour { get; set; }
-    [JsonPropertyName("weekly")]     public Bucket? Weekly { get; set; }
+    [JsonPropertyName("updated_at")]    public string? UpdatedAt { get; set; }
+    [JsonPropertyName("status")]        public string? Status { get; set; }
+    [JsonPropertyName("basis")]         public string? Basis { get; set; }   // "oauth" | "cost"
+    [JsonPropertyName("account_email")] public string? AccountEmail { get; set; }
+    [JsonPropertyName("error")]         public string? Error { get; set; }
+    [JsonPropertyName("five_hour")]     public Bucket? FiveHour { get; set; }
+    [JsonPropertyName("weekly")]        public Bucket? Weekly { get; set; }
 }
 
 // ---------------------------------------------------------------------------
@@ -37,6 +38,7 @@ public sealed class Stats
     [JsonPropertyName("updated_at")] public string? UpdatedAt { get; set; }
     [JsonPropertyName("days")]       public List<StatsDay>? Days { get; set; }
     [JsonPropertyName("models")]     public List<StatsModel>? Models { get; set; }
+    [JsonPropertyName("projects")]   public List<StatsProject>? Projects { get; set; }
     [JsonPropertyName("summary")]    public StatsSummary? Summary { get; set; }
 }
 
@@ -48,12 +50,31 @@ public sealed class StatsDay
     [JsonPropertyName("tokens")]  public double Tokens { get; set; }
     [JsonPropertyName("cost")]    public double? Cost { get; set; }
     [JsonPropertyName("models")]  public List<DayModel>? Models { get; set; }
+    [JsonPropertyName("projects")] public List<DayProject>? Projects { get; set; }
 }
 
 public sealed class DayModel
 {
     [JsonPropertyName("model")]  public string? Model { get; set; }
     [JsonPropertyName("tokens")] public double Tokens { get; set; }
+}
+
+public sealed class DayProject
+{
+    [JsonPropertyName("project")] public string? Project { get; set; }
+    [JsonPropertyName("tokens")]  public double Tokens { get; set; }
+}
+
+/// <summary>Claude-only usage by project folder (~/.claude/projects/&lt;slug&gt;).
+/// On Windows this is derived from the same transcript parse as the Modelos tab,
+/// so the totals agree (no separate agent CLIs mixed in, unlike ccusage).</summary>
+public sealed class StatsProject
+{
+    [JsonPropertyName("project")] public string? Project { get; set; }
+    [JsonPropertyName("in_tok")]  public double InTok { get; set; }
+    [JsonPropertyName("out_tok")] public double OutTok { get; set; }
+    [JsonPropertyName("tot")]     public double Tot { get; set; }
+    [JsonPropertyName("pct")]     public double Pct { get; set; }
 }
 
 public sealed class StatsModel

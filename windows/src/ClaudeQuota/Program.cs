@@ -46,8 +46,8 @@ internal static class Program
         popup.Location = new Point(0, 0);
         popup.Show();
         Application.DoEvents();
-        string[] names = { "limites", "resumen", "modelos" };
-        for (int t = 0; t < 3; t++)
+        string[] names = { "limites", "resumen", "modelos", "proyectos" };
+        for (int t = 0; t < names.Length; t++)
         {
             popup.SelectTab(t);
             popup.Refresh();

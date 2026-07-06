@@ -86,8 +86,9 @@ public sealed class QuotaService
             if (LoadError is string err && Snapshot == null) return $"error: {err}";
             if (Snapshot == null) return "cargando…";
             if (Snapshot.Error is string e) return $"error: {e}";
-            string basis = Snapshot.Basis == "oauth" ? "datos reales" : "estimado local";
-            return $"{basis} · ⟳ 5 min · act. {Rel.Relative(Snapshot.UpdatedAt)}";
+            string account = Snapshot.AccountEmail
+                ?? (Snapshot.Basis == "oauth" ? "datos reales" : "estimado local");
+            return $"{account} · ⟳ 5 min · últ. act. hace: {Rel.CompactReset(Snapshot.UpdatedAt)}";
         }
     }
 
@@ -121,21 +122,26 @@ public sealed class QuotaService
         Directory.CreateDirectory(CacheDir);
 
         OAuthUsage? usage = await TryOAuthAsync();
-        Stats stats = BuildLocalStats();      // transcripts → tokens/models/sessions
+        string? email = ReadAccountEmail();
+        Stats stats = BuildLocalStats();      // transcripts → tokens/models/projects
         await EnrichCostAsync(stats);         // ccusage (best-effort) → $
 
         var now = DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
 
-        Snapshot snap;
+        // stats.json is local-only, so always refresh it regardless of OAuth.
+        WriteAtomic(StatsFile, JsonSerializer.Serialize(stats, JsonOpts));
+        Stats = stats;
+
         if (usage != null)
         {
             double five = usage.FiveHour?.Utilization ?? 0;
             double week = usage.SevenDay?.Utilization ?? 0;
-            snap = new Snapshot
+            var snap = new Snapshot
             {
                 UpdatedAt = now,
                 Status = StatusFor(Math.Max(five, week)),
                 Basis = "oauth",
+                AccountEmail = email,
                 Error = null,
                 FiveHour = new Bucket
                 {
@@ -150,26 +156,33 @@ public sealed class QuotaService
                     ResetsAt = Isoz(usage.SevenDay?.ResetsAt) ?? NextMondayUtc(),
                 },
             };
+            WriteAtomic(StateFile, JsonSerializer.Serialize(snap, JsonOpts));
+            Snapshot = snap;
+            LoadError = null;
+        }
+        else if (File.Exists(StateFile))
+        {
+            // OAuth unreachable this run — keep the last good state.json (its
+            // real %/resets, now aging) rather than blanking the UI. Without
+            // ccusage there's no cost-basis fallback to recompute from.
+            Reload();
         }
         else
         {
-            snap = new Snapshot
+            var snap = new Snapshot
             {
                 UpdatedAt = now,
                 Status = "error",
                 Basis = "cost",
+                AccountEmail = email,
                 Error = "sin credenciales OAuth o endpoint /usage inalcanzable",
                 FiveHour = null,
                 Weekly = null,
             };
+            WriteAtomic(StateFile, JsonSerializer.Serialize(snap, JsonOpts));
+            Snapshot = snap;
+            LoadError = null;
         }
-
-        WriteAtomic(StateFile, JsonSerializer.Serialize(snap, JsonOpts));
-        WriteAtomic(StatsFile, JsonSerializer.Serialize(stats, JsonOpts));
-
-        Snapshot = snap;
-        Stats = stats;
-        LoadError = null;
     }
 
     private static string StatusFor(double maxPct) =>
@@ -233,78 +246,159 @@ public sealed class QuotaService
         return null;
     }
 
+    /// Account email (display only) from Claude Code's own config — not in the
+    /// OAuth token, so read separately and best-effort. Shown in the footer.
+    private static string? ReadAccountEmail()
+    {
+        try
+        {
+            string path = Path.Combine(Home, ".claude.json");
+            if (!File.Exists(path)) return null;
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            if (doc.RootElement.TryGetProperty("oauthAccount", out var acc) &&
+                acc.ValueKind == JsonValueKind.Object &&
+                acc.TryGetProperty("emailAddress", out var em) &&
+                em.ValueKind == JsonValueKind.String)
+            {
+                var s = em.GetString();
+                return string.IsNullOrEmpty(s) ? null : s;
+            }
+        }
+        catch { }
+        return null;
+    }
+
     // ---- 2. transcripts → local stats -------------------------------------
     // Pure C#: mirrors both ccusage's per-model token tallies and the fetch
     // script's grep/awk pass (sessions, messages, peak hour). No Node needed.
 
     private static Stats BuildLocalStats()
     {
-        var perDayModel = new Dictionary<(string day, string model), (double inTok, double outTok)>();
+        var nameMap = LoadProjectNameMap();
+
+        // Deduped tallies keyed by (day, model, project). Each project is a
+        // subdirectory of ~/.claude/projects (slug = cwd with non-alnum → '-').
+        var agg = new Dictionary<(string day, string model, string project), (double inTok, double outTok)>();
+        var seenIds = new HashSet<string>();
         int sessions = 0;
         long messages = 0;
         var hourHist = new int[24];
 
         if (Directory.Exists(ProjectsDir))
         {
-            foreach (var file in Directory.EnumerateFiles(ProjectsDir, "*.jsonl",
-                         SearchOption.AllDirectories))
+            foreach (var projDir in Directory.EnumerateDirectories(ProjectsDir))
             {
-                sessions++;
-                foreach (var line in ReadLinesSafe(file))
+                string slug = Path.GetFileName(projDir);
+                string projName = nameMap.TryGetValue(slug, out var nm) ? nm : PrettySlug(slug);
+
+                foreach (var file in Directory.EnumerateFiles(projDir, "*.jsonl",
+                             SearchOption.AllDirectories))
                 {
-                    if (line.Length < 8) continue;
-                    JsonDocument doc;
-                    try { doc = JsonDocument.Parse(line); }
-                    catch { continue; }
-                    using (doc)
+                    sessions++;
+                    foreach (var line in ReadLinesSafe(file))
                     {
-                        var root = doc.RootElement;
-                        if (root.ValueKind != JsonValueKind.Object) continue;
-                        if (!root.TryGetProperty("type", out var typeEl) ||
-                            typeEl.ValueKind != JsonValueKind.String) continue;
-                        string type = typeEl.GetString()!;
-                        if (type is not ("assistant" or "user")) continue;
-                        messages++;
-
-                        if (type != "assistant") continue;
-                        if (!root.TryGetProperty("message", out var msg) ||
-                            msg.ValueKind != JsonValueKind.Object) continue;
-
-                        // day (local) + peak hour histogram from the timestamp
-                        string? day = null;
-                        if (root.TryGetProperty("timestamp", out var tsEl) &&
-                            tsEl.ValueKind == JsonValueKind.String &&
-                            Rel.Parse(tsEl.GetString()) is DateTimeOffset ts)
+                        if (line.Length < 8) continue;
+                        JsonDocument doc;
+                        try { doc = JsonDocument.Parse(line); }
+                        catch { continue; }
+                        using (doc)
                         {
-                            var local = ts.ToLocalTime();
-                            day = local.ToString("yyyy-MM-dd");
-                            hourHist[local.Hour]++;
+                            var root = doc.RootElement;
+                            if (root.ValueKind != JsonValueKind.Object) continue;
+
+                            // Peak-hour histogram over any line carrying a
+                            // timestamp (matches the fetch script's grep).
+                            if (root.TryGetProperty("timestamp", out var tsAny) &&
+                                tsAny.ValueKind == JsonValueKind.String &&
+                                Rel.Parse(tsAny.GetString()) is DateTimeOffset tsa)
+                                hourHist[tsa.ToLocalTime().Hour]++;
+
+                            if (!root.TryGetProperty("type", out var typeEl) ||
+                                typeEl.ValueKind != JsonValueKind.String) continue;
+                            string type = typeEl.GetString()!;
+                            if (type is not ("assistant" or "user")) continue;
+                            messages++;   // raw line count (not deduped, matches fetch)
+
+                            if (type != "assistant") continue;
+                            if (!root.TryGetProperty("message", out var msg) ||
+                                msg.ValueKind != JsonValueKind.Object) continue;
+
+                            // Dedupe by message.id: Claude Code writes one jsonl
+                            // line per content block, each repeating the same id
+                            // and the same cumulative usage — summing every line
+                            // multiplies the token count (~2-3×).
+                            if (!msg.TryGetProperty("id", out var idEl) ||
+                                idEl.ValueKind != JsonValueKind.String) continue;
+                            if (!seenIds.Add(idEl.GetString()!)) continue;
+
+                            if (!root.TryGetProperty("timestamp", out var tsEl) ||
+                                tsEl.ValueKind != JsonValueKind.String ||
+                                Rel.Parse(tsEl.GetString()) is not DateTimeOffset ts) continue;
+                            string day = ts.ToLocalTime().ToString("yyyy-MM-dd");
+
+                            string model = msg.TryGetProperty("model", out var mEl) &&
+                                           mEl.ValueKind == JsonValueKind.String
+                                ? mEl.GetString()! : "unknown";
+
+                            double inTok = 0, outTok = 0;
+                            if (msg.TryGetProperty("usage", out var u) &&
+                                u.ValueKind == JsonValueKind.Object)
+                            {
+                                inTok = NumProp(u, "input_tokens");
+                                outTok = NumProp(u, "output_tokens");
+                            }
+                            if (inTok == 0 && outTok == 0) continue;
+
+                            var key = (day, model, projName);
+                            agg.TryGetValue(key, out var cur);
+                            agg[key] = (cur.inTok + inTok, cur.outTok + outTok);
                         }
-                        if (day == null) continue;
-
-                        string model = msg.TryGetProperty("model", out var mEl) &&
-                                       mEl.ValueKind == JsonValueKind.String
-                            ? mEl.GetString()! : "unknown";
-
-                        double inTok = 0, outTok = 0;
-                        if (msg.TryGetProperty("usage", out var u) &&
-                            u.ValueKind == JsonValueKind.Object)
-                        {
-                            inTok = NumProp(u, "input_tokens");
-                            outTok = NumProp(u, "output_tokens");
-                        }
-                        if (inTok == 0 && outTok == 0) continue;
-
-                        var key = (day, model);
-                        perDayModel.TryGetValue(key, out var cur);
-                        perDayModel[key] = (cur.inTok + inTok, cur.outTok + outTok);
                     }
                 }
             }
         }
 
-        return Aggregate(perDayModel, sessions, messages, hourHist);
+        return Aggregate(agg, sessions, messages, hourHist);
     }
+
+    // Slug used by Claude Code for a project folder: the cwd with every
+    // non-alphanumeric char replaced by '-'  (e.g. C:\Users\x → C--Users-x).
+    private static readonly System.Text.RegularExpressions.Regex NonAlnum =
+        new("[^a-zA-Z0-9]", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// Map slug → human name from ~/.claude.json `.projects` (keyed by real cwd).
+    private static Dictionary<string, string> LoadProjectNameMap()
+    {
+        var map = new Dictionary<string, string>();
+        try
+        {
+            string path = Path.Combine(Home, ".claude.json");
+            if (!File.Exists(path)) return map;
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            if (doc.RootElement.TryGetProperty("projects", out var projs) &&
+                projs.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var p in projs.EnumerateObject())
+                {
+                    string slug = NonAlnum.Replace(p.Name, "-");
+                    map[slug] = BaseName(p.Name);
+                }
+            }
+        }
+        catch { }
+        return map;
+    }
+
+    private static string BaseName(string path)
+    {
+        var parts = path.Split('/', '\\');
+        for (int i = parts.Length - 1; i >= 0; i--)
+            if (parts[i].Length > 0) return parts[i];
+        return path;
+    }
+
+    /// Fallback when a slug isn't in the name map: strip leading '-', '-' → space.
+    private static string PrettySlug(string slug) => slug.TrimStart('-').Replace('-', ' ');
 
     private static double NumProp(JsonElement obj, string name) =>
         obj.TryGetProperty(name, out var el) && el.ValueKind == JsonValueKind.Number
@@ -328,11 +422,13 @@ public sealed class QuotaService
     }
 
     private static Stats Aggregate(
-        Dictionary<(string day, string model), (double inTok, double outTok)> perDayModel,
+        Dictionary<(string day, string model, string project), (double inTok, double outTok)> agg,
         int sessions, long messages, int[] hourHist)
     {
-        // days[] — grouped by date, with per-model token segments.
-        var days = perDayModel
+        static double Tot((double inTok, double outTok) v) => v.inTok + v.outTok;
+
+        // days[] — grouped by date, with per-model and per-project token segments.
+        var days = agg
             .GroupBy(kv => kv.Key.day)
             .OrderBy(g => g.Key, StringComparer.Ordinal)
             .Select(g =>
@@ -346,37 +442,43 @@ public sealed class QuotaService
                     OutTok = outTok,
                     Tokens = inTok + outTok,
                     Cost = null,
-                    Models = g.OrderByDescending(x => x.Value.inTok + x.Value.outTok)
-                        .Select(x => new DayModel
-                        {
-                            Model = x.Key.model,
-                            Tokens = x.Value.inTok + x.Value.outTok,
-                        }).ToList(),
+                    Models = g.GroupBy(x => x.Key.model)
+                        .Select(mg => new DayModel { Model = mg.Key, Tokens = mg.Sum(x => Tot(x.Value)) })
+                        .OrderByDescending(m => m.Tokens).ToList(),
+                    Projects = g.GroupBy(x => x.Key.project)
+                        .Select(pg => new DayProject { Project = pg.Key, Tokens = pg.Sum(x => Tot(x.Value)) })
+                        .OrderByDescending(p => p.Tokens).ToList(),
                 };
             })
             .ToList();
 
         // models[] — aggregated across all days, sorted by total tokens desc.
-        var models = perDayModel
+        var models = agg
             .GroupBy(kv => kv.Key.model)
             .Select(g =>
             {
                 double inTok = g.Sum(x => x.Value.inTok);
                 double outTok = g.Sum(x => x.Value.outTok);
-                return new StatsModel
-                {
-                    Model = g.Key,
-                    InTok = inTok,
-                    OutTok = outTok,
-                    Cost = null,
-                    Tot = inTok + outTok,
-                };
+                return new StatsModel { Model = g.Key, InTok = inTok, OutTok = outTok, Cost = null, Tot = inTok + outTok };
             })
             .OrderByDescending(m => m.Tot)
             .ToList();
-
         double grand = models.Sum(m => m.Tot);
         foreach (var m in models) m.Pct = grand > 0 ? m.Tot * 100 / grand : 0;
+
+        // projects[] — same, grouped by project folder (Claude Code only).
+        var projects = agg
+            .GroupBy(kv => kv.Key.project)
+            .Select(g =>
+            {
+                double inTok = g.Sum(x => x.Value.inTok);
+                double outTok = g.Sum(x => x.Value.outTok);
+                return new StatsProject { Project = g.Key, InTok = inTok, OutTok = outTok, Tot = inTok + outTok };
+            })
+            .OrderByDescending(p => p.Tot)
+            .ToList();
+        double pgrand = projects.Sum(p => p.Tot);
+        foreach (var p in projects) p.Pct = pgrand > 0 ? p.Tot * 100 / pgrand : 0;
 
         int peak = -1, peakCount = -1;
         for (int h = 0; h < 24; h++)
@@ -388,6 +490,7 @@ public sealed class QuotaService
             UpdatedAt = DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
             Days = days,
             Models = models,
+            Projects = projects,
             Summary = new StatsSummary
             {
                 TotalTokens = grand,

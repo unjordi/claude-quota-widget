@@ -20,6 +20,16 @@ public static class StatsCompute
         return Fmt.Hex(Fmt.ModelPalette[0]);
     }
 
+    public static Color ProjectColor(Stats? stats, string? name)
+    {
+        var projects = stats?.Projects;
+        if (projects == null || name == null) return Fmt.Hex(Fmt.ModelPalette[0]);
+        for (int i = 0; i < projects.Count; i++)
+            if (projects[i].Project == name)
+                return Fmt.Hex(Fmt.ModelPalette[i % Fmt.ModelPalette.Length]);
+        return Fmt.Hex(Fmt.ModelPalette[0]);
+    }
+
     public static double MaxDayTokens(Stats? stats)
     {
         var days = stats?.Days;
