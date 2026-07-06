@@ -4,7 +4,7 @@ A KDE Plasma 6 widget for Linux that puts your Claude Code subscription usage in
 
 ![Panel pill + popup](screenshots/panel-and-popup.png)
 
-> **Two platforms:** this repo ships a **KDE Plasma 6 widget** (Linux — the rest of this README) and a native **macOS menu-bar app** (in [`macos/`](macos/)). Both share the same ccusage-based data pipeline and calibration logic.
+> **Three platforms:** this repo ships a **KDE Plasma 6 widget** (Linux — the rest of this README), a native **macOS menu-bar app** (in [`macos/`](macos/)), and a native **Windows tray app** (in [`windows/`](windows/)). All three read the same Anthropic OAuth `/usage` data and render the same three-tab breakdown (Límites / Resumen / Modelos).
 
 ## macOS (menu-bar app)
 
@@ -23,6 +23,22 @@ This builds `Claude Quota.app` into `~/Applications`, installs the fetch script 
 **Prerequisites:** macOS 13+, Xcode command-line tools (`swift` — `xcode-select --install`), `jq` (`brew install jq`), and Node.js (for `ccusage`).
 
 Full details — calibration, the cost-vs-tokens explanation, development, and troubleshooting — are in **[macos/README.md](macos/README.md)**.
+
+## Windows (tray app)
+
+A native **WinForms tray app** (.NET) — no bash/jq/curl needed. A two-row mini-bar (5 h / 7 d) in the notification area; left-click for the 3-tab popup (Límites / Resumen / Modelos), right-click for the menu.
+
+```powershell
+git clone https://github.com/unjordi/claude-quota-widget
+cd claude-quota-widget\windows
+pwsh -File install.ps1
+```
+
+This publishes a **self-contained single-file `.exe`** (no .NET runtime required on the target), installs it to `%LOCALAPPDATA%\Programs\ClaudeQuota`, registers it to start with Windows, and launches it.
+
+**Prerequisites:** Windows 10/11 and the [.NET 10 SDK](https://dotnet.microsoft.com/download) *to build*. The Límites tab and the local stats (tokens, sessions, peak hour, heatmap) work with **zero external tools** — the app reads the OAuth token straight from `%USERPROFILE%\.claude\.credentials.json` and parses your local transcripts in C#. The API-equivalent **$ cost** is the only figure that needs **Node + [ccusage](https://github.com/ryoppippi/ccusage)** on `PATH`; without it, cost shows `—`.
+
+Full details in **[windows/README.md](windows/README.md)**.
 
 ---
 
