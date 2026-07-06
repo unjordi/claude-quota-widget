@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Claude Quota — Windows tray port.
+    Self-contained WinForms app: no bash/jq/curl needed. It reads the OAuth
+    token from %USERPROFILE%\.claude\.credentials.json, calls the same
+    /usage endpoint the other ports use, parses the local transcripts for the
+    stats tabs, and (optionally) shells out to ccusage for the API-equiv $.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>ClaudeQuota</AssemblyName>
+    <RootNamespace>ClaudeQuota</RootNamespace>
+    <Version>1.0.0</Version>
+    <Product>Claude Quota</Product>
+    <Company>io.github.unjordi</Company>
+    <!-- Single-file / RID are passed by install.ps1 at publish time so that
+         plain `dotnet build` / `dotnet run` stays simple during development. -->
+  </PropertyGroup>
+
+</Project>
