@@ -4,7 +4,7 @@ A KDE Plasma 6 widget for Linux that puts your Claude Code subscription usage in
 
 ![Panel pill + popup](screenshots/panel-and-popup.png)
 
-> **Three platforms:** this repo ships a **KDE Plasma 6 widget** (Linux — the rest of this README), a native **macOS menu-bar app** (in [`macos/`](macos/)), and a native **Windows tray app** (in [`windows/`](windows/)). All three read the same Anthropic OAuth `/usage` data and render the same three-tab breakdown (Límites / Resumen / Modelos).
+> **Three platforms:** this repo ships a **KDE Plasma 6 widget** (Linux — the rest of this README), a native **macOS menu-bar app** (in [`macos/`](macos/)), and a native **Windows tray app** (in [`windows/`](windows/)). All three read the same Anthropic OAuth `/usage` data and render the same four-tab breakdown (Límites / Resumen / Modelos / Proyectos).
 
 ## macOS (menu-bar app)
 
@@ -26,7 +26,7 @@ Full details — calibration, the cost-vs-tokens explanation, development, and t
 
 ## Windows (tray app)
 
-A native **WinForms tray app** (.NET) — no bash/jq/curl needed. A two-row mini-bar (5 h / 7 d) in the notification area; left-click for the 3-tab popup (Límites / Resumen / Modelos), right-click for the menu.
+A native **WinForms tray app** (.NET) — no bash/jq/curl needed. A two-row mini-bar (5 h / 7 d) in the notification area; left-click for the 4-tab popup (Límites / Resumen / Modelos / Proyectos), right-click for the menu.
 
 ```powershell
 git clone https://github.com/unjordi/claude-quota-widget

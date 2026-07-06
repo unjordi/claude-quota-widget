@@ -51,7 +51,7 @@ Start-Process $exe
 
 Write-Host ""
 Write-Host "Listo. El icono de 2 barras (5h / 7d) aparece en la bandeja." -ForegroundColor Green
-Write-Host "Clic izquierdo = popup de 3 pestañas · clic derecho = menú (Actualizar / Salir)." -ForegroundColor Green
+Write-Host "Clic izquierdo = popup de 4 pestañas · clic derecho = menú (Actualizar / Salir)." -ForegroundColor Green
 Write-Host ""
 Write-Host "Nota: los tokens/sesiones/hora pico salen de tus transcripts locales." -ForegroundColor DarkGray
 Write-Host "El costo `$ (API-equiv) requiere Node + ccusage en el PATH; si no, sale '—'." -ForegroundColor DarkGray

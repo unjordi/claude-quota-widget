@@ -15,6 +15,8 @@ and renders the same three-tab breakdown.
     daily-activity heatmap.
   - **Modelos** — stacked per-day token chart + a per-model table with in/out
     tokens and %.
+  - **Proyectos** — same, grouped by project folder (`~/.claude/projects/<slug>`);
+    the slug is mapped back to a readable name via `~/.claude.json`.
 - **Right-click → menu:** Actualizar ahora · Iniciar con Windows (toggle) · Salir.
 
 ## Why a rewrite (not a port of the fetch script)
@@ -118,6 +120,11 @@ tray. Source layout:
 - **Light/dark theme** follows `AppsUseLightTheme`; the orange accent is fixed.
 - **Cost needs Node.** See the table above — this is the one thing that silently
   degrades to `—` on a machine without Node/ccusage.
+- **Token de-duplication.** Claude Code writes one JSONL line per content block of
+  an assistant turn, each repeating the same `message.id` and the same cumulative
+  `usage`. The parser dedupes by `message.id` (Linux/macOS get this for free from
+  ccusage); without it the token counts inflate ~2–3×. "Mensajes" is a deliberate
+  exception — it counts raw user/assistant lines, matching the other platforms.
 
 ## License
 
