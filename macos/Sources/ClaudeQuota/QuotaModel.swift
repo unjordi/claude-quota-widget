@@ -328,6 +328,15 @@ enum Fmt {
         return f
     }()
 
+    /// Hora local corta "HH:mm" (para el sello "leído …" del Cerebro).
+    static let clockFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+    static func clock(_ d: Date) -> String { clockFormatter.string(from: d) }
+
     /// fmtTok: 1.2M / 3.4k / entero.
     static func tok(_ n: Double?) -> String {
         guard let n else { return "—" }
