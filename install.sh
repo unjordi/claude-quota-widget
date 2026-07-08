@@ -123,6 +123,14 @@ else
 fi
 
 if [[ "$SKIP_PLASMOID" -eq 0 ]]; then
+  # Empaqueta brain/ DENTRO del plasmoid (contents/brain) para que la curita self-healing de la
+  # pestaña Cerebro tenga una ruta GARANTIZADA al install-brain.sh (análogo al bundle .app de macOS).
+  # Se copia justo antes de empaquetar y se limpia después, para no ensuciar el árbol fuente.
+  BRAIN_IN_PKG="$PLASMOID_SRC/contents/brain"
+  rm -rf "$BRAIN_IN_PKG"
+  if [[ -d "$ROOT/brain" ]]; then
+    cp -R "$ROOT/brain" "$BRAIN_IN_PKG"
+  fi
   if [[ "$REINSTALL" -eq 1 ]]; then
     echo "==> Removing existing plasmoid (if any)"
     kpackagetool6 -t Plasma/Applet -r "$PLASMOID_ID" 2>/dev/null || true
@@ -133,6 +141,7 @@ if [[ "$SKIP_PLASMOID" -eq 0 ]]; then
   else
     kpackagetool6 -t Plasma/Applet -i "$PLASMOID_SRC"
   fi
+  rm -rf "$BRAIN_IN_PKG"   # limpia el árbol fuente tras empaquetar
 fi
 
 cat <<EOF

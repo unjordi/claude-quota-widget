@@ -432,7 +432,10 @@ struct PopoverView: View {
                     legendDot(.absent, "ausente")
                     legendDot(.repoScoped, "por-repo")
                 }
-                healButton(missing: total - active)
+                // El curita SOLO aparece si hay algo que curar; sano (10/10) → sin botón ni mensaje.
+                if total - active > 0 {
+                    healButton(missing: total - active)
+                }
             }
             .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -462,9 +465,11 @@ struct PopoverView: View {
                 .padding(.horizontal, 9).padding(.vertical, 4)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
-                        .fill((missing > 0 ? heal : accent).opacity(0.16))
+                        .fill(missing > 0 ? heal.opacity(0.16) : label.opacity(0.08))
                 )
-                .foregroundStyle(missing > 0 ? heal : accent)
+                // Sano (10/10) → gris calmado: "actualizar" es mantenimiento opcional, no alarma.
+                // Faltan piezas → rojo cruz-roja: acción recomendada.
+                .foregroundStyle(missing > 0 ? heal : label.opacity(0.55))
             }
             .buttonStyle(.plain)
             .disabled(healing)

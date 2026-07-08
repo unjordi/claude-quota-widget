@@ -38,6 +38,19 @@ Write-Host "==> Instalando en $dest ..." -ForegroundColor Cyan
 New-Item -ItemType Directory -Force -Path $dest | Out-Null
 Copy-Item (Join-Path $pub "$appName.exe") $exe -Force
 
+# Empaqueta el cerebro (brain/) JUNTO al exe para que el boton-curita 🩹 de la pestaña Cerebro
+# pueda correr install-brain.ps1 sin depender de donde este el clon del repo. El boton lo busca
+# en <AppDir>\brain\install-brain.ps1 (relativo a AppContext.BaseDirectory).
+$brainSrc = Join-Path $here '..\brain'
+if (Test-Path $brainSrc) {
+    $brainDst = Join-Path $dest 'brain'
+    if (Test-Path $brainDst) { Remove-Item $brainDst -Recurse -Force }
+    Copy-Item $brainSrc $brainDst -Recurse -Force
+    Write-Host "==> Cerebro (brain/) empaquetado junto al app (para el boton-curita)." -ForegroundColor Green
+} else {
+    Write-Host "==> Aviso: no encontre brain/ en $brainSrc; el boton-curita no tendra instalador." -ForegroundColor Yellow
+}
+
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 if ($NoAutostart) {
     Remove-ItemProperty -Path $runKey -Name $appName -ErrorAction SilentlyContinue
