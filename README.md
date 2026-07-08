@@ -3,10 +3,10 @@
 # 🧠 claude-brain
 
 [![CI](https://github.com/unjordi/claude-brain/actions/workflows/ci.yml/badge.svg)](https://github.com/unjordi/claude-brain/actions/workflows/ci.yml)
-[![test-brain](https://img.shields.io/badge/test--brain-45%20verdes-3aa76d?style=flat-square)](brain/test-brain.sh)
-[![plataformas](https://img.shields.io/badge/plataformas-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-4a90d9?style=flat-square)](#un-cerebro-tres-caras)
-[![hooks](https://img.shields.io/badge/hooks-8%20globales%20%C2%B7%204%20por--repo-e8884a?style=flat-square)](#la-jerarqu%C3%ADa--de-inviolable-a-sugerencia-leve)
-[![autoupdate](https://img.shields.io/badge/autoupdate-winturbo--style-d1702e?style=flat-square)](#lo-que-lo-hace-vivo--se-refleja-se-cura-se-actualiza)
+[![Claude Code](https://img.shields.io/badge/Claude%20Code-cerebro%20global-d97757?style=flat-square&logo=claude&logoColor=white)](https://claude.ai/code)
+[![macOS](https://img.shields.io/badge/macOS-000000?style=flat-square&logo=apple&logoColor=white)](#un-cerebro-tres-caras)
+[![Linux](https://img.shields.io/badge/Linux-333333?style=flat-square&logo=linux&logoColor=white)](#un-cerebro-tres-caras)
+[![Windows](https://img.shields.io/badge/Windows-0078D6?style=flat-square&logo=windows&logoColor=white)](#un-cerebro-tres-caras)
 [![licencia](https://img.shields.io/badge/licencia-MIT-555?style=flat-square)](LICENSE)
 
 Los guardarraíles, la gobernanza y las normas de Claude Code, empaquetados en un cerebro que
@@ -49,21 +49,23 @@ El cerebro se ordena por *dureza*: arriba lo que te **bloquea** sin negociar; ab
 ├─ 🚧 git-branch-guard         push/merge a develop·main → denegado
 ├─ 🔗 merge-squash-guard       MR a develop sin --squash → denegado
 ├─ 🕵️  secret-scan             commit/push con un secreto → denegado
-├─ ✋ confirmar-merge-develop   merge sin tu OK → denegado                 · por-repo
-├─ ✅ dod-verificar            "listo" sin build+tests+memoria → denegado · por-repo
 ├─ 💸 delegacion-gate          reclutar agente con costo → pide tu OK
-└─ 🛑 limite-gasto             gasto sobre el techo → freno duro
+├─ 🛑 limite-gasto             gasto sobre el techo → freno duro
+└─ 📁 por-repo · viajan en el .claude de cada repo
+   ├─ ✋ confirmar-merge-develop  merge sin tu OK → denegado
+   └─ ✅ dod-verificar            Def. of Done (ver Norma 🎯 DoD) sin build+tests+memoria → denegado
 
 🔔 AUTOMÁTICO — inyectan / recuerdan (no bloquean)
-├─ 🧭 sesion-inicio            reinyecta rama + norma + memoria al abrir   · por-repo
-├─ 💾 precompact-volcar-estado vuelca el avance antes de compactar          · por-repo
 ├─ 📊 recordar-dashboard       recuerda actualizar el dashboard antes del push
 ├─ 🕰️  rama-vieja              avisa si la ramita arrastra base vieja
-└─ 📝 delegacion-registrar     materializa el "pregunta una sola vez"
+├─ 📝 delegacion-registrar     materializa el "pregunta una sola vez"
+└─ 📁 por-repo · viajan en el .claude de cada repo
+   ├─ 🧭 sesion-inicio            reinyecta rama + norma + memoria al abrir
+   └─ 💾 precompact-volcar-estado vuelca el avance antes de compactar
 
 📜 NORMAS — reglas que Claude se autoimpone (CLAUDE.md)
-├─ 🎯 Definición de LISTO      verde técnico ≠ listo; exige tu QA o tu OK
-├─ 🪞 Doc = realidad           cambió algo → su doc se actualiza en la tanda
+├─ 🎯 Definition of Done       verde técnico ≠ Done/Listo/Ya Quedó; exige QA o un OK explícito
+├─ 🪞 Doc <= realidad          cambió algo → su doc se actualiza en la tanda
 ├─ 🌿 Flujo de git             ramita → MR → develop; main es release-only
 └─ 💰 Costo de delegación      gratis / incluido / con costo, según tu cuota
 
