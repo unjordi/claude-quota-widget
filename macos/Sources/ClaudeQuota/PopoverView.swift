@@ -684,7 +684,7 @@ struct PopoverView: View {
         switch name {
         case "cerrar-slice":
             return st.skills.contains("cerrar-slice") ? .installed : .absent
-        case "Definición de LISTO", "Doc = realidad", "Flujo de git", "Costo de delegación":
+        case "Definition of Done", "Doc <= realidad", "Flujo de git", "Costo de delegación":
             return st.hasNorms ? .installed : .absent
         default:
             return .absent
@@ -711,7 +711,7 @@ struct PopoverView: View {
                     BrainItem("✋", "confirmar-merge-develop", "merge a develop sin tu OK → denegado; a main exige OK súper-explícito",
                               "PreToolUse · Bash",
                               "Antes de integrar por MR busca tu OK explícito en el chat reciente; a main exige lenguaje de release ('hasta main', 'libera'). Un 'sigue/avanza' NO cuenta como autorización."),
-                    BrainItem("✅", "dod-verificar", "declarar “listo” sin build+tests+memoria → denegado",
+                    BrainItem("✅", "dod-verificar", "Def. of Done (ver Norma 🎯 DoD) sin build+tests+memoria → denegado",
                               "Stop",
                               "Al cerrar el turno, si dijiste 'listo/en producción' tras tocar código fuente, exige evidencia de build+tests verdes y memoria al día, o bloquea el cierre."),
                     BrainItem("💸", "delegacion-gate", "reclutar agente con costo → pide tu consentimiento (puede negar)",
@@ -745,12 +745,12 @@ struct PopoverView: View {
                 emoji: "📜", title: "NORMAS", color: Color(hex: "#4a90d9"),
                 subtitle: "reglas que Claude se autoimpone (CLAUDE.md)",
                 items: [
-                    BrainItem("🎯", "Definición de LISTO", "verde técnico ≠ listo; exige tu QA o tu OK expreso",
+                    BrainItem("🎯", "Definition of Done", "verde técnico ≠ Done/Listo/Ya Quedó; exige QA o un OK explícito",
                               "CLAUDE.md · norma",
                               "Algo es LISTO solo si tú lo validaste (QA) o autorizaste el cierre. 'Verde técnico' es necesario pero insuficiente; la autorización es acotada y NO transitiva."),
-                    BrainItem("🪞", "Doc = realidad", "cambió algo → actualiza su doc en la misma tanda, sin preguntar",
+                    BrainItem("🪞", "Doc <= realidad", "cambió algo → actualiza su doc en la misma tanda, sin preguntar",
                               "CLAUDE.md · norma",
-                              "Cuando cambia algo (config, ruta, comportamiento) se actualiza su doc en la misma tanda, sin preguntar. Primero revisar el estado real, luego editar: una doc que miente es peor que nada."),
+                              "Cuando cambia algo (config, ruta, comportamiento) se actualiza su doc en la misma tanda, sin preguntar. Primero revisar el estado real, luego editar: una doc que miente es peor que nada. Y con iniciativa: ¿vive en MÁS de un lugar (un README y su UI, varias plataformas, un ejemplo)? rastréalas (grep del valor viejo) y actualízalas todas — una copia desincronizada ya miente."),
                     BrainItem("🌿", "Flujo de git", "ramita → MR → develop (squash); main es release-only",
                               "CLAUDE.md · norma",
                               "Todo push va a ramitas; se integra por MR a develop con squash; main es release-only (decisión humana deliberada). 1–3 devs → auto-merge; ≥4 devs → se revisa."),
