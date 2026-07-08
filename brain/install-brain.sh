@@ -44,6 +44,7 @@ fi
 
 # ── (a) Copiar hooks de tier global + la lib compartida ──
 GLOBAL_HOOKS="git-branch-guard.sh merge-squash-guard.sh recordar-dashboard.sh \
+              secret-scan.sh rama-vieja.sh limite-gasto.sh \
               delegacion-gate.sh delegacion-registrar.sh delegacion-comun.sh"
 for h in $GLOBAL_HOOKS; do
   if [ -f "$SRC_HOOKS/$h" ]; then
@@ -77,9 +78,12 @@ register_hook() {
 register_hook PreToolUse  Bash 'bash "$HOME/.claude/hooks/git-branch-guard.sh"'    'git-branch-guard'
 register_hook PreToolUse  Bash 'bash "$HOME/.claude/hooks/merge-squash-guard.sh"'  'merge-squash-guard'
 register_hook PreToolUse  Bash 'bash "$HOME/.claude/hooks/recordar-dashboard.sh"'  'recordar-dashboard'
+register_hook PreToolUse  Bash 'bash "$HOME/.claude/hooks/secret-scan.sh"'         'secret-scan'
+register_hook PreToolUse  Bash 'bash "$HOME/.claude/hooks/rama-vieja.sh"'          'rama-vieja'
+register_hook PreToolUse  Task 'bash "$HOME/.claude/hooks/limite-gasto.sh"'        'limite-gasto'
 register_hook PreToolUse  Task 'bash "$HOME/.claude/hooks/delegacion-gate.sh"'     'delegacion-gate'
 register_hook PostToolUse Task 'bash "$HOME/.claude/hooks/delegacion-registrar.sh"' 'delegacion-registrar'
-echo "ok: hooks cableados en $GSET (git-branch-guard, merge-squash-guard, recordar-dashboard, delegacion-gate/registrar)"
+echo "ok: hooks cableados en $GSET (git-branch-guard, merge-squash-guard, recordar-dashboard, secret-scan, rama-vieja, limite-gasto, delegacion-gate/registrar)"
 
 # ── (c) Skill genérica cerrar-slice ──
 if [ -d "$SRC_SKILLS/cerrar-slice" ]; then

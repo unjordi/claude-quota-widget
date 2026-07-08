@@ -49,6 +49,7 @@ struct BrainState {
     /// Los 5 hooks de tier global que instala install-brain.sh.
     static let knownGlobalHooks: Set<String> = [
         "git-branch-guard", "merge-squash-guard", "recordar-dashboard",
+        "secret-scan", "rama-vieja", "limite-gasto",
         "delegacion-gate", "delegacion-registrar",
     ]
     /// Los hooks repo-scoped (fuente en brain/hooks, no globales) — pueden aparecer cableados en un repo.
