@@ -159,6 +159,50 @@ PlasmoidItem {
         return m
     }
 
+    // ---------- Datos ESTÁTICOS de la pestaña Cerebro ----------
+    // Reflejan `brain/` (hooks / normas / skills), de más duro (arriba) a más leve (abajo).
+    // NO dependen de datos en vivo; se mantienen a mano cuando cambian las piezas del cerebro.
+    readonly property var brainTiers: [
+        {
+            emoji: "🔒", title: "INVIOLABLE", color: "#dc3545",
+            subtitle: "hooks que BLOQUEAN (deny) — no negociables",
+            items: [
+                { emoji: "🚧", name: "git-branch-guard",       desc: "push/merge a develop·main → denegado, te redirige a ramita→MR" },
+                { emoji: "🔗", name: "merge-squash-guard",     desc: "MR a develop sin --squash → denegado (1 commit limpio)" },
+                { emoji: "✋", name: "confirmar-merge-develop", desc: "merge a develop sin tu OK → denegado; a main exige OK súper-explícito" },
+                { emoji: "✅", name: "dod-verificar",          desc: "declarar “listo” sin build+tests+memoria → denegado" },
+                { emoji: "💸", name: "delegacion-gate",        desc: "reclutar agente con costo → pide tu consentimiento (puede negar)" }
+            ]
+        },
+        {
+            emoji: "🔔", title: "AUTOMÁTICO", color: "#e8884a",
+            subtitle: "hooks que inyectan / recuerdan — no bloquean",
+            items: [
+                { emoji: "🧭", name: "sesion-inicio",             desc: "al abrir/retomar reinyecta rama + norma de git + orden de leer memoria" },
+                { emoji: "💾", name: "precompact-volcar-estado",  desc: "antes de compactar, vuelca avance/decisiones/pendientes a memoria" },
+                { emoji: "📊", name: "recordar-dashboard",        desc: "antes de un push, recuerda actualizar el dashboard del cerebro" },
+                { emoji: "📝", name: "delegacion-registrar",      desc: "registra el consentimiento (materializa el “pregunta 1×”)" }
+            ]
+        },
+        {
+            emoji: "📜", title: "NORMAS", color: "#4a90d9",
+            subtitle: "reglas que Claude se autoimpone (CLAUDE.md)",
+            items: [
+                { emoji: "🎯", name: "Definición de LISTO",   desc: "verde técnico ≠ listo; exige tu QA o tu OK expreso" },
+                { emoji: "🪞", name: "Doc = realidad",        desc: "cambió algo → actualiza su doc en la misma tanda, sin preguntar" },
+                { emoji: "🌿", name: "Flujo de git",          desc: "ramita → MR → develop (squash); main es release-only" },
+                { emoji: "💰", name: "Costo de delegación",   desc: "gratis / incluido / con costo — window-aware, lee tu cuota" }
+            ]
+        },
+        {
+            emoji: "💡", title: "SKILLS", color: "#3aa76d",
+            subtitle: "herramientas opt-in — las invocas tú",
+            items: [
+                { emoji: "📦", name: "cerrar-slice", desc: "build+tests+memoria al día + MR con resumen curado por slice" }
+            ]
+        }
+    ]
+
     Plasmoid.status: PlasmaCore.Types.ActiveStatus
     Plasmoid.icon: "speedometer"
 
@@ -240,6 +284,8 @@ PlasmoidItem {
             TabRailButton { idx: 0; icon: "speedometer";        label: "Límites" }
             TabRailButton { idx: 1; icon: "view-statistics";    label: "Resumen" }
             TabRailButton { idx: 2; icon: "office-chart-bar";   label: "Modelos" }
+            // Sin ícono "cerebro" nativo bueno en Breeze → emoji 🧠 como glifo del riel.
+            TabRailButton { idx: 3; emoji: "🧠";                label: "Cerebro" }
             Item { Layout.fillHeight: true }
             PC3.ToolButton {
                 icon.name: "view-refresh"; flat: true
@@ -409,6 +455,52 @@ PlasmoidItem {
                     }
                 }
             }
+
+            // ===== Tab 3: Cerebro =====
+            // Infografía ESTÁTICA del cerebro global de Claude Code (refleja `brain/`):
+            // los componentes instalados, jerarquizados de INVIOLABLE (hooks que deniegan)
+            // → SKILLS opt-in. Se mantiene a mano cuando cambian las piezas de `brain/`.
+            PC3.ScrollView {
+                id: cerebroScroll
+                contentWidth: availableWidth   // sin scroll horizontal; solo vertical
+                clip: true
+                ColumnLayout {
+                    width: cerebroScroll.availableWidth
+                    spacing: Kirigami.Units.largeSpacing
+                    // Encabezado de marca: destello acento naranja + 🧠.
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Kirigami.Units.smallSpacing
+                        Kirigami.Icon {
+                            source: "starred-symbolic"; isMask: true; color: "#e8884a"
+                            Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                            Layout.preferredHeight: Kirigami.Units.iconSizes.small
+                        }
+                        Kirigami.Heading { level: 3; text: "🧠 Cerebro global"; Layout.fillWidth: true }
+                    }
+                    PC3.Label {
+                        Layout.fillWidth: true; opacity: 0.6; wrapMode: Text.WordWrap
+                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                        text: "Guardarraíles + gobernanza + normas de Claude Code. Viaja por git, aplica en toda máquina. De más duro (arriba) a más leve (abajo)."
+                    }
+                    Repeater {
+                        model: root.brainTiers
+                        delegate: BrainTier {
+                            Layout.fillWidth: true
+                            emoji: modelData.emoji
+                            title: modelData.title
+                            accent: modelData.color
+                            subtitle: modelData.subtitle
+                            items: modelData.items
+                        }
+                    }
+                    PC3.Label {
+                        Layout.fillWidth: true; opacity: 0.45; wrapMode: Text.WordWrap
+                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                        text: "Instalado por install-brain.sh · probado por test-brain.sh · sin jq los hooks fallan ABIERTO (no bloquean)."
+                    }
+                }
+            }
         }
     }
 
@@ -416,6 +508,7 @@ PlasmoidItem {
     component TabRailButton: Rectangle {
         property int idx: 0
         property string icon: ""
+        property string emoji: ""   // glifo alterno cuando no hay ícono nativo (p.ej. 🧠)
         property string label: ""
         Layout.fillWidth: true
         Layout.preferredHeight: Kirigami.Units.gridUnit * 2
@@ -426,15 +519,76 @@ PlasmoidItem {
         RowLayout {
             anchors.fill: parent; anchors.leftMargin: Kirigami.Units.smallSpacing; spacing: Kirigami.Units.smallSpacing
             Kirigami.Icon {
+                visible: emoji === ""
                 source: icon
                 Layout.preferredWidth: Kirigami.Units.iconSizes.small; Layout.preferredHeight: Kirigami.Units.iconSizes.small
                 color: active ? "#e8884a" : Kirigami.Theme.textColor
                 isMask: true
             }
+            // El emoji no se puede tintar; el estado activo se marca con la etiqueta.
+            PC3.Label {
+                visible: emoji !== ""
+                text: emoji
+                Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                horizontalAlignment: Text.AlignHCenter
+            }
             PC3.Label { text: label; font.bold: active; color: active ? "#e8884a" : Kirigami.Theme.textColor }
             Item { Layout.fillWidth: true }
         }
         MouseArea { id: mouse; anchors.fill: parent; hoverEnabled: true; onClicked: root.currentTab = idx }
+    }
+
+    // Un nivel (tier) del cerebro: espina/barra de color a la izquierda + encabezado
+    // (emoji + TÍTULO en el color del nivel + subtítulo tenue) + hojas con conectores
+    // de árbol monoespaciados (├─ para todas menos la última, └─ para la última).
+    component BrainTier: RowLayout {
+        id: tier
+        property string emoji: ""
+        property string title: ""
+        property color accent: Kirigami.Theme.textColor
+        property string subtitle: ""
+        property var items: []
+        spacing: Kirigami.Units.smallSpacing
+        Rectangle {
+            Layout.preferredWidth: 3; Layout.fillHeight: true
+            Layout.topMargin: 2; Layout.bottomMargin: 2
+            radius: 1; color: tier.accent
+        }
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: Kirigami.Units.smallSpacing
+            RowLayout {
+                Layout.fillWidth: true; spacing: Kirigami.Units.smallSpacing
+                PC3.Label { text: tier.emoji; font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.1 }
+                PC3.Label { text: tier.title; font.bold: true; color: tier.accent }
+                Item { Layout.fillWidth: true }
+            }
+            PC3.Label {
+                Layout.fillWidth: true; text: tier.subtitle; opacity: 0.6; wrapMode: Text.WordWrap
+                font.pointSize: Kirigami.Theme.smallFont.pointSize
+            }
+            Repeater {
+                model: tier.items
+                delegate: RowLayout {
+                    Layout.fillWidth: true; spacing: Kirigami.Units.smallSpacing
+                    PC3.Label {
+                        Layout.alignment: Qt.AlignTop
+                        text: index === tier.items.length - 1 ? "└─" : "├─"
+                        font.family: "monospace"; color: tier.accent; opacity: 0.55
+                    }
+                    PC3.Label { Layout.alignment: Qt.AlignTop; text: modelData.emoji }
+                    PC3.Label {
+                        Layout.alignment: Qt.AlignTop
+                        text: modelData.name; font.family: "monospace"; font.bold: true
+                    }
+                    PC3.Label {
+                        Layout.fillWidth: true; Layout.alignment: Qt.AlignTop
+                        text: modelData.desc; opacity: 0.62; wrapMode: Text.WordWrap
+                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    }
+                }
+            }
+        }
     }
 
     // tarjeta de estadística (Resumen)

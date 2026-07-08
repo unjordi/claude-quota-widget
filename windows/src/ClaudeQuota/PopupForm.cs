@@ -7,9 +7,9 @@ namespace ClaudeQuota;
 /// <summary>
 /// The click-to-open breakdown, a borderless transient form. Mirrors the
 /// plasmoid's fullRepresentation and the mac popover: a vertical tab rail on the
-/// left (Límites / Resumen / Modelos), a 1px separator, and the tab content on
-/// the right. Everything is owner-drawn with GDI+ so it stays a single control
-/// tree and honors the FelixDes look (orange accent, red past 90%).
+/// left (Límites / Resumen / Modelos / Proyectos / Cerebro), a 1px separator, and
+/// the tab content on the right. Everything is owner-drawn with GDI+ so it stays a
+/// single control tree and honors the FelixDes look (orange accent, red past 90%).
 /// </summary>
 public sealed class PopupForm : Form
 {
@@ -17,6 +17,11 @@ public sealed class PopupForm : Form
     private readonly Action _onRefresh;
     private int _tab;
     private int _hoverRail = -1;
+
+    // Scroll vertical SOLO de la pestaña Cerebro (owner-draw): desplazamiento
+    // actual y altura total dibujada en el último paint (para acotar el scroll).
+    private int _cerebroScroll;
+    private int _cerebroContentH;
 
     // logical → device scale (PerMonitorV2); all metrics below are in logical px.
     private float S => DeviceDpi / 96f;
@@ -30,7 +35,7 @@ public sealed class PopupForm : Form
     private readonly Panel _rail = new();
     private readonly Panel _content = new();
 
-    private static readonly string[] TabNames = { "Límites", "Resumen", "Modelos", "Proyectos" };
+    private static readonly string[] TabNames = { "Límites", "Resumen", "Modelos", "Proyectos", "Cerebro" };
 
     public PopupForm(QuotaService svc, Action onRefresh)
     {
@@ -99,7 +104,21 @@ public sealed class PopupForm : Form
         _content.Invalidate();
     }
 
-    public void SelectTab(int t) { _tab = t; _rail.Invalidate(); _content.Invalidate(); }
+    public void SelectTab(int t) { _tab = t; _cerebroScroll = 0; _rail.Invalidate(); _content.Invalidate(); }
+
+    // Rueda del ratón: solo scrollea la pestaña Cerebro (las demás caben en el
+    // alto fijo del popup). El form tiene el foco mientras el popover está
+    // visible, así que recibe WM_MOUSEWHEEL aquí.
+    protected override void OnMouseWheel(MouseEventArgs e)
+    {
+        base.OnMouseWheel(e);
+        if (_tab != 4) return;
+        int max = Math.Max(0, _cerebroContentH - _content.Height);
+        if (max <= 0) return;
+        int step = (e.Delta / 120) * Sc(48);
+        _cerebroScroll = Math.Clamp(_cerebroScroll - step, 0, max);
+        _content.Invalidate();
+    }
 
     // ================= Rail =================
 
@@ -188,7 +207,15 @@ public sealed class PopupForm : Form
             case 0: PaintLimites(g, pad); break;
             case 1: PaintResumen(g, pad); break;
             case 2: PaintModelos(g, pad); break;
-            default: PaintProyectos(g, pad); break;
+            case 3: PaintProyectos(g, pad); break;
+            default:
+                // Cerebro: contenido alto y scrolleable → se dibuja bajo un
+                // desplazamiento; lo que queda fuera del panel lo recorta el clip.
+                var state = g.Save();
+                g.TranslateTransform(0, -_cerebroScroll);
+                _cerebroContentH = PaintCerebro(g, pad);
+                g.Restore(state);
+                break;
         }
     }
 
@@ -485,11 +512,173 @@ public sealed class PopupForm : Form
         }
     }
 
+    // ----- Tab 4: Cerebro -----
+    //
+    // Infografía del cerebro global de Claude Code, réplica de la pestaña macOS
+    // (PopoverView.swift, `cerebroTab`). Contenido 100% ESTÁTICO: refleja `brain/`
+    // (hooks / norms / skills) y se mantiene a mano cuando cambian las piezas; no
+    // depende de datos en vivo. Jerarquía de más DURO (arriba) a más LEVE (abajo).
+    // Devuelve la altura total dibujada, que ContentPaint usa para acotar el scroll.
+    private int PaintCerebro(Graphics g, int pad)
+    {
+        int right = _content.Width - pad;      // borde derecho útil del contenido
+        int y = pad;
+
+        // Encabezado de marca: destello acento + 🧠 Cerebro global.
+        using (var spFont = Px(12f, FontStyle.Bold))
+        using (var spBrush = new SolidBrush(_accent))
+            g.DrawString("✦", spFont, spBrush, pad, y + Sc(1));
+        int hx = pad + Sc(16);
+        using (var emj = PxFont("Segoe UI Emoji", 13f, FontStyle.Regular))
+        using (var b = new SolidBrush(_fg))
+            g.DrawString("🧠", emj, b, hx, y);
+        hx += Sc(22);
+        using (var h = Px(13.5f, FontStyle.Bold))
+        using (var b = new SolidBrush(_fg))
+            g.DrawString("Cerebro global", h, b, hx, y + Sc(1));
+        y += Sc(24);
+
+        // Subtítulo tenue (envuelve a varias líneas).
+        const string subtitle =
+            "Guardarraíles + gobernanza + normas de Claude Code. Viaja por git, " +
+            "aplica en toda máquina. De más duro (arriba) a más leve (abajo).";
+        using (var sf = Px(9.5f, FontStyle.Regular))
+        using (var b = new SolidBrush(Blend(_bg, _fg, 0.6)))
+        {
+            var sz = g.MeasureString(subtitle, sf, right - pad);
+            g.DrawString(subtitle, sf, b, new RectangleF(pad, y, right - pad, sz.Height + Sc(2)));
+            y += (int)Math.Ceiling(sz.Height) + Sc(10);
+        }
+
+        foreach (var tier in BrainTiers)
+            y = PaintTier(g, pad, right, y, tier);
+
+        // Pie tenue.
+        const string footer =
+            "Instalado por install-brain.sh · probado por test-brain.sh · sin jq " +
+            "los hooks fallan ABIERTO (no bloquean).";
+        using (var ff = Px(9.5f, FontStyle.Regular))
+        using (var b = new SolidBrush(Blend(_bg, _fg, 0.45)))
+        {
+            var sz = g.MeasureString(footer, ff, right - pad);
+            g.DrawString(footer, ff, b, new RectangleF(pad, y + Sc(2), right - pad, sz.Height + Sc(2)));
+            y += (int)Math.Ceiling(sz.Height) + Sc(4);
+        }
+        return y + pad;
+    }
+
+    /// Un nivel del cerebro: espina de color a la izquierda + encabezado
+    /// (emoji + TÍTULO en el color del nivel + subtítulo tenue) + hojas con
+    /// conectores de árbol monoespaciados. Devuelve la nueva `y`.
+    private int PaintTier(Graphics g, int pad, int right, int y, BrainTier tier)
+    {
+        int spineW = Sc(3), spineGap = Sc(10);
+        int tx = pad + spineW + spineGap;   // x del texto del nivel
+        int top = y;
+
+        // Encabezado del nivel.
+        using (var emj = PxFont("Segoe UI Emoji", 12.5f, FontStyle.Regular))
+        using (var b = new SolidBrush(_fg))
+            g.DrawString(tier.Emoji, emj, b, tx, y);
+        using (var tf = Px(12f, FontStyle.Bold))
+        using (var tb = new SolidBrush(tier.Color))
+            g.DrawString(tier.Title, tf, tb, tx + Sc(22), y + Sc(1));
+        y += Sc(20);
+
+        using (var subF = Px(9.5f, FontStyle.Regular))
+        using (var subB = new SolidBrush(Blend(_bg, _fg, 0.6)))
+        {
+            var sz = g.MeasureString(tier.Subtitle, subF, right - tx);
+            g.DrawString(tier.Subtitle, subF, subB, new RectangleF(tx, y, right - tx, sz.Height + Sc(2)));
+            y += (int)Math.Ceiling(sz.Height) + Sc(5);
+        }
+
+        // Hojas: conector ├─ salvo la última, que lleva └─.
+        for (int i = 0; i < tier.Items.Length; i++)
+            y = PaintLeaf(g, tx, right, y, tier.Items[i], i == tier.Items.Length - 1, tier.Color);
+
+        // Espina de color: se dibuja al final, cuando ya se conoce el alto del nivel.
+        int bottom = y - Sc(3);
+        using (var sp = new SolidBrush(tier.Color))
+            FillRounded(g, sp, new Rectangle(pad, top, spineW, Math.Max(spineW, bottom - top)), spineW / 2f);
+
+        return y + Sc(12); // separación entre niveles
+    }
+
+    /// Una hoja del árbol: conector monoespaciado (color del nivel, tenue) +
+    /// emoji + nombre en mono; la descripción tenue envuelve debajo del nombre.
+    private int PaintLeaf(Graphics g, int tx, int right, int y, BrainItem item, bool last, Color color)
+    {
+        using (var cf = PxFont("Consolas", 10.5f, FontStyle.Regular))
+        using (var cb = new SolidBrush(Blend(_bg, color, 0.55)))
+            g.DrawString(last ? "└─" : "├─", cf, cb, tx, y);
+
+        int ex = tx + Sc(20);               // tras el conector: emoji
+        using (var emj = PxFont("Segoe UI Emoji", 10f, FontStyle.Regular))
+        using (var b = new SolidBrush(_fg))
+            g.DrawString(item.Emoji, emj, b, ex, y);
+
+        int nx = ex + Sc(18);               // tras el emoji: nombre (mono)
+        using (var nf = PxFont("Consolas", 10.5f, FontStyle.Bold))
+        using (var nb = new SolidBrush(_fg))
+            g.DrawString(item.Name, nf, nb, nx, y);
+
+        // Descripción tenue, envuelta bajo el nombre.
+        using var df = Px(9f, FontStyle.Regular);
+        using var db = new SolidBrush(Blend(_bg, _fg, 0.62));
+        int descY = y + Sc(15);
+        var descSz = g.MeasureString(item.Desc, df, right - nx);
+        g.DrawString(item.Desc, df, db, new RectangleF(nx, descY, right - nx, descSz.Height + Sc(2)));
+        return descY + (int)Math.Ceiling(descSz.Height) + Sc(6);
+    }
+
+    /// Datos ESTÁTICOS del cerebro (reflejan `brain/hooks`, `brain/norms`,
+    /// `brain/skills`). Espejo 1:1 del array `brainTiers` de la GUI macOS.
+    private BrainTier[] BrainTiers =>
+    [
+        new("🔒", "INVIOLABLE", Fmt.Hex("#dc3545"), "hooks que BLOQUEAN (deny) — no negociables",
+        [
+            new("🚧", "git-branch-guard", "push/merge a develop·main → denegado, te redirige a ramita→MR"),
+            new("🔗", "merge-squash-guard", "MR a develop sin --squash → denegado (1 commit limpio)"),
+            new("✋", "confirmar-merge-develop", "merge a develop sin tu OK → denegado; a main exige OK súper-explícito"),
+            new("✅", "dod-verificar", "declarar “listo” sin build+tests+memoria → denegado"),
+            new("💸", "delegacion-gate", "reclutar agente con costo → pide tu consentimiento (puede negar)"),
+        ]),
+        new("🔔", "AUTOMÁTICO", _accent, "hooks que inyectan / recuerdan — no bloquean",
+        [
+            new("🧭", "sesion-inicio", "al abrir/retomar reinyecta rama + norma de git + orden de leer memoria"),
+            new("💾", "precompact-volcar-estado", "antes de compactar, vuelca avance/decisiones/pendientes a memoria"),
+            new("📊", "recordar-dashboard", "antes de un push, recuerda actualizar el dashboard del cerebro"),
+            new("📝", "delegacion-registrar", "registra el consentimiento (materializa el “pregunta 1×”)"),
+        ]),
+        new("📜", "NORMAS", Fmt.Hex("#4a90d9"), "reglas que Claude se autoimpone (CLAUDE.md)",
+        [
+            new("🎯", "Definición de LISTO", "verde técnico ≠ listo; exige tu QA o tu OK expreso"),
+            new("🪞", "Doc = realidad", "cambió algo → actualiza su doc en la misma tanda, sin preguntar"),
+            new("🌿", "Flujo de git", "ramita → MR → develop (squash); main es release-only"),
+            new("💰", "Costo de delegación", "gratis / incluido / con costo — window-aware, lee tu cuota"),
+        ]),
+        new("💡", "SKILLS", Fmt.Hex("#3aa76d"), "herramientas opt-in — las invocas tú",
+        [
+            new("📦", "cerrar-slice", "build+tests+memoria al día + MR con resumen curado por slice"),
+        ]),
+    ];
+
+    /// Un nivel del cerebro (tier) con sus hojas — datos estáticos de la pestaña.
+    private sealed record BrainTier(string Emoji, string Title, Color Color, string Subtitle, BrainItem[] Items);
+
+    /// Una hoja del árbol del cerebro (un hook / norma / skill).
+    private sealed record BrainItem(string Emoji, string Name, string Desc);
+
     // ================= helpers =================
 
     private int Sc(float logical) => (int)Math.Round(logical * S);
     private Font Px(float logicalPt, FontStyle style) =>
         new("Segoe UI", logicalPt * S, style, GraphicsUnit.Pixel);
+    // Como Px pero con una familia explícita (Consolas para mono/conectores,
+    // Segoe UI Emoji para que los emojis rendericen a color en GDI+).
+    private Font PxFont(string family, float logicalPt, FontStyle style) =>
+        new(family, logicalPt * S, style, GraphicsUnit.Pixel);
     private static StringFormat Center() =>
         new() { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
 
