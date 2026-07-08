@@ -53,6 +53,18 @@ package:
     cd src/plasmoid && zip -r ../../dist/claude-quota-widget-{{VERSION}}.plasmoid . -x '*.swp' '*.DS_Store'
     @echo "Wrote dist/claude-quota-widget-{{VERSION}}.plasmoid"
 
+# Install ONLY the shared Claude-Code brain (global hooks, delegation-cost governance, norms)
+install-brain:
+    bash brain/install-brain.sh
+
+# Remove ONLY the Claude-Code brain (inverse of install-brain; keeps dashboard + memory)
+uninstall-brain:
+    bash brain/uninstall-brain.sh
+
+# Run the brain's self-tests (isolated fake $HOME; touches nothing in ~/.claude)
+test-brain:
+    bash brain/test-brain.sh
+
 # Lint shell scripts (requires shellcheck)
 lint:
     shellcheck install.sh uninstall.sh src/bin/claude-quota-fetch

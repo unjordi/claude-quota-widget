@@ -1,0 +1,50 @@
+name: CI
+
+# El cerebro se AUTO-VALIDA antes de distribuirse: sintaxis de todos los scripts, JSON válido y
+# lint con shellcheck. Si un hook (o cualquier .sh de brain/ o de la raíz) tiene un error, el
+# pipeline falla y no se mergea.
+on:
+  push:
+  pull_request:
+
+jobs:
+  autovalidacion-cerebro:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar dependencias (jq + shellcheck)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq shellcheck
+
+      # Lista los objetivos: TODOS los brain/**/*.sh + los *.sh de la raíz.
+      - name: bash -n (sintaxis de todos los .sh)
+        run: |
+          set -uo pipefail
+          fail=0
+          while IFS= read -r f; do
+            printf 'bash -n %s\n' "$f"
+            bash -n "$f" || { echo "  ^ ERROR de sintaxis en $f"; fail=1; }
+          done < <({ find brain -name '*.sh' -type f; find . -maxdepth 1 -name '*.sh' -type f; } | sort)
+          exit "$fail"
+
+      - name: jq empty (JSON válido en brain/)
+        run: |
+          set -uo pipefail
+          fail=0
+          while IFS= read -r f; do
+            printf 'jq empty %s\n' "$f"
+            jq empty "$f" || { echo "  ^ JSON inválido en $f"; fail=1; }
+          done < <(find brain -name '*.json' -type f | sort)
+          exit "$fail"
+
+      - name: shellcheck (lint, falla en severidad error)
+        run: |
+          set -uo pipefail
+          fail=0
+          while IFS= read -r f; do
+            printf 'shellcheck %s\n' "$f"
+            shellcheck --severity=error "$f" || fail=1
+          done < <({ find brain -name '*.sh' -type f; find . -maxdepth 1 -name '*.sh' -type f; } | sort)
+          exit "$fail"

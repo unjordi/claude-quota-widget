@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# Remove the macOS Claude Code quota app, agent, and fetch script.
+# Remove the macOS Claude Code quota app, agent, fetch script, AND the shared Claude-Code brain.
 #
-#   ./uninstall.sh            # remove everything (keeps limits.env)
+#   ./uninstall.sh            # remove everything (app + brain; keeps limits.env)
 #   ./uninstall.sh --purge    # also remove ~/.config/claude-quota and the cache
+#   ./uninstall.sh --no-brain # remove only the app; leave the Claude-Code brain installed
 
 set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+BRAIN_UNINSTALLER="$ROOT/../brain/uninstall-brain.sh"
 
 LABEL="io.github.unjordi.claude-quota"
 FETCH_DEST="$HOME/.local/bin/claude-quota-fetch"
@@ -14,7 +18,23 @@ CONFIG_DIR="$HOME/.config/claude-quota"
 CACHE_DIR="$HOME/Library/Caches/claude-quota"
 
 PURGE=0
-[[ "${1:-}" == "--purge" ]] && PURGE=1
+SKIP_BRAIN=0
+for arg in "$@"; do
+  case "$arg" in
+    --purge)    PURGE=1 ;;
+    --no-brain) SKIP_BRAIN=1 ;;
+    *) echo "unknown arg: $arg" >&2; exit 2 ;;
+  esac
+done
+
+if [[ "$SKIP_BRAIN" -eq 0 ]]; then
+  if [[ -f "$BRAIN_UNINSTALLER" ]]; then
+    echo "==> Removing the Claude-Code brain (global hooks, delegation-cost governance, norms)"
+    bash "$BRAIN_UNINSTALLER"
+  else
+    echo "==> (brain uninstaller not found at $BRAIN_UNINSTALLER — skipping)"
+  fi
+fi
 
 echo "==> Stopping app"
 osascript -e 'tell application "Claude Quota" to quit' 2>/dev/null || true
