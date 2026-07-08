@@ -46,7 +46,11 @@ public sealed class PopupForm : Form
 
     // theme
     private Color _bg, _fg;
+    // Paleta compartida con macOS (PopoverView.swift): acento naranja + verde/rojo/azul de estado.
     private readonly Color _accent = Fmt.Hex(Fmt.Accent);
+    private readonly Color _green = Fmt.Hex("#3aa76d");
+    private readonly Color _red = Fmt.Hex("#dc3545");
+    private readonly Color _blue = Fmt.Hex("#4a90d9");
 
     private readonly Panel _rail = new();
     private readonly Panel _content = new();
@@ -64,6 +68,10 @@ public sealed class PopupForm : Form
         AutoScaleMode = AutoScaleMode.Dpi;
         DoubleBuffered = true;
         KeyPreview = true;
+        // 1px hairline frame around the popover: the form's own BackColor (a subtle
+        // fg-tinted line, set in ApplyTheme) peeks through the padding while the docked
+        // panels fill the interior. Gives the popup an edge against the desktop.
+        Padding = new Padding(1);
 
         ApplyTheme();
 
@@ -147,37 +155,50 @@ public sealed class PopupForm : Form
 
     // ================= Rail =================
 
+    // Rect (device px) del i-ésimo botón del riel. Centralizado para que paint y
+    // hit-testing no se desincronicen si cambia el espaciado.
+    private Rectangle RailBtnRect(int i)
+    {
+        int pad = Sc(6), btnH = Sc(36), gap = Sc(5);
+        return new Rectangle(pad, pad + Sc(2) + i * (btnH + gap), _rail.Width - pad * 2, btnH);
+    }
+
     private void RailPaint(object? sender, PaintEventArgs e)
     {
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
 
-        int pad = Sc(6);
-        int btnH = Sc(34);
         using var font = Px(12.5f, FontStyle.Regular);
         using var fontB = Px(12.5f, FontStyle.Bold);
 
         for (int i = 0; i < TabNames.Length; i++)
         {
-            var r = new Rectangle(pad, pad + i * (btnH + Sc(4)), _rail.Width - pad * 2, btnH);
+            var r = RailBtnRect(i);
             bool active = _tab == i;
             if (active)
-                using (var b = new SolidBrush(Color.FromArgb(46, _accent)))
-                    FillRounded(g, b, r, Sc(6));
+            {
+                // Píldora acento ~16% (como macOS) + barra-indicador acento a la izquierda.
+                using (var b = new SolidBrush(Color.FromArgb(41, _accent)))
+                    FillRounded(g, b, r, Sc(8));
+                int barH = r.Height - Sc(14);
+                using (var ib = new SolidBrush(_accent))
+                    FillRounded(g, ib, new Rectangle(r.X + Sc(2), r.Y + (r.Height - barH) / 2, Sc(3), barH), Sc(1.5f));
+            }
             else if (_hoverRail == i)
-                using (var b = new SolidBrush(Blend(_bg, _fg, 0.08)))
-                    FillRounded(g, b, r, Sc(6));
+            {
+                using (var b = new SolidBrush(Blend(_bg, _fg, 0.06)))
+                    FillRounded(g, b, r, Sc(8));
+            }
 
-            var col = active ? _accent : _fg;
+            var col = active ? _accent : Blend(_bg, _fg, 0.82);
             using var brush = new SolidBrush(col);
             var sf = new StringFormat { LineAlignment = StringAlignment.Center, Alignment = StringAlignment.Near };
             g.DrawString(TabNames[i], active ? fontB : font, brush,
-                new RectangleF(r.X + Sc(10), r.Y, r.Width - Sc(12), r.Height), sf);
+                new RectangleF(r.X + Sc(14), r.Y, r.Width - Sc(16), r.Height), sf);
         }
 
-        // bottom row: refresh + quit
-        using var iconFont = Px(13f, FontStyle.Regular);
+        // bottom row: refresh + quit (fondos redondeados sutiles al hover-less, glifos tenues)
         var (refreshR, quitR) = BottomButtons();
         using (var b1 = new SolidBrush(Blend(_bg, _fg, 0.7)))
             g.DrawString("⟳", Px(15f, FontStyle.Regular), b1, refreshR, Center());
@@ -196,12 +217,8 @@ public sealed class PopupForm : Form
 
     private void RailMouseDown(object? sender, MouseEventArgs e)
     {
-        int pad = Sc(6), btnH = Sc(34);
         for (int i = 0; i < TabNames.Length; i++)
-        {
-            var r = new Rectangle(pad, pad + i * (btnH + Sc(4)), _rail.Width - pad * 2, btnH);
-            if (r.Contains(e.Location)) { SelectTab(i); return; }
-        }
+            if (RailBtnRect(i).Contains(e.Location)) { SelectTab(i); return; }
         var (refreshR, quitR) = BottomButtons();
         if (refreshR.Contains(e.Location)) { _onRefresh(); return; }
         if (quitR.Contains(e.Location)) { Application.Exit(); }
@@ -209,13 +226,10 @@ public sealed class PopupForm : Form
 
     private void RailMouseMove(object? sender, MouseEventArgs e)
     {
-        int pad = Sc(6), btnH = Sc(34), was = _hoverRail;
+        int was = _hoverRail;
         _hoverRail = -1;
         for (int i = 0; i < TabNames.Length; i++)
-        {
-            var r = new Rectangle(pad, pad + i * (btnH + Sc(4)), _rail.Width - pad * 2, btnH);
-            if (r.Contains(e.Location)) { _hoverRail = i; break; }
-        }
+            if (RailBtnRect(i).Contains(e.Location)) { _hoverRail = i; break; }
         if (was != _hoverRail) _rail.Invalidate();
     }
 
@@ -248,11 +262,7 @@ public sealed class PopupForm : Form
 
     private void PaintLimites(Graphics g, int pad)
     {
-        int y = pad;
-        using (var h = Px(15f, FontStyle.Bold))
-        using (var b = new SolidBrush(_fg))
-            g.DrawString("Límites de uso", h, b, pad, y);
-        y += Sc(34);
+        int y = SectionTitle(g, pad, pad, "Límites de uso");
 
         y = UsageSection(g, pad, y, "Sesión (5 h)", _svc.Snapshot?.FiveHour);
         y += Sc(14);
@@ -284,18 +294,22 @@ public sealed class PopupForm : Form
         }
         y += Sc(24);
 
-        // progress bar
-        int barH = Sc(9);
+        // progress bar (cápsula con sutil brillo vertical en el relleno)
+        int barH = Sc(10);
         using (var track = new SolidBrush(Blend(_bg, _fg, 0.12)))
             FillRounded(g, track, new Rectangle(pad, y, w, barH), barH / 2f);
         if (pct is double pv)
         {
             int fw = (int)(w * Math.Clamp(pv / 100.0, 0, 1));
             if (fw > 1)
-                using (var fill = new SolidBrush(Fmt.PctColor(pct)))
-                    FillRounded(g, fill, new Rectangle(pad, y, fw, barH), barH / 2f);
+            {
+                var c = Fmt.PctColor(pct);
+                using var fill = new LinearGradientBrush(
+                    new Rectangle(pad, y - 1, fw, barH + 2), Lighten(c, 0.18), c, LinearGradientMode.Vertical);
+                FillRounded(g, fill, new Rectangle(pad, y, fw, barH), barH / 2f);
+            }
         }
-        y += barH + Sc(8);
+        y += barH + Sc(9);
 
         // caption
         using (var cFont = Px(10f, FontStyle.Regular))
@@ -319,11 +333,7 @@ public sealed class PopupForm : Form
     {
         var s = _svc.Stats?.Summary;
         var streaks = StatsCompute.Streaks(_svc.Stats);
-        int y = pad;
-        using (var h = Px(15f, FontStyle.Bold))
-        using (var b = new SolidBrush(_fg))
-            g.DrawString("Resumen", h, b, pad, y);
-        y += Sc(32);
+        int y = SectionTitle(g, pad, pad, "Resumen");
 
         (string, string)[] cards =
         {
@@ -360,7 +370,9 @@ public sealed class PopupForm : Form
     private void StatCard(Graphics g, Rectangle r, string label, string value)
     {
         using (var bg = new SolidBrush(Blend(_bg, _fg, 0.06)))
-            FillRounded(g, bg, r, Sc(6));
+            FillRounded(g, bg, r, Sc(8));
+        using (var pen = new Pen(Blend(_bg, _fg, 0.10)))
+            DrawRounded(g, pen, r, Sc(8));
         int ipad = Sc(8);
         using (var lFont = Px(9f, FontStyle.Regular))
         using (var lBrush = new SolidBrush(Blend(_bg, _fg, 0.6)))
@@ -403,15 +415,11 @@ public sealed class PopupForm : Form
 
     private void PaintModelos(Graphics g, int pad)
     {
-        int y = pad;
-        using (var h = Px(15f, FontStyle.Bold))
-        using (var b = new SolidBrush(_fg))
-            g.DrawString("Uso por modelo", h, b, pad, y);
-        y += Sc(32);
+        int y = SectionTitle(g, pad, pad, "Uso por modelo");
 
         int chartH = Sc(110);
-        StackedChart(g, new Rectangle(pad, y, _content.Width - pad * 2, chartH));
-        y += chartH + Sc(12);
+        ChartPanel(g, new Rectangle(pad, y, _content.Width - pad * 2, chartH), StackedChart);
+        y += chartH + Sc(14);
 
         var models = _svc.Stats?.Models ?? new List<StatsModel>();
         using var nameFont = Px(11.5f, FontStyle.Bold);
@@ -444,6 +452,16 @@ public sealed class PopupForm : Form
         }
     }
 
+    /// Frame a stacked chart inside a subtle rounded card (labelColor ~4%) with an
+    /// inset drawing area — mirrors the grouped-card look of macOS.
+    private void ChartPanel(Graphics g, Rectangle outer, Action<Graphics, Rectangle> draw)
+    {
+        using (var bg = new SolidBrush(Blend(_bg, _fg, 0.04)))
+            FillRounded(g, bg, outer, Sc(8));
+        int ins = Sc(8);
+        draw(g, new Rectangle(outer.X + ins, outer.Y + ins, outer.Width - ins * 2, outer.Height - ins * 2));
+    }
+
     private void StackedChart(Graphics g, Rectangle area)
     {
         var days = _svc.Stats?.Days ?? new List<StatsDay>();
@@ -470,15 +488,11 @@ public sealed class PopupForm : Form
 
     private void PaintProyectos(Graphics g, int pad)
     {
-        int y = pad;
-        using (var h = Px(15f, FontStyle.Bold))
-        using (var b = new SolidBrush(_fg))
-            g.DrawString("Uso por proyecto", h, b, pad, y);
-        y += Sc(32);
+        int y = SectionTitle(g, pad, pad, "Uso por proyecto");
 
         int chartH = Sc(110);
-        StackedProjectChart(g, new Rectangle(pad, y, _content.Width - pad * 2, chartH));
-        y += chartH + Sc(12);
+        ChartPanel(g, new Rectangle(pad, y, _content.Width - pad * 2, chartH), StackedProjectChart);
+        y += chartH + Sc(14);
 
         var projects = _svc.Stats?.Projects ?? new List<StatsProject>();
         using var nameFont = Px(11.5f, FontStyle.Bold);
@@ -606,14 +620,15 @@ public sealed class PopupForm : Form
         return y + pad;
     }
 
-    /// Recuadro de SALUD leído de la realidad: cuántas piezas GLOBALES (no repo-scoped) están
-    /// activas + leyenda de 4 estados + hora de lectura + botón-curita. Espejo de `brainHealth`
-    /// (Swift). Alturas fijas para poder pintar el fondo redondeado ANTES del contenido.
+    /// Recuadro de SALUD leído de la realidad, BINARIO (espejo de `brainHealth` en macOS): un sello
+    /// verde "Cerebro global completo y activo" o un curita rojo "Tu cerebro global está incompleto",
+    /// + la hora de lectura + (si falta algo) el botón-curita. SIN leyenda de 4 estados — el matiz
+    /// fino vive en el detalle al tocar cada pieza. Alturas fijas para pintar el fondo antes del texto.
     private int PaintBrainHealth(Graphics g, int pad, int right, int y)
     {
         var st = _brainState!;
-        // Globales = piezas del catálogo cuyo estado NO es por-repo (los 5 hooks globales + 4 normas
-        // + 1 skill = 10). Los 4 hooks repo-scoped se excluyen del conteo.
+        // Globales = piezas del catálogo cuyo estado NO es por-repo (los 8 hooks globales + 4 normas
+        // + 1 skill = 13). Los 4 hooks repo-scoped se excluyen del conteo.
         int active = 0, total = 0;
         foreach (var tier in BrainTiers)
             foreach (var it in tier.Items)
@@ -626,29 +641,29 @@ public sealed class PopupForm : Form
         int missing = total - active;
         bool allGood = missing == 0;
 
-        // El botón-curita SOLO aparece si hay algo que curar; sano (10/10) → sin botón ni mensaje
+        // El botón-curita SOLO aparece si hay algo que curar; sano → sin botón ni mensaje
         // (el sello verde ya lo dice todo). Así no reservamos su alto cuando no se muestra.
         bool showHeal = missing > 0;
-        int inner = Sc(8), line1H = Sc(16), gap = Sc(6), legendH = Sc(15), healH = Sc(26);
+        int inner = Sc(10), line1H = Sc(17), gap = Sc(7), healH = Sc(26);
         int boxW = right - pad;
-        int boxH = inner + line1H + gap + legendH + (showHeal ? gap + healH : 0) + inner;
+        int boxH = inner + line1H + (showHeal ? gap + healH : 0) + inner;
 
         // Fondo del recuadro (primero, para que el texto quede encima).
         using (var bx = new SolidBrush(Blend(_bg, _fg, 0.05)))
-            FillRounded(g, bx, new Rectangle(pad, y, boxW, boxH), Sc(6));
+            FillRounded(g, bx, new Rectangle(pad, y, boxW, boxH), Sc(8));
 
         int cx = pad + inner, cy = y + inner;
 
-        // Línea 1: icono ✓/⚠ + "N/M piezas globales activas…" + hora a la derecha.
-        string hIcon = allGood ? "✓" : "⚠";
-        var hCol = allGood ? Fmt.Hex("#3aa76d") : _accent;
+        // Línea 1 (BINARIA): sello ✓ verde / curita 🩹 + mensaje + hora a la derecha.
+        string hIcon = allGood ? "✓" : "🩹";
+        var hCol = allGood ? _green : _red;
         using (var hf = PxFont("Segoe UI Emoji", 10.5f, FontStyle.Bold))
         using (var hb = new SolidBrush(hCol))
             g.DrawString(hIcon, hf, hb, cx, cy - Sc(1));
+        string msg = allGood ? "Cerebro global completo y activo" : "Tu cerebro global está incompleto";
         using (var tf = Px(10f, FontStyle.Bold))
-        using (var tb = new SolidBrush(_fg))
-            g.DrawString($"{active}/{total} piezas globales activas en tu ~/.claude",
-                tf, tb, cx + Sc(18), cy);
+        using (var tb = new SolidBrush(allGood ? _fg : _red))
+            g.DrawString(msg, tf, tb, cx + Sc(20), cy);
         using (var clf = Px(8.5f, FontStyle.Regular))
         using (var clb = new SolidBrush(Blend(_bg, _fg, 0.4)))
         {
@@ -658,31 +673,7 @@ public sealed class PopupForm : Form
         }
         cy += line1H + gap;
 
-        // Línea 2: leyenda de los 4 estados (punto de color + etiqueta).
-        int lx = cx;
-        (BrainStatus s, string txt)[] legend =
-        {
-            (BrainStatus.Installed, "activa"),
-            (BrainStatus.PresentNotWired, "sin cablear"),
-            (BrainStatus.Absent, "ausente"),
-            (BrainStatus.RepoScoped, "por-repo"),
-        };
-        using (var lf = Px(8.5f, FontStyle.Regular))
-        using (var dotF = Px(9f, FontStyle.Regular))
-        {
-            foreach (var (s, txt) in legend)
-            {
-                using (var dotB = new SolidBrush(StatusColor(s)))
-                    g.DrawString(BrainInspector.Glyph(s), dotF, dotB, lx, cy - Sc(1));
-                lx += Sc(11);
-                using (var lb = new SolidBrush(Blend(_bg, _fg, 0.55)))
-                    g.DrawString(txt, lf, lb, lx, cy);
-                lx += (int)Math.Ceiling(g.MeasureString(txt, lf).Width) + Sc(10);
-            }
-        }
-        cy += legendH + gap;
-
-        // Línea 3: botón-curita 🩹 (rojo cruz-roja). Solo si hay algo que curar.
+        // Línea 2: botón-curita 🩹 (rojo cruz-roja). Solo si hay algo que curar.
         if (showHeal)
         {
             string label = _healing ? "Curando…" : $"Curar cerebro global ({missing})";
@@ -896,15 +887,16 @@ public sealed class PopupForm : Form
         return y + Sc(6);
     }
 
-    /// Color del punto de estado. 'ausente' se mezcla con el tema (no es hex fijo); el resto son
-    /// los hex de la GUI macOS: activa #3aa76d, sin cablear #e8884a, por-repo #4a90d9.
+    /// Color BINARIO del punto de estado (espejo de `BrainStatus.color` en macOS): verde=bien,
+    /// rojo=falta algo (sin cablear Y ausente comparten rojo), azul discreto=por-repo. El matiz
+    /// fino de los 4 estados sigue en la etiqueta al expandir (BrainInspector.Label).
     private Color StatusColor(BrainStatus s) => s switch
     {
-        BrainStatus.Installed => Fmt.Hex("#3aa76d"),
-        BrainStatus.PresentNotWired => Fmt.Hex("#e8884a"),
-        BrainStatus.Absent => Blend(_bg, _fg, 0.3),
-        BrainStatus.RepoScoped => Fmt.Hex("#4a90d9"),
-        _ => Blend(_bg, _fg, 0.3),
+        BrainStatus.Installed => _green,
+        BrainStatus.PresentNotWired => _red,
+        BrainStatus.Absent => _red,
+        BrainStatus.RepoScoped => Blend(_bg, _blue, 0.6),
+        _ => _red,
     };
 
     // ── Interactividad + self-healing ──
@@ -1012,6 +1004,9 @@ public sealed class PopupForm : Form
             new("🔗", "merge-squash-guard", "MR a develop sin --squash → denegado (1 commit limpio)",
                 "PreToolUse · Bash",
                 "Un `gh pr merge`/`glab mr merge` a develop sin --squash se deniega, para que la ramita colapse a un commit curado. Los releases a main quedan exentos (conservan historia)."),
+            new("🕵️", "secret-scan", "commit/push con un secreto → denegado",
+                "PreToolUse · Bash",
+                "Escanea lo que ENTRA al repo (staged en commit, saliente en push) buscando llaves/tokens/claves privadas de formato inconfundible (AWS, PEM, Anthropic, OpenAI, GitHub, GitLab, Slack, Google). Si aparece uno → bloquea: una credencial pusheada queda comprometida aunque la borres. Escape: --no-verify."),
             new("✋", "confirmar-merge-develop", "merge a develop sin tu OK → denegado; a main exige OK súper-explícito",
                 "PreToolUse · Bash",
                 "Antes de integrar por MR busca tu OK explícito en el chat reciente; a main exige lenguaje de release ('hasta main', 'libera'). Un 'sigue/avanza' NO cuenta como autorización."),
@@ -1021,6 +1016,9 @@ public sealed class PopupForm : Form
             new("💸", "delegacion-gate", "reclutar agente con costo → pide tu consentimiento (puede negar)",
                 "PreToolUse · Task",
                 "Al reclutar un agente calcula su nivel de costo (gratis/incluido/con costo, según tu ventana de 5h) y pide consentimiento mostrando tu cuota real. Puedes negar y el agente no corre."),
+            new("🛑", "limite-gasto", "reclutar agente con el gasto pasado del techo → denegado",
+                "PreToolUse · Task",
+                "Freno DURO (distinto del gate que pregunta): si el gasto real ya rebasó un techo configurable (sobreuso o ventana 5h), bloquea reclutar más agentes para que un workflow desbocado no siga quemando dinero. Techo por env (LIMITE_GASTO_OVERAGE_PCT / LIMITE_GASTO_5H_PCT)."),
         ]),
         new("🔔", "AUTOMÁTICO", _accent, "hooks que inyectan / recuerdan — no bloquean",
         [
@@ -1033,6 +1031,9 @@ public sealed class PopupForm : Form
             new("📊", "recordar-dashboard", "antes de un push, recuerda actualizar el dashboard del cerebro",
                 "PreToolUse · Bash",
                 "Antes de un `git push` recuerda (no bloquea) actualizar el dashboard del cerebro: una línea a la bitácora + ajustar el mapa si cambió el layout de repos/proyectos."),
+            new("🕰️", "rama-vieja", "push de ramita muy atrás de develop → aviso (no bloquea)",
+                "PreToolUse · Bash",
+                "Antes de un push, si la ramita está muchos commits detrás de origin/develop (base vieja → el MR trae ruido/conflictos), avisa —no bloquea— y sugiere rebasar. Umbral configurable (RAMA_VIEJA_UMBRAL, def 40)."),
             new("📝", "delegacion-registrar", "registra el consentimiento (materializa el “pregunta 1×”)",
                 "PostToolUse · Task",
                 "Tras un consentimiento aprobado lo registra para no volver a preguntar (1× por máquina o por workflow, según el nivel de costo). Materializa el 'pregunta una sola vez'."),
@@ -1082,9 +1083,10 @@ public sealed class PopupForm : Form
     private void ApplyTheme()
     {
         bool light = IsLightTheme();
-        _bg = light ? Color.FromArgb(0xFA, 0xFA, 0xFA) : Color.FromArgb(0x22, 0x22, 0x22);
-        _fg = light ? Color.FromArgb(0x1A, 0x1A, 0x1A) : Color.FromArgb(0xE6, 0xE6, 0xE6);
-        BackColor = _bg;
+        _bg = light ? Color.FromArgb(0xFA, 0xFA, 0xFA) : Color.FromArgb(0x1E, 0x1E, 0x20);
+        _fg = light ? Color.FromArgb(0x1A, 0x1A, 0x1A) : Color.FromArgb(0xE8, 0xE8, 0xEA);
+        // El form solo se ve por el borde de 1px (Padding): tono tenue del fg sobre el fondo.
+        BackColor = Blend(_bg, _fg, 0.16);
     }
 
     private static bool IsLightTheme()
@@ -1110,20 +1112,49 @@ public sealed class PopupForm : Form
             (int)(baseC.B + (over.B - baseC.B) * a));
     }
 
-    private static void FillRounded(Graphics g, Brush b, Rectangle r, float radius) =>
-        FillRounded(g, b, new RectangleF(r.X, r.Y, r.Width, r.Height), radius);
+    /// Lighten a color toward white by `a` (0..1) — used for the subtle sheen on progress fills.
+    private static Color Lighten(Color c, double a) => Blend(c, Color.White, a);
 
-    private static void FillRounded(Graphics g, Brush b, RectangleF r, float radius)
+    /// Section title with a short accent underline, so every tab opens with the same
+    /// branded header (mirrors macOS `.headline`). Returns the y below the header.
+    private int SectionTitle(Graphics g, int pad, int y, string text)
     {
-        if (r.Width <= 0 || r.Height <= 0) return;
+        using (var h = Px(15.5f, FontStyle.Bold))
+        using (var b = new SolidBrush(_fg))
+            g.DrawString(text, h, b, pad, y);
+        using (var ab = new SolidBrush(_accent))
+            FillRounded(g, ab, new Rectangle(pad, y + Sc(24), Sc(22), Sc(3)), Sc(1.5f));
+        return y + Sc(38);
+    }
+
+    private static GraphicsPath RoundedPath(RectangleF r, float radius)
+    {
         float rad = Math.Min(radius, Math.Min(r.Width, r.Height) / 2f);
-        using var path = new GraphicsPath();
+        var path = new GraphicsPath();
         float d = rad * 2f;
         path.AddArc(r.X, r.Y, d, d, 180, 90);
         path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
         path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
         path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
         path.CloseFigure();
+        return path;
+    }
+
+    /// Stroke a rounded rectangle (1px hairline borders around cards).
+    private static void DrawRounded(Graphics g, Pen p, Rectangle r, float radius)
+    {
+        if (r.Width <= 0 || r.Height <= 0) return;
+        using var path = RoundedPath(new RectangleF(r.X, r.Y, r.Width, r.Height), radius);
+        g.DrawPath(p, path);
+    }
+
+    private static void FillRounded(Graphics g, Brush b, Rectangle r, float radius) =>
+        FillRounded(g, b, new RectangleF(r.X, r.Y, r.Width, r.Height), radius);
+
+    private static void FillRounded(Graphics g, Brush b, RectangleF r, float radius)
+    {
+        if (r.Width <= 0 || r.Height <= 0) return;
+        using var path = RoundedPath(r, radius);
         g.FillPath(b, path);
     }
 

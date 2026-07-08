@@ -206,6 +206,9 @@ PlasmoidItem {
                 { emoji: "🔗", name: "merge-squash-guard",     desc: "MR a develop sin --squash → denegado (1 commit limpio)",
                   event: "PreToolUse · Bash",
                   detail: "Un `gh pr merge`/`glab mr merge` a develop sin --squash se deniega, para que la ramita colapse a un commit curado. Los releases a main quedan exentos (conservan historia)." },
+                { emoji: "🕵️", name: "secret-scan",            desc: "commit/push con un secreto → denegado",
+                  event: "PreToolUse · Bash",
+                  detail: "Escanea lo que ENTRA al repo (staged en commit, saliente en push) buscando llaves/tokens/claves privadas de formato inconfundible (AWS, PEM, Anthropic, OpenAI, GitHub, GitLab, Slack, Google). Si aparece uno → bloquea: una credencial pusheada queda comprometida aunque la borres. Escape: --no-verify." },
                 { emoji: "✋", name: "confirmar-merge-develop", desc: "merge a develop sin tu OK → denegado; a main exige OK súper-explícito",
                   event: "PreToolUse · Bash",
                   detail: "Antes de integrar por MR busca tu OK explícito en el chat reciente; a main exige lenguaje de release ('hasta main', 'libera'). Un 'sigue/avanza' NO cuenta como autorización." },
@@ -214,7 +217,10 @@ PlasmoidItem {
                   detail: "Al cerrar el turno, si dijiste 'listo/en producción' tras tocar código fuente, exige evidencia de build+tests verdes y memoria al día, o bloquea el cierre." },
                 { emoji: "💸", name: "delegacion-gate",        desc: "reclutar agente con costo → pide tu consentimiento (puede negar)",
                   event: "PreToolUse · Task",
-                  detail: "Al reclutar un agente calcula su nivel de costo (gratis/incluido/con costo, según tu ventana de 5h) y pide consentimiento mostrando tu cuota real. Puedes negar y el agente no corre." }
+                  detail: "Al reclutar un agente calcula su nivel de costo (gratis/incluido/con costo, según tu ventana de 5h) y pide consentimiento mostrando tu cuota real. Puedes negar y el agente no corre." },
+                { emoji: "🛑", name: "limite-gasto",           desc: "reclutar agente con el gasto pasado del techo → denegado",
+                  event: "PreToolUse · Task",
+                  detail: "Freno DURO (distinto del gate que pregunta): si el gasto real ya rebasó un techo configurable (sobreuso o ventana 5h), bloquea reclutar más agentes para que un workflow desbocado no siga quemando dinero. Techo por env (LIMITE_GASTO_OVERAGE_PCT / LIMITE_GASTO_5H_PCT)." }
             ]
         },
         {
@@ -230,6 +236,9 @@ PlasmoidItem {
                 { emoji: "📊", name: "recordar-dashboard",        desc: "antes de un push, recuerda actualizar el dashboard del cerebro",
                   event: "PreToolUse · Bash",
                   detail: "Antes de un `git push` recuerda (no bloquea) actualizar el dashboard del cerebro: una línea a la bitácora + ajustar el mapa si cambió el layout de repos/proyectos." },
+                { emoji: "🕰️", name: "rama-vieja",                desc: "push de ramita muy atrás de develop → aviso (no bloquea)",
+                  event: "PreToolUse · Bash",
+                  detail: "Antes de un push, si la ramita está muchos commits detrás de origin/develop (base vieja → el MR trae ruido/conflictos), avisa —no bloquea— y sugiere rebasar. Umbral configurable (RAMA_VIEJA_UMBRAL, def 40)." },
                 { emoji: "📝", name: "delegacion-registrar",      desc: "registra el consentimiento (materializa el “pregunta 1×”)",
                   event: "PostToolUse · Task",
                   detail: "Tras un consentimiento aprobado lo registra para no volver a preguntar (1× por máquina o por workflow, según el nivel de costo). Materializa el 'pregunta una sola vez'." }
@@ -272,7 +281,7 @@ PlasmoidItem {
     property string brainExpandedKey: ""      // "<tier>-<idx>" de la hoja expandida (solo una a la vez)
 
     // Catálogo conocido (mismos conjuntos que BrainState.knownGlobalHooks / knownRepoHooks del Swift).
-    readonly property var brainGlobalHooks: ["git-branch-guard","merge-squash-guard","recordar-dashboard","delegacion-gate","delegacion-registrar"]
+    readonly property var brainGlobalHooks: ["git-branch-guard","merge-squash-guard","recordar-dashboard","secret-scan","rama-vieja","limite-gasto","delegacion-gate","delegacion-registrar"]
     readonly property var brainRepoHooks:   ["sesion-inicio","precompact-volcar-estado","dod-verificar","confirmar-merge-develop"]
 
     // Ruta del helper bash, resuelta relativa a este main.qml (…/contents/ui/ → …/contents/brain-scan.sh).
@@ -304,18 +313,20 @@ PlasmoidItem {
             return st.hasNorms ? "installed" : "absent"
         return "absent"
     }
-    // Punto de estado: ● verde activa · ◐ ámbar sin cablear · ○ gris ausente · ◈ azul por-repo.
+    // Símbolo/color de cara al usuario COLAPSADOS a binario (los 4 estados se conservan por dentro
+    // para el matiz fino del detalle al tocar, vía brainStatusLabel). Espeja BrainStatus.symbol/.color
+    // del Swift: installed → ✓ verde; presentNotWired Y absent → ！ rojo (se ven igual: "faltante");
+    // repoScoped → ◈ azul discreto (al 60%). "" (aún sin lectura) → sin punto.
     function brainDot(s) {
-        if (s === "installed") return "●"
-        if (s === "presentNotWired") return "◐"
+        if (s === "installed") return "✓"
         if (s === "repoScoped") return "◈"
-        return "○"   // absent / desconocido
+        if (s === "") return ""
+        return "！"   // presentNotWired / absent / desconocido → faltante
     }
     function brainDotColor(s) {
         if (s === "installed") return "#3aa76d"
-        if (s === "presentNotWired") return "#e8884a"
-        if (s === "repoScoped") return "#4a90d9"
-        return Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3)
+        if (s === "repoScoped") return Qt.rgba(0.290, 0.565, 0.851, 0.6)   // #4a90d9 @ 60%
+        return "#dc3545"   // faltante (sin cablear / ausente / desconocido)
     }
     function brainStatusLabel(s) {
         if (s === "installed") return "instalado + cableado en tu ~/.claude"
@@ -740,9 +751,10 @@ PlasmoidItem {
         MouseArea { id: mouse; anchors.fill: parent; hoverEnabled: true; onClicked: root.currentTab = idx }
     }
 
-    // Recuadro de SALUD del cerebro global: cuántas piezas GLOBALES (todas menos las repo-scoped)
-    // están activas, con ícono ✓/⚠️, la hora de lectura, una leyenda de los 4 estados y el
-    // botón-curita 🩹 self-healing. Espeja brainHealth + healButton del Swift.
+    // Recuadro de SALUD del cerebro global, de cara al usuario BINARIO (espeja brainHealth del Swift):
+    // todo activo → ✓ verde "Cerebro global completo y activo"; falta algo → 🩹 rojo "Tu cerebro global
+    // está incompleto". Conserva la hora de lectura y el botón-curita 🩹 (solo si falta algo). SIN leyenda
+    // de 4 estados: el matiz fino vive en el detalle al tocar cada pieza (brainStatusLabel).
     component BrainHealth: Rectangle {
         id: health
         readonly property bool ready: root.brainState !== null
@@ -761,15 +773,17 @@ PlasmoidItem {
             anchors.margins: Kirigami.Units.smallSpacing
             spacing: Kirigami.Units.smallSpacing
 
-            // Línea 1: ✓/⚠️ + "N/10 piezas globales activas" + hora de lectura.
+            // Línea 1 (BINARIA): sello + veredicto de una línea + hora de lectura. Sin conteo N/M ni
+            // leyenda de cara al usuario: verde = todo bien, rojo = algo falta (cúralo).
             RowLayout {
                 Layout.fillWidth: true; spacing: Kirigami.Units.smallSpacing
-                PC3.Label { text: health.allGood ? "✓" : "⚠️"; color: health.allGood ? "#3aa76d" : "#e8884a"; font.bold: true }
+                PC3.Label { text: health.allGood ? "✓" : "🩹"; color: health.allGood ? "#3aa76d" : "#dc3545"; font.bold: true }
                 PC3.Label {
-                    Layout.fillWidth: true; font.bold: true
+                    Layout.fillWidth: true; font.bold: true; wrapMode: Text.WordWrap
                     font.pointSize: Kirigami.Theme.smallFont.pointSize
                     text: health.ready
-                          ? (root.brainActive + "/" + root.brainTotal + " piezas globales activas en tu ~/.claude")
+                          ? (health.allGood ? "Cerebro global completo y activo"
+                                             : "Tu cerebro global está incompleto")
                           : "leyendo tu ~/.claude…"
                 }
                 PC3.Label {
@@ -779,26 +793,7 @@ PlasmoidItem {
                 }
             }
 
-            // Línea 2: leyenda de los 4 estados.
-            RowLayout {
-                Layout.fillWidth: true; spacing: Kirigami.Units.largeSpacing
-                Repeater {
-                    model: [
-                        { s: "installed",       t: "activa" },
-                        { s: "presentNotWired", t: "sin cablear" },
-                        { s: "absent",          t: "ausente" },
-                        { s: "repoScoped",      t: "por-repo" }
-                    ]
-                    delegate: RowLayout {
-                        spacing: 3
-                        PC3.Label { text: root.brainDot(modelData.s); color: root.brainDotColor(modelData.s); font.pointSize: Kirigami.Theme.smallFont.pointSize }
-                        PC3.Label { text: modelData.t; opacity: 0.55; font.pointSize: Kirigami.Theme.smallFont.pointSize * 0.95 }
-                    }
-                }
-                Item { Layout.fillWidth: true }
-            }
-
-            // Línea 3: botón-curita self-healing 🩹 (rojo cruz-roja). SOLO visible si hay algo que
+            // Línea 2: botón-curita self-healing 🩹 (rojo cruz-roja). SOLO visible si hay algo que
             // curar; sano (10/10) → sin botón ni "curado" (el sello verde ya lo dice todo).
             RowLayout {
                 Layout.fillWidth: true; spacing: Kirigami.Units.smallSpacing

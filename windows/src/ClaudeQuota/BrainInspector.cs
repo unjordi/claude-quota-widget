@@ -28,10 +28,11 @@ public sealed class BrainState
     public List<string> Extras { get; set; } = new();       // hooks cableados fuera del catálogo
     public DateTime ScannedAt { get; set; } = DateTime.Now;
 
-    /// Los 5 hooks de tier global que instala install-brain.sh.
+    /// Los 8 hooks de tier global que instala install-brain.sh.
     public static readonly HashSet<string> KnownGlobalHooks = new()
     {
         "git-branch-guard", "merge-squash-guard", "recordar-dashboard",
+        "secret-scan", "rama-vieja", "limite-gasto",
         "delegacion-gate", "delegacion-registrar",
     };
 
@@ -159,17 +160,20 @@ public static class BrainInspector
         return st;
     }
 
-    // ── Presentación de cada estado (glifo + etiqueta). El color lo resuelve PopupForm porque
-    //    'ausente' depende del tema (mezcla bg/fg), no es un hex fijo. ──
+    // ── Presentación de cada estado (glifo + etiqueta). El color lo resuelve PopupForm. ──
+    //
+    // De cara al usuario el glifo COLAPSA a binario (espejo de `BrainStatus.symbol` en macOS):
+    // ✓ verde = bien; ! rojo = falta algo (sin cablear y ausente se ven igual → "cúralo");
+    // ○ azul discreto = por-repo (no cuenta). El matiz fino de los 4 estados sigue en `Label`.
 
-    /// Glifo de punto de estado. ● activa · ◐ sin cablear · ○ ausente · ◈ por-repo.
+    /// Glifo binario de punto de estado. ✓ instalado · ! atención (sin cablear/ausente) · ○ por-repo.
     public static string Glyph(BrainStatus s) => s switch
     {
-        BrainStatus.Installed => "●",
-        BrainStatus.PresentNotWired => "◐",
-        BrainStatus.Absent => "○",
-        BrainStatus.RepoScoped => "◈",
-        _ => "○",
+        BrainStatus.Installed => "✓",
+        BrainStatus.PresentNotWired => "!",
+        BrainStatus.Absent => "!",
+        BrainStatus.RepoScoped => "○",
+        _ => "!",
     };
 
     /// Texto de ayuda al expandir la pieza (espejo de `label` en Swift).
