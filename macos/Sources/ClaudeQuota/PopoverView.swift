@@ -147,8 +147,8 @@ struct PopoverView: View {
     }
 
     private func spendCaption(_ spend: Spend, _ extra: ExtraUsage?) -> String {
-        // El monto usado ya es el headline; aquí solo el tope "/ $10.00 USD …".
-        var s = "/ \(Fmt.money(spend.cap, spend.currency))"
+        // Monto usado / tope (redundante con el headline a propósito).
+        var s = "\(Fmt.money(spend.used, spend.currency)) / \(Fmt.money(spend.cap, spend.currency))"
         if let cur = spend.currency { s += " \(cur)" }
         s += " — gasto real de bolsillo (no el equivalente incluido del plan)"
         if let extra, extra.enabled == true, let used = extra.used_credits {

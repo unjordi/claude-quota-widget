@@ -519,8 +519,8 @@ PlasmoidItem {
             font.pointSize: Kirigami.Theme.smallFont.pointSize
             text: {
                 if (!spend) return ""
-                // El monto usado ya es el headline; aquí solo el tope "/ $10.00 USD …".
-                let s = "/ " + root.fmtMoney(spend.cap, spend.currency)
+                // Monto usado / tope (redundante con el headline a propósito).
+                let s = root.fmtMoney(spend.used, spend.currency) + " / " + root.fmtMoney(spend.cap, spend.currency)
                 if (spend.currency) s += " " + spend.currency
                 s += " — gasto real de bolsillo (no el equivalente incluido del plan)"
                 if (extra && extra.enabled === true && extra.used_credits !== null && extra.used_credits !== undefined)
