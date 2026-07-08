@@ -1,0 +1,21 @@
+# Fin de línea normalizado para un repo cross-plataforma cuyo runtime es BASH en TODOS lados
+# (los hooks del cerebro y los instaladores corren bajo bash, también en Windows con Git Bash).
+#
+# Sin esto, Git for Windows (core.autocrlf=true por defecto) clona los .sh con CRLF y bash se
+# atraganta con el \r -> el bootstrap y los hooks del cerebro se rompen. Caso real: la Windows de
+# Liora (2026-07-08) clonó install-brain.sh con 135 pares CRLF y el bootstrap murió al delegar en bash.
+#
+# Regla: TODO texto en LF por defecto (cubre .sh y el script sin extensión claude-quota-fetch);
+# solo los scripts NATIVOS de Windows conservan CRLF.
+* text=auto eol=lf
+
+# Scripts nativos de Windows -> CRLF.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binarios: nunca convertir fin de línea.
+*.png  binary
+*.ico  binary
+*.pfx  binary
+*.icns binary
