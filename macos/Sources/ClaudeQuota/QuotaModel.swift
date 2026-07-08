@@ -11,14 +11,49 @@ struct Bucket: Codable {
     let resets_at: String?
 }
 
+/// Un límite acotado en el tiempo de `.limits[]` (session/weekly_all/weekly_scoped).
+/// Solo presente en basis=="oauth"; los scoped traen `model` (display_name).
+struct LimitEntry: Codable {
+    let kind: String?
+    let model: String?        // scope.model.display_name, o nil si no es scoped
+    let percent: Double?
+    let resets_at: String?
+    let severity: String?
+    let is_active: Bool?
+}
+
+/// Gasto REAL de bolsillo (dinero), ya normalizado (amount_minor/10^exponent).
+struct Spend: Codable {
+    let used: Double?
+    let cap: Double?
+    let currency: String?
+    let percent: Double?
+    let enabled: Bool?
+}
+
+/// Overage (créditos de sobreuso).
+struct ExtraUsage: Codable {
+    let used_credits: Double?
+    let monthly_limit: Double?
+    let currency: String?
+    let utilization: Double?
+    let enabled: Bool?
+}
+
 /// The full state.json snapshot.
 struct Snapshot: Codable {
     let updated_at: String?
     let status: String?
     let basis: String?          // "oauth" (datos reales) | "cost" (estimado local)
+    let account_email: String?
+    let account_uuid: String?
+    let account_mismatch: Bool?   // cuenta fijada ≠ cuenta activa (guardia de identidad)
     let error: String?
     let five_hour: Bucket?
     let weekly: Bucket?
+    let limits: [LimitEntry]?     // solo en oauth; la GUI filtra los weekly_scoped
+    let spend: Spend?             // solo en oauth: dinero real de bolsillo
+    let extra_usage: ExtraUsage?  // solo en oauth: overage
 }
 
 // MARK: - stats.json (uso local vía ccusage)
@@ -27,6 +62,7 @@ struct Stats: Codable {
     let updated_at: String?
     let days: [StatsDay]?
     let models: [StatsModel]?
+    let projects: [StatsProject]?
     let summary: StatsSummary?
 }
 
@@ -37,10 +73,16 @@ struct StatsDay: Codable {
     let tokens: Double?
     let cost: Double?
     let models: [DayModel]?
+    let projects: [DayProject]?
 }
 
 struct DayModel: Codable {
     let model: String?
+    let tokens: Double?
+}
+
+struct DayProject: Codable {
+    let project: String?
     let tokens: Double?
 }
 
@@ -49,6 +91,17 @@ struct StatsModel: Codable {
     let in_tok: Double?
     let out_tok: Double?
     let cost: Double?
+    let tot: Double?
+    let pct: Double?
+}
+
+/// Claude-only usage by project folder (~/.claude/projects/<slug>) — a subset
+/// of the Modelos tab's totals, which also count other locally-detected agent
+/// CLIs (e.g. Gemini) that ccusage aggregates alongside Claude Code.
+struct StatsProject: Codable {
+    let project: String?
+    let in_tok: Double?
+    let out_tok: Double?
     let tot: Double?
     let pct: Double?
 }
@@ -119,13 +172,23 @@ final class QuotaModel: ObservableObject {
     var fivePct: Double? { snapshot?.five_hour?.percent }
     var weekPct: Double? { snapshot?.weekly?.percent }
 
+    /// Límites semanales acotados a UN modelo (weekly_scoped con modelo) — se
+    /// renderizan dinámicamente, sin hardcodear modelos. Paralelo a main.qml.
+    var scopedLimits: [LimitEntry] {
+        (snapshot?.limits ?? []).filter { $0.kind == "weekly_scoped" && $0.model != nil }
+    }
+
     /// Tooltip mirroring toolTipMainText: "Claude: 5h N% · 7d M%".
     var tooltip: String {
         if statusKey == "error" { return "Claude Limits — sin datos" }
         let five = fivePct.map { "\(Int($0.rounded()))%" } ?? "—"
         let wk   = weekPct.map { "\(Int($0.rounded()))%" } ?? "—"
-        return "Claude: 5h \(five) · 7d \(wk)"
+        let warn = accountMismatch ? " ⚠ otra cuenta" : ""
+        return "Claude: 5h \(five) · 7d \(wk)\(warn)"
     }
+
+    /// Whether the active account differs from the pinned one (account guard).
+    var accountMismatch: Bool { snapshot?.account_mismatch ?? false }
 
     /// Age of the snapshot in seconds, or nil if unknown/unparseable.
     var ageSeconds: Double? {
@@ -134,13 +197,16 @@ final class QuotaModel: ObservableObject {
         return -date.timeIntervalSinceNow
     }
 
-    /// Footer of the Límites tab (basis · ⟳ 5 min · act. …).
+    /// Footer of the Límites tab (correo · ⟳ 5 min · últ. act. hace: …).
     var footerText: String {
         if let err = loadError, snapshot == nil { return "error: \(err)" }
         guard let snap = snapshot else { return "cargando…" }
         if let err = snap.error { return "error: \(err)" }
-        let basis = snap.basis == "oauth" ? "datos reales" : "estimado local"
-        return "\(basis) · ⟳ 5 min · act. \(RelativeTime.relative(snap.updated_at))"
+        let account = snap.account_email ?? (snap.basis == "oauth" ? "datos reales" : "estimado local")
+        if snap.account_mismatch == true {
+            return "⚠ \(account) no es la cuenta fijada · ⟳ 5 min · act. hace: \(RelativeTime.compactReset(snap.updated_at))"
+        }
+        return "\(account) · ⟳ 5 min · últ. act. hace: \(RelativeTime.compactReset(snap.updated_at))"
     }
 
     // MARK: - stats-derived helpers
@@ -154,6 +220,17 @@ final class QuotaModel: ObservableObject {
     func modelHex(_ name: String?) -> String {
         guard let models = stats?.models, let name else { return Self.modelPalette[0] }
         for (i, m) in models.enumerated() where m.model == name {
+            return Self.modelPalette[i % Self.modelPalette.count]
+        }
+        return Self.modelPalette[0]
+    }
+
+    func projectColor(_ name: String?) -> Color {
+        Color(hex: projectHex(name))
+    }
+    func projectHex(_ name: String?) -> String {
+        guard let projects = stats?.projects, let name else { return Self.modelPalette[0] }
+        for (i, p) in projects.enumerated() where p.project == name {
             return Self.modelPalette[i % Self.modelPalette.count]
         }
         return Self.modelPalette[0]
@@ -268,6 +345,13 @@ enum Fmt {
         f.usesGroupingSeparator = true
         f.maximumFractionDigits = 0
         return f.string(from: NSNumber(value: n.rounded())) ?? "\(Int(n.rounded()))"
+    }
+
+    /// fmtMoney: "$5.35" (used/cap ya vienen divididos por 10^exponent).
+    static func money(_ v: Double?, _ currency: String?) -> String {
+        guard let v else { return "—" }
+        let sym = currency == "USD" ? "$" : (currency.map { "\($0) " } ?? "$")
+        return String(format: "\(sym)%.2f", v)
     }
 
     /// fmtHour: "9 p.m.", 12 → "12 a.m." / "12 p.m." (-1 → "—").

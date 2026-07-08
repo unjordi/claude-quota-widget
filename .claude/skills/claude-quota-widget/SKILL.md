@@ -4,11 +4,12 @@ description: >
   Trabaja el widget de límites de uso de Claude de unjordi (sesión 5h + semanal,
   como "Tus límites de uso" de claude.ai) que vive en su repo propio
   github.com/unjordi/claude-quota-widget (clonado en ~/code/claude-quota-widget).
-  Úsalo para instalarlo/actualizarlo en CachyOS/KDE, macOS o la VM de Windows,
+  Úsalo para instalarlo/actualizarlo en CachyOS/KDE, macOS o la VM de Windows
+  (las 3 con paridad: KDE plasmoid, mac menu-bar Swift, Windows tray WinForms .NET),
   restylearlo (look del de la KDE Store: tarjeta naranja + indicador de bandeja de
   2 filas con mini-barras), tocar la fuente de datos (endpoint OAuth /usage +
-  ccusage), arreglar el icono/empalme en la bandeja, o construir la versión que
-  falta (Windows). Fork MIT de github.com/fuziontech/claude-quota-widget.
+  ccusage), o arreglar el icono/empalme en la bandeja. Fork MIT de
+  github.com/fuziontech/claude-quota-widget.
 ---
 
 # claude-quota-widget — widget de límites de uso de Claude (multi-OS)
@@ -86,12 +87,32 @@ la KDE Store (`github.com/FelixDes/claude-kde-usage-widget`), conservando el cos
   - Los helpers de UI (pctColor, relativeTime, fmtTok/fmtInt/fmtHour,
     prettyModel, modelPalette, rachas, heatmap) viven en `QuotaModel.swift` y
     replican el QML — las divisiones de tiempo REDONDEAN (`Math.round`), no truncan.
-- **Windows (VM):** NO existe upstream (fuziontech es solo KDE+macOS). Hay que
-  **construir uno nuevo**: misma lógica (leer `~/.claude/.credentials.json` o
-  `%USERPROFILE%\.claude\.credentials.json`, pegar al endpoint OAuth, parsear igual),
-  UI sugerida = app de bandeja .NET/WinForms autoarrancable. Para distribuirla por
-  GitHub con auto-update/WinForms hay una skill `winturbo-distro` en el repo scripts/
-  (no viajó a este repo).
+- **Windows (PARIDAD desde 2026-07-06, rama `feat/windows-port`):** app de bandeja
+  **WinForms .NET 10** en `windows/` (no hay upstream; fuziontech es solo KDE+macOS).
+  `cd windows && pwsh -File install.ps1` → publica un **.exe self-contained
+  single-file** (~110 MB, no requiere runtime en el destino), lo instala en
+  `%LOCALAPPDATA%\Programs\ClaudeQuota`, pone el autoarranque (`HKCU\...\Run`) y lo
+  lanza. Requisito de build: **.NET 10 SDK**.
+  - **Sin bash/jq/curl/Node en runtime:** a diferencia de Linux/mac (script bash en
+    timer), la app **hace el fetch ella misma en C#** cada 5 min (piso 5.5 min) y
+    escribe `%LOCALAPPDATA%\claude-quota\{state,stats}.json` (mismo schema, cross-OS).
+  - **Fuente de datos:** el endpoint OAuth `/usage` (token de
+    `%USERPROFILE%\.claude\.credentials.json`, vía `HttpClient`) da los **%** y resets;
+    los **tokens/días/modelos/sesiones/mensajes/hora pico** salen de **parsear los
+    transcripts `~/.claude/projects/**/*.jsonl` en C# puro** (`JsonDocument`, no jq).
+    El **$ API-equiv es lo ÚNICO que necesita Node+ccusage** en el PATH; sin él sale
+    "—" pero TODO lo demás funciona.
+  - **Icono de bandeja = 2 mini-barras apiladas SIN número** (la bandeja de Windows
+    es cuadrada, no de ancho variable como el status item de mac / panel KDE; barra
+    + número de 2-3 dígitos × 2 filas no cabe legible a 16px). El % exacto y el
+    ⟳reset viven en el tooltip y el popup.
+  - **Iterar/verificar UI headless:** `dotnet run -- --shot <dir>` hace 1 fetch y
+    renderiza las 3 pestañas + el icono (16/24/32px) a PNG (usa un form off-screen +
+    `DrawToBitmap`; `DrawToBitmap` sobre un form nunca mostrado sale EN BLANCO).
+  - Ports de los helpers de main.qml/QuotaModel.swift en `Format.cs` +
+    `StatsCompute.cs` (pctColor, Fmt.*, Rel.*, prettyModel, paleta, rachas, heatmap).
+  - Para distribuir por GitHub con auto-update hay una skill `winturbo-distro` en el
+    repo scripts/ (no viajó a este repo).
 
 ## Convenciones de diseño (look FelixDes + paridad)
 - Acento **naranja** `#e8884a`; escala a rojo `#dc3545` solo **>90%** (aviso de throttle).
@@ -115,8 +136,19 @@ la KDE Store (`github.com/FelixDes/claude-kde-usage-widget`), conservando el cos
   los íconos vecinos.
 
 ## Git (repo propio github.com/unjordi/claude-quota-widget)
-Aplica la NORMA de unjordi: nunca push directo a `main`; ramita `feat/fix/chore/…` desde
-`main` → PR (`gh pr create --repo unjordi/claude-quota-widget --base main`) → merge
-server-side (con 1–3 devs, merge al instante; `gh pr merge --merge`). Si la rama activa tiene
-WIP sin commitear, usa **git worktree**. `upstream` (fuziontech) solo para jalar mejoras o
-PR de vuelta al original.
+Aplica la NORMA de unjordi: **flujo `ramita → develop → main`** (corregido 2026-07-04; antes,
+PRs #1–#3, se usaba `main` como base directa — ya NO). Nunca push directo a `develop` ni `main`.
+- Ramita `feat/fix/chore/…` desde `develop` → `gh pr create --repo unjordi/claude-quota-widget
+  --base develop` → merge server-side **con `--squash`** (`gh pr merge <n> --squash`; 1–3 devs =
+  al instante). Tras el merge, **limpia la ramita a mano** (`git push origin --delete <rama>`):
+  el auto-delete del repo está APAGADO (para que `develop` no se borre en releases), así que las
+  ramitas ya no se autoborran.
+- `develop` **existe** (se creó 2026-07-04). Si algún día falta, recréalo desde `main` server-side:
+  `MAIN_SHA=$(gh api repos/unjordi/claude-quota-widget/git/refs/heads/main -q .object.sha) && gh
+  api repos/unjordi/claude-quota-widget/git/refs -f ref=refs/heads/develop -f sha="$MAIN_SHA"`
+  (NO pushear a develop localmente — la norma lo prohíbe).
+- **Release `develop → main`:** decisión DELIBERADA que unjordi pide explícito; va **SIN squash**
+  y **lo mergea unjordi** (PR con `--base main`; el hook `merge-squash-guard` bloquea el merge si
+  lo intenta Claude por CLI, pero NO cuando lo corre unjordi directo). No lo hagas tú por chore/docs.
+- Si la rama activa tiene WIP sin commitear, usa **git worktree**. `upstream` (fuziontech) solo
+  para jalar mejoras o PR de vuelta al original.

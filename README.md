@@ -1,10 +1,78 @@
-# Claude Code Quota Widget
+# claude-brain
 
-A KDE Plasma 6 widget for Linux that puts your Claude Code subscription usage in your panel. Color-coded pill that turns green → amber → red as you approach the cap; click for the full breakdown.
+**The master installer and canonical home of the shared, GLOBAL Claude Code brain** — generic
+guardrail hooks, delegation-cost governance, a definition of "done", team git norms, *and* a quota
+daemon with an optional desktop GUI. One `./install.sh` and your machine gets the guardrails, the
+usage daemon, and (optionally) the widget.
+
+> **Naming:** this repo is still published as `claude-quota-widget`; it will be **renamed to
+> `claude-brain`** as the final publish step. The quota widget lives on as one (optional) face of the
+> brain — the color-coded panel/menu-bar pill you see below.
+
+The brain is **not proprietary**: it ships no project-specific skills (no .NET, no company repos) —
+only stack-agnostic hooks, norms, and one generic `cerrar-slice` skill that any project can adopt.
+
+## What the brain installs (globally, in `~/.claude`)
+
+`./install.sh` runs [`brain/install-brain.sh`](brain/install-brain.sh) (skip with `--no-brain`), which
+is idempotent and OS-agnostic (all hooks run under bash — macOS, Linux, Windows/Git Bash). It lays down:
+
+- **Git guardrails** — `git-branch-guard` (blocks `git push`/merge to `develop`/`main`, redirects to
+  the branch→MR→develop flow), `merge-squash-guard` (forces `--squash` when integrating a branch into
+  develop), `confirmar-merge-develop` (demands explicit user confirmation before integrating to
+  develop, super-explicit authorization for a release to `main`).
+- **Delegation-cost governance** — when Claude recruits a sub-agent (`Task`), `delegacion-gate` asks
+  for consent by cost tier: **free** (local model), **included** (Claude *inside* your 5-hour window —
+  no marginal cost), or **metered** (Claude in overage, paid external API, or unknown). Free/included
+  ask **once per machine**; metered asks **once per workflow**. The prompt reads the quota daemon's
+  snapshot and shows your real window state — both the 5-hour and (when present) the weekly window,
+  e.g. `Ventana 5h: 19% ($2.48 de $45; 3.7M tokens) · Semanal: 57% ($401/$4800)`. Tiers
+  are configured in [`brain/hooks/agentes-costo.json`](brain/hooks/agentes-costo.json) (window
+  threshold default 95%); unknown agents default to metered (conservative).
+- **Session hygiene** (repo-scoped source, copy into each repo's `.claude/`) — `sesion-inicio`
+  (rehydrates branch + norms + memory at session start), `precompact-volcar-estado` (dumps state to
+  memory before context compaction), `dod-verificar` (Stop hook enforcing the definition of "done").
+- **The definition of "LISTO" (done)** — a hard, mutual norm: nothing is "done/working/in production"
+  unless (1) the user confirmed the functionality, or (2) the user expressly authorized closing it.
+  *Green build ≠ done.* Injected into `~/.claude/CLAUDE.md` (idempotent, marker-guarded) alongside the
+  git flow, the mini-develop model, and the delegation-consent norm.
+- **`cerrar-slice` skill** + a **brain dashboard** seed for the machine's global memory.
+
+Repo-scoped hooks (`sesion-inicio`, `precompact-volcar-estado`, `dod-verificar`,
+`confirmar-merge-develop`) are **not** installed globally — they live in
+[`brain/hooks/`](brain/hooks/) as the source each repo copies into its own `.claude/` and wires in its
+own `settings.json` (a repo's hooks load only when a session *starts* in that repo).
+
+> **Prerequisite for the guards:** `jq`. Without it the hooks **fail open** (they don't block) and the
+> installer can't wire `settings.json`. On Windows you also need Git for Windows (bash + coreutils).
+
+---
+
+## The quota daemon + widget (the optional GUI)
+
+A background daemon polls Anthropic's OAuth `/usage` and a small GUI shows a color-coded pill that
+turns green → amber → red as you approach the cap; click for the full breakdown.
 
 ![Panel pill + popup](screenshots/panel-and-popup.png)
 
-> **Two platforms:** this repo ships a **KDE Plasma 6 widget** (Linux — the rest of this README) and a native **macOS menu-bar app** (in [`macos/`](macos/)). Both share the same ccusage-based data pipeline and calibration logic.
+> **Three platforms:** this repo ships a **KDE Plasma 6 widget** (Linux — the rest of this README), a native **macOS menu-bar app** (in [`macos/`](macos/)), and a native **Windows tray app** (in [`windows/`](windows/)). All three read the same Anthropic OAuth `/usage` data and render the same breakdown (Límites / Resumen / Modelos / Proyectos) **plus a `Cerebro` tab** that maps the installed global brain.
+
+### The breakdown tabs
+
+Capturas reales de la app corriendo (menu-bar app en macOS). Las pestañas comparten el mismo riel a la izquierda:
+
+| | |
+|---|---|
+| ![Resumen](screenshots/resumen.png) | ![Límites](screenshots/limites.png) |
+| **Resumen** — sesiones, mensajes, tokens, rachas, hora pico, modelo favorito, costo API-equiv y el heatmap de actividad diaria. | **Límites** — sesión (5 h) y semanal (7 d) con caps por-modelo y el **gasto real** de bolsillo (spend / extra_usage). |
+| ![Modelos](screenshots/modelos.png) | ![Proyectos](screenshots/proyectos.png) |
+| **Uso por modelo** — barras apiladas por día + una fila por modelo (tokens in/out y %). | **Uso por proyecto** — barras apiladas por día + una fila por carpeta de proyecto (tokens in/out y %). |
+
+### The `Cerebro` tab — the global brain, at a glance
+
+<p align="center"><img src="screenshots/cerebro.png" alt="Pestaña Cerebro" width="360"></p>
+
+La pestaña **Cerebro 🧠** es una infografía de lo que `install-brain.sh` deja en tu `~/.claude`, jerarquizado de **inviolable → sugerencia leve** como un árbol de directorios: 🔒 **INVIOLABLE** (hooks que *bloquean*: git-branch-guard, merge-squash-guard, confirmar-merge-develop, dod-verificar, delegacion-gate) → 🔔 **AUTOMÁTICO** (hooks que inyectan/recuerdan, no bloquean) → 📜 **NORMAS** (reglas que Claude se autoimpone: Definición de LISTO, doc=realidad, flujo git, costo de delegación) → 💡 **SKILLS** (opt-in). Cada nivel con su espina de color; contenido estático que refleja [`brain/`](brain/).
 
 ## macOS (menu-bar app)
 
@@ -23,6 +91,22 @@ This builds `Claude Quota.app` into `~/Applications`, installs the fetch script 
 **Prerequisites:** macOS 13+, Xcode command-line tools (`swift` — `xcode-select --install`), `jq` (`brew install jq`), and Node.js (for `ccusage`).
 
 Full details — calibration, the cost-vs-tokens explanation, development, and troubleshooting — are in **[macos/README.md](macos/README.md)**.
+
+## Windows (tray app)
+
+A native **WinForms tray app** (.NET) — no bash/jq/curl needed. A two-row mini-bar (5 h / 7 d) in the notification area; left-click for the 4-tab popup (Límites / Resumen / Modelos / Proyectos), right-click for the menu.
+
+```powershell
+git clone https://github.com/unjordi/claude-quota-widget
+cd claude-quota-widget\windows
+pwsh -File install.ps1
+```
+
+This publishes a **self-contained single-file `.exe`** (no .NET runtime required on the target), installs it to `%LOCALAPPDATA%\Programs\ClaudeQuota`, registers it to start with Windows, and launches it.
+
+**Prerequisites:** Windows 10/11 and the [.NET 10 SDK](https://dotnet.microsoft.com/download) *to build*. The Límites tab and the local stats (tokens, sessions, peak hour, heatmap) work with **zero external tools** — the app reads the OAuth token straight from `%USERPROFILE%\.claude\.credentials.json` and parses your local transcripts in C#. The API-equivalent **$ cost** is the only figure that needs **Node + [ccusage](https://github.com/ryoppippi/ccusage)** on `PATH`; without it, cost shows `—`.
+
+Full details in **[windows/README.md](windows/README.md)**.
 
 ---
 
@@ -89,7 +173,9 @@ The dollar values shown in the popup are **API-equivalent** cost (what you'd hav
 ```sh
 git clone https://github.com/unjordi/claude-quota-widget
 cd claude-quota-widget
-./install.sh
+./install.sh                 # brain + quota daemon + KDE widget (the full master install)
+./install.sh --no-gui        # brain + daemon only (skip the desktop widget)
+./install.sh --no-brain      # daemon + widget only (skip the Claude-Code brain)
 ```
 
 Or with [just](https://github.com/casey/just):
@@ -98,7 +184,7 @@ Or with [just](https://github.com/casey/just):
 just install
 ```
 
-Then in Plasma: right-click your panel → **Add or Manage Widgets…** → search **"Claude Code Quota"** → drag it onto the panel.
+Then in Plasma: right-click your panel → **Add or Manage Widgets…** → search **"Claude Code Quota"** → drag it onto the panel. (On macOS the equivalent flags live in [`macos/install.sh`](macos/install.sh): `--no-gui` / `--no-brain`.)
 
 ## Tuning the fallback caps
 
@@ -118,6 +204,32 @@ Rough starting points (eyeballed against `/usage` on Max 20x):
 | Max 20x | 45 | 4,800 |
 
 (Older installs used `*_CAP_TOKENS` raw-token caps; those are no longer read — raw token counts are dominated by cache reads, which Anthropic's limits weight at ~0.1×, so they over-reported badly.)
+
+## The "Proyectos" tab — naming and aliases
+
+The fetch script aggregates per-project token usage from the raw JSONL transcripts under
+`~/.claude/projects/<slug>/`, where `<slug>` is the project path with `/` turned into `-`
+(e.g. `/Users/me/code/cps` → `-Users-me-code-cps`). To keep this list clean it **normalizes**
+each slug to a canonical project name:
+
+- **Subdirectories and git worktrees under a known repo are merged into that repo.** The known
+  repos come from `~/.claude.json`'s `.projects` map (the real paths Claude Code has seen); the
+  slug is matched by **longest prefix** at a segment boundary, so `-Users-me-code-cps-cpscsmWasm`
+  folds into `cps`. This works even when the repo name itself has dashes (e.g. `claude-quota-widget`).
+- **Ephemeral worktrees** under `/private/tmp` or `/tmp` (slugs `-private-tmp-*` / `-tmp-*`) collapse
+  into a single **`(worktrees)`** bucket instead of one entry per throwaway worktree.
+- **Anything else** falls back to the **last path segment** of the slug (not the whole ugly path).
+
+**Optional aliases:** to rename a canonical project (e.g. an internal repo name you'd rather see as
+a product name), drop a JSON map at `~/.claude/proyectos-alias.json` mapping canonical name → alias:
+
+```sh
+cp brain/proyectos-alias.example.json ~/.claude/proyectos-alias.json
+$EDITOR ~/.claude/proyectos-alias.json        # {"registros_bats_y_buses": "MegaFlux", ...}
+```
+
+The file is optional — the script tolerates its absence. The alias is applied **after**
+normalization, so it renames the merged/canonical project, not each raw slug.
 
 ## Troubleshooting
 

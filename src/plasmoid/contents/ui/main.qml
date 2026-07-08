@@ -84,6 +84,24 @@ PlasmoidItem {
     readonly property real fivePct: snapshot && snapshot.five_hour ? snapshot.five_hour.percent : -1
     readonly property real weekPct: snapshot && snapshot.weekly    ? snapshot.weekly.percent    : -1
 
+    // Límites semanales acotados a UN modelo (weekly_scoped con scope.model).
+    // Efímeros y cambiantes → se renderizan dinámicamente, sin hardcodear modelos.
+    readonly property var scopedLimits: {
+        if (!snapshot || !snapshot.limits) return []
+        var out = []
+        for (var i = 0; i < snapshot.limits.length; i++) {
+            var l = snapshot.limits[i]
+            if (l.kind === "weekly_scoped" && l.model) out.push(l)
+        }
+        return out
+    }
+    // Formatea dinero (used/cap ya vienen divididos por 10^exponent).
+    function fmtMoney(v, cur) {
+        if (v === undefined || v === null) return "—"
+        var sym = cur === "USD" ? "$" : (cur ? cur + " " : "$")
+        return sym + v.toFixed(2)
+    }
+
     // Paleta para modelos (distinta por modelo, cohesiva con el acento).
     readonly property var modelPalette: ["#e8884a", "#5b9bd5", "#9b6dd6", "#5fb98e", "#d6a15b", "#c96daa"]
     function modelColorFor(name) {
@@ -140,6 +158,50 @@ PlasmoidItem {
         for (var i = 0; i < stats.days.length; i++) m = Math.max(m, stats.days[i].tokens)
         return m
     }
+
+    // ---------- Datos ESTÁTICOS de la pestaña Cerebro ----------
+    // Reflejan `brain/` (hooks / normas / skills), de más duro (arriba) a más leve (abajo).
+    // NO dependen de datos en vivo; se mantienen a mano cuando cambian las piezas del cerebro.
+    readonly property var brainTiers: [
+        {
+            emoji: "🔒", title: "INVIOLABLE", color: "#dc3545",
+            subtitle: "hooks que BLOQUEAN (deny) — no negociables",
+            items: [
+                { emoji: "🚧", name: "git-branch-guard",       desc: "push/merge a develop·main → denegado, te redirige a ramita→MR" },
+                { emoji: "🔗", name: "merge-squash-guard",     desc: "MR a develop sin --squash → denegado (1 commit limpio)" },
+                { emoji: "✋", name: "confirmar-merge-develop", desc: "merge a develop sin tu OK → denegado; a main exige OK súper-explícito" },
+                { emoji: "✅", name: "dod-verificar",          desc: "declarar “listo” sin build+tests+memoria → denegado" },
+                { emoji: "💸", name: "delegacion-gate",        desc: "reclutar agente con costo → pide tu consentimiento (puede negar)" }
+            ]
+        },
+        {
+            emoji: "🔔", title: "AUTOMÁTICO", color: "#e8884a",
+            subtitle: "hooks que inyectan / recuerdan — no bloquean",
+            items: [
+                { emoji: "🧭", name: "sesion-inicio",             desc: "al abrir/retomar reinyecta rama + norma de git + orden de leer memoria" },
+                { emoji: "💾", name: "precompact-volcar-estado",  desc: "antes de compactar, vuelca avance/decisiones/pendientes a memoria" },
+                { emoji: "📊", name: "recordar-dashboard",        desc: "antes de un push, recuerda actualizar el dashboard del cerebro" },
+                { emoji: "📝", name: "delegacion-registrar",      desc: "registra el consentimiento (materializa el “pregunta 1×”)" }
+            ]
+        },
+        {
+            emoji: "📜", title: "NORMAS", color: "#4a90d9",
+            subtitle: "reglas que Claude se autoimpone (CLAUDE.md)",
+            items: [
+                { emoji: "🎯", name: "Definición de LISTO",   desc: "verde técnico ≠ listo; exige tu QA o tu OK expreso" },
+                { emoji: "🪞", name: "Doc = realidad",        desc: "cambió algo → actualiza su doc en la misma tanda, sin preguntar" },
+                { emoji: "🌿", name: "Flujo de git",          desc: "ramita → MR → develop (squash); main es release-only" },
+                { emoji: "💰", name: "Costo de delegación",   desc: "gratis / incluido / con costo — window-aware, lee tu cuota" }
+            ]
+        },
+        {
+            emoji: "💡", title: "SKILLS", color: "#3aa76d",
+            subtitle: "herramientas opt-in — las invocas tú",
+            items: [
+                { emoji: "📦", name: "cerrar-slice", desc: "build+tests+memoria al día + MR con resumen curado por slice" }
+            ]
+        }
+    ]
 
     Plasmoid.status: PlasmaCore.Types.ActiveStatus
     Plasmoid.icon: "speedometer"
@@ -222,6 +284,8 @@ PlasmoidItem {
             TabRailButton { idx: 0; icon: "speedometer";        label: "Límites" }
             TabRailButton { idx: 1; icon: "view-statistics";    label: "Resumen" }
             TabRailButton { idx: 2; icon: "office-chart-bar";   label: "Modelos" }
+            // Sin ícono "cerebro" nativo bueno en Breeze → emoji 🧠 como glifo del riel.
+            TabRailButton { idx: 3; emoji: "🧠";                label: "Cerebro" }
             Item { Layout.fillHeight: true }
             PC3.ToolButton {
                 icon.name: "view-refresh"; flat: true
@@ -248,14 +312,45 @@ PlasmoidItem {
                 Kirigami.Heading { level: 3; text: "Límites de uso"; Layout.fillWidth: true }
                 UsageSection { Layout.fillWidth: true; title: "Sesión (5 h)"; block: root.snapshot ? root.snapshot.five_hour : null }
                 UsageSection { Layout.fillWidth: true; title: "Semanal (7 d)"; block: root.snapshot ? root.snapshot.weekly : null }
+
+                // Límites semanales por modelo (dinámicos): una fila por modelo.
+                PC3.Label {
+                    visible: root.scopedLimits.length > 0
+                    text: "Por modelo (semanal)"; opacity: 0.6
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                }
+                Repeater {
+                    model: root.scopedLimits
+                    delegate: UsageSection {
+                        Layout.fillWidth: true
+                        title: modelData.model
+                        block: modelData
+                    }
+                }
+
+                // Gasto REAL (dinero de bolsillo) — distinto del "Costo API-equiv".
+                SpendSection {
+                    Layout.fillWidth: true
+                    spend: root.snapshot ? root.snapshot.spend : null
+                    extra: root.snapshot ? root.snapshot.extra_usage : null
+                }
+
                 Item { Layout.fillHeight: true }
                 PC3.Label {
-                    Layout.fillWidth: true; opacity: 0.5; font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    Layout.fillWidth: true; font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    readonly property bool mismatch: root.snapshot && root.snapshot.account_mismatch === true
+                    opacity: mismatch ? 1.0 : 0.5
+                    font.bold: mismatch
+                    color: mismatch ? "#dc3545" : Kirigami.Theme.textColor
                     text: {
                         if (root.snapshotError) return "error: " + root.snapshotError
                         if (!root.snapshot) return "cargando…"
-                        const basis = root.snapshot.basis === "oauth" ? "datos reales" : "estimado local"
-                        return basis + " · ⟳ 5 min · act. " + root.relativeTime(root.snapshot.updated_at)
+                        const account = root.snapshot.account_email
+                            ? root.snapshot.account_email
+                            : (root.snapshot.basis === "oauth" ? "datos reales" : "estimado local")
+                        if (root.snapshot.account_mismatch === true)
+                            return "⚠ " + account + " no es la cuenta fijada · ⟳ 5 min · act. " + root.relativeTime(root.snapshot.updated_at)
+                        return account + " · ⟳ 5 min · act. " + root.relativeTime(root.snapshot.updated_at)
                     }
                 }
             }
@@ -329,29 +424,82 @@ PlasmoidItem {
                         }
                     }
                 }
-                // tabla de modelos
-                ColumnLayout {
-                    Layout.fillWidth: true; spacing: Kirigami.Units.smallSpacing
-                    Repeater {
-                        model: root.stats ? root.stats.models : []
-                        delegate: RowLayout {
-                            Layout.fillWidth: true; spacing: Kirigami.Units.smallSpacing
-                            Rectangle { width: 10; height: 10; radius: 2; color: root.modelColorFor(modelData.model) }
-                            PC3.Label { text: root.prettyModel(modelData.model); font.bold: true }
-                            Item { Layout.fillWidth: true }
-                            PC3.Label {
-                                opacity: 0.7
-                                text: root.fmtTok(modelData.in_tok) + " in · " + root.fmtTok(modelData.out_tok) + " out"
-                            }
-                            PC3.Label {
-                                text: modelData.pct.toFixed(1) + "%"; font.bold: true
-                                color: root.modelColorFor(modelData.model)
-                                Layout.minimumWidth: Kirigami.Units.gridUnit * 2.5; horizontalAlignment: Text.AlignRight
+                // tabla de modelos — scrolleable: muchos modelos → scroll interno,
+                // popup de tamaño estable (no crece ni se corta la lista).
+                PC3.ScrollView {
+                    id: modelsScroll
+                    Layout.fillWidth: true; Layout.fillHeight: true
+                    contentWidth: availableWidth   // sin scroll horizontal
+                    clip: true
+                    ColumnLayout {
+                        width: modelsScroll.availableWidth
+                        spacing: Kirigami.Units.smallSpacing
+                        Repeater {
+                            model: root.stats ? root.stats.models : []
+                            delegate: RowLayout {
+                                Layout.fillWidth: true; spacing: Kirigami.Units.smallSpacing
+                                Rectangle { width: 10; height: 10; radius: 2; color: root.modelColorFor(modelData.model) }
+                                PC3.Label { text: root.prettyModel(modelData.model); font.bold: true }
+                                Item { Layout.fillWidth: true }
+                                PC3.Label {
+                                    opacity: 0.7
+                                    text: root.fmtTok(modelData.in_tok) + " in · " + root.fmtTok(modelData.out_tok) + " out"
+                                }
+                                PC3.Label {
+                                    text: modelData.pct.toFixed(1) + "%"; font.bold: true
+                                    color: root.modelColorFor(modelData.model)
+                                    Layout.minimumWidth: Kirigami.Units.gridUnit * 2.5; horizontalAlignment: Text.AlignRight
+                                }
                             }
                         }
                     }
                 }
-                Item { Layout.fillHeight: true }
+            }
+
+            // ===== Tab 3: Cerebro =====
+            // Infografía ESTÁTICA del cerebro global de Claude Code (refleja `brain/`):
+            // los componentes instalados, jerarquizados de INVIOLABLE (hooks que deniegan)
+            // → SKILLS opt-in. Se mantiene a mano cuando cambian las piezas de `brain/`.
+            PC3.ScrollView {
+                id: cerebroScroll
+                contentWidth: availableWidth   // sin scroll horizontal; solo vertical
+                clip: true
+                ColumnLayout {
+                    width: cerebroScroll.availableWidth
+                    spacing: Kirigami.Units.largeSpacing
+                    // Encabezado de marca: destello acento naranja + 🧠.
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Kirigami.Units.smallSpacing
+                        Kirigami.Icon {
+                            source: "starred-symbolic"; isMask: true; color: "#e8884a"
+                            Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                            Layout.preferredHeight: Kirigami.Units.iconSizes.small
+                        }
+                        Kirigami.Heading { level: 3; text: "🧠 Cerebro global"; Layout.fillWidth: true }
+                    }
+                    PC3.Label {
+                        Layout.fillWidth: true; opacity: 0.6; wrapMode: Text.WordWrap
+                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                        text: "Guardarraíles + gobernanza + normas de Claude Code. Viaja por git, aplica en toda máquina. De más duro (arriba) a más leve (abajo)."
+                    }
+                    Repeater {
+                        model: root.brainTiers
+                        delegate: BrainTier {
+                            Layout.fillWidth: true
+                            emoji: modelData.emoji
+                            title: modelData.title
+                            accent: modelData.color
+                            subtitle: modelData.subtitle
+                            items: modelData.items
+                        }
+                    }
+                    PC3.Label {
+                        Layout.fillWidth: true; opacity: 0.45; wrapMode: Text.WordWrap
+                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                        text: "Instalado por install-brain.sh · probado por test-brain.sh · sin jq los hooks fallan ABIERTO (no bloquean)."
+                    }
+                }
             }
         }
     }
@@ -360,6 +508,7 @@ PlasmoidItem {
     component TabRailButton: Rectangle {
         property int idx: 0
         property string icon: ""
+        property string emoji: ""   // glifo alterno cuando no hay ícono nativo (p.ej. 🧠)
         property string label: ""
         Layout.fillWidth: true
         Layout.preferredHeight: Kirigami.Units.gridUnit * 2
@@ -370,15 +519,76 @@ PlasmoidItem {
         RowLayout {
             anchors.fill: parent; anchors.leftMargin: Kirigami.Units.smallSpacing; spacing: Kirigami.Units.smallSpacing
             Kirigami.Icon {
+                visible: emoji === ""
                 source: icon
                 Layout.preferredWidth: Kirigami.Units.iconSizes.small; Layout.preferredHeight: Kirigami.Units.iconSizes.small
                 color: active ? "#e8884a" : Kirigami.Theme.textColor
                 isMask: true
             }
+            // El emoji no se puede tintar; el estado activo se marca con la etiqueta.
+            PC3.Label {
+                visible: emoji !== ""
+                text: emoji
+                Layout.preferredWidth: Kirigami.Units.iconSizes.small
+                horizontalAlignment: Text.AlignHCenter
+            }
             PC3.Label { text: label; font.bold: active; color: active ? "#e8884a" : Kirigami.Theme.textColor }
             Item { Layout.fillWidth: true }
         }
         MouseArea { id: mouse; anchors.fill: parent; hoverEnabled: true; onClicked: root.currentTab = idx }
+    }
+
+    // Un nivel (tier) del cerebro: espina/barra de color a la izquierda + encabezado
+    // (emoji + TÍTULO en el color del nivel + subtítulo tenue) + hojas con conectores
+    // de árbol monoespaciados (├─ para todas menos la última, └─ para la última).
+    component BrainTier: RowLayout {
+        id: tier
+        property string emoji: ""
+        property string title: ""
+        property color accent: Kirigami.Theme.textColor
+        property string subtitle: ""
+        property var items: []
+        spacing: Kirigami.Units.smallSpacing
+        Rectangle {
+            Layout.preferredWidth: 3; Layout.fillHeight: true
+            Layout.topMargin: 2; Layout.bottomMargin: 2
+            radius: 1; color: tier.accent
+        }
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: Kirigami.Units.smallSpacing
+            RowLayout {
+                Layout.fillWidth: true; spacing: Kirigami.Units.smallSpacing
+                PC3.Label { text: tier.emoji; font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.1 }
+                PC3.Label { text: tier.title; font.bold: true; color: tier.accent }
+                Item { Layout.fillWidth: true }
+            }
+            PC3.Label {
+                Layout.fillWidth: true; text: tier.subtitle; opacity: 0.6; wrapMode: Text.WordWrap
+                font.pointSize: Kirigami.Theme.smallFont.pointSize
+            }
+            Repeater {
+                model: tier.items
+                delegate: RowLayout {
+                    Layout.fillWidth: true; spacing: Kirigami.Units.smallSpacing
+                    PC3.Label {
+                        Layout.alignment: Qt.AlignTop
+                        text: index === tier.items.length - 1 ? "└─" : "├─"
+                        font.family: "monospace"; color: tier.accent; opacity: 0.55
+                    }
+                    PC3.Label { Layout.alignment: Qt.AlignTop; text: modelData.emoji }
+                    PC3.Label {
+                        Layout.alignment: Qt.AlignTop
+                        text: modelData.name; font.family: "monospace"; font.bold: true
+                    }
+                    PC3.Label {
+                        Layout.fillWidth: true; Layout.alignment: Qt.AlignTop
+                        text: modelData.desc; opacity: 0.62; wrapMode: Text.WordWrap
+                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    }
+                }
+            }
+        }
     }
 
     // tarjeta de estadística (Resumen)
@@ -430,12 +640,58 @@ PlasmoidItem {
         }
     }
 
+    // sección de GASTO REAL: dinero de tu bolsillo (spend) + overage (extra_usage).
+    // Distinto del "Costo API-equiv" del Resumen, que es el equivalente incluido.
+    component SpendSection: ColumnLayout {
+        property var spend: null
+        property var extra: null
+        readonly property real pct: spend && spend.percent !== undefined && spend.percent !== null ? spend.percent : -1
+        visible: spend && spend.enabled === true
+        spacing: Kirigami.Units.smallSpacing
+        RowLayout {
+            Layout.fillWidth: true
+            PC3.Label { text: "Gasto real"; Layout.fillWidth: true; font.bold: true }
+            PC3.Label {
+                // Headline = MONTO usado (no %); el color sigue por porcentaje.
+                text: spend ? root.fmtMoney(spend.used, spend.currency) : "—"
+                color: root.pctColor(pct); font.bold: true
+            }
+        }
+        Rectangle {
+            Layout.fillWidth: true; height: Kirigami.Units.gridUnit * 0.5; radius: height / 2
+            color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.12)
+            Rectangle {
+                anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter
+                height: parent.height; radius: parent.radius
+                width: parent.width * Math.max(0, Math.min(1, pct / 100))
+                color: root.pctColor(pct)
+                Behavior on width { NumberAnimation { duration: 250 } }
+            }
+        }
+        PC3.Label {
+            Layout.fillWidth: true; opacity: 0.65; wrapMode: Text.WordWrap
+            font.pointSize: Kirigami.Theme.smallFont.pointSize
+            text: {
+                if (!spend) return ""
+                // Monto usado / tope (redundante con el headline a propósito).
+                let s = root.fmtMoney(spend.used, spend.currency) + " / " + root.fmtMoney(spend.cap, spend.currency)
+                if (spend.currency) s += " " + spend.currency
+                s += " — gasto real de bolsillo (no el equivalente incluido del plan)"
+                if (extra && extra.enabled === true && extra.used_credits !== null && extra.used_credits !== undefined)
+                    s += "\nSobreuso: " + root.fmtInt(extra.used_credits) + " / " + root.fmtInt(extra.monthly_limit) + " créditos"
+                        + (extra.utilization !== null && extra.utilization !== undefined ? " (" + extra.utilization.toFixed(1) + "%)" : "")
+                return s
+            }
+        }
+    }
+
     // ---------- Tooltip ----------
     toolTipMainText: {
         if (statusKey === "error") return "Claude Limits — sin datos"
         const five = fivePct >= 0 ? Math.round(fivePct) + "%" : "—"
         const wk   = weekPct >= 0 ? Math.round(weekPct) + "%" : "—"
-        return "Claude: 5h " + five + " · 7d " + wk
+        const warn = (snapshot && snapshot.account_mismatch === true) ? " ⚠ otra cuenta" : ""
+        return "Claude: 5h " + five + " · 7d " + wk + warn
     }
     toolTipSubText: snapshot && snapshot.five_hour
                     ? "sesión se restablece " + relativeTime(snapshot.five_hour.resets_at) : ""

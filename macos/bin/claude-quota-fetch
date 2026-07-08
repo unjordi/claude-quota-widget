@@ -41,6 +41,16 @@ TMP_FILE="$CACHE_DIR/state.json.tmp"
 
 mkdir -p "$CACHE_DIR"
 
+# Carry forward the last known REAL (oauth) reset time when this run falls
+# back to cost-basis estimation — a guessed "next Monday" is wrong for
+# accounts whose actual rolling weekly window doesn't land on Monday.
+PREV_WEEK_RESET=""
+PREV_FIVE_RESET=""
+if [[ -r "$STATE_FILE" ]] && [[ "$(jq -r '.basis // empty' "$STATE_FILE" 2>/dev/null || true)" == "oauth" ]]; then
+  PREV_WEEK_RESET="$(jq -r '.weekly.resets_at // empty' "$STATE_FILE" 2>/dev/null || true)"
+  PREV_FIVE_RESET="$(jq -r '.five_hour.resets_at // empty' "$STATE_FILE" 2>/dev/null || true)"
+fi
+
 write_error() {
   local msg="$1"
   jq -n --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg err "$msg" '{
@@ -65,6 +75,27 @@ oauth_token() {
   [[ -n "$creds" ]] || return 1
   jq -er '.claudeAiOauth.accessToken // empty' <<<"$creds"
 }
+
+# The account email (display only), from Claude Code's own local config —
+# not part of the OAuth token, so read separately and best-effort.
+account_email() {
+  [[ -r "$HOME/.claude.json" ]] || return 1
+  jq -er '.oauthAccount.emailAddress // empty' "$HOME/.claude.json"
+}
+ACCOUNT_EMAIL="$(account_email 2>/dev/null || true)"
+ACCOUNT_UUID="$(jq -er '.oauthAccount.accountUuid // empty' "$HOME/.claude.json" 2>/dev/null || true)"
+
+# Account guard (opt-in): if a pinned account (uuid OR email) is configured in
+# $CLAUDE_QUOTA_ACCOUNT (default ~/.config/claude-quota/account) and the active
+# account differs, flag a mismatch so the UI warns — the CLI + Claude.app share
+# one credential slot and a re-login can silently switch identities.
+ACCOUNT_PIN_FILE="${CLAUDE_QUOTA_ACCOUNT:-$HOME/.config/claude-quota/account}"
+ACCOUNT_PIN=""
+[[ -r "$ACCOUNT_PIN_FILE" ]] && ACCOUNT_PIN="$(head -n1 "$ACCOUNT_PIN_FILE" | tr -d '[:space:]')"
+ACCOUNT_MISMATCH=false
+if [[ -n "$ACCOUNT_PIN" && "$ACCOUNT_PIN" != "$ACCOUNT_UUID" && "$ACCOUNT_PIN" != "$ACCOUNT_EMAIL" ]]; then
+  ACCOUNT_MISMATCH=true
+fi
 
 USAGE_JSON=""
 if TOKEN="$(oauth_token 2>/dev/null)" && [[ -n "$TOKEN" ]]; then
@@ -128,6 +159,11 @@ CURRENT_MONDAY="$(date -u -v-$((DOW - 1))d +%Y-%m-%d)"
 DAYS_AHEAD=$(( 8 - DOW ))
 NEXT_MONDAY="$(date -u -v+"${DAYS_AHEAD}"d -v0H -v0M -v0S +%Y-%m-%dT%H:%M:%SZ)"
 
+# Discard carried-forward resets once they've actually passed (ISO-8601 "Z"
+# timestamps sort lexically, so a plain string compare works here).
+[[ -n "$PREV_WEEK_RESET" && "$PREV_WEEK_RESET" > "$NOW_ISO" ]] || PREV_WEEK_RESET=""
+[[ -n "$PREV_FIVE_RESET" && "$PREV_FIVE_RESET" > "$NOW_ISO" ]] || PREV_FIVE_RESET=""
+
 jq -n \
   --argjson usage "${USAGE_JSON:-null}" \
   --argjson blocks "${BLOCKS_JSON:-null}" \
@@ -135,6 +171,11 @@ jq -n \
   --arg ts "$NOW_ISO" \
   --arg cur_week "$CURRENT_MONDAY" \
   --arg next_monday "$NEXT_MONDAY" \
+  --arg prev_week_reset "$PREV_WEEK_RESET" \
+  --arg prev_five_reset "$PREV_FIVE_RESET" \
+  --arg email "$ACCOUNT_EMAIL" \
+  --arg account_uuid "$ACCOUNT_UUID" \
+  --argjson account_mismatch "$ACCOUNT_MISMATCH" \
   --argjson five_cap "$FIVE_HOUR_CAP_USD" \
   --argjson week_cap "$WEEKLY_CAP_USD" \
   --argjson warn "$WARN_PCT" \
@@ -159,13 +200,18 @@ jq -n \
      else "ok" end) as $status
   | (if ($usage != null and $usage.five_hour.resets_at != null) then ($usage.five_hour.resets_at | isoz)
      elif $blk != null then $blk.endTime
+     elif $prev_five_reset != "" then $prev_five_reset
      else null end) as $five_reset
   | (if ($usage != null and $usage.seven_day.resets_at != null) then ($usage.seven_day.resets_at | isoz)
+     elif $prev_week_reset != "" then $prev_week_reset
      else $next_monday end) as $week_reset
   | {
       updated_at: $ts,
       status: $status,
       basis: (if $usage != null then "oauth" else "cost" end),
+      account_email: (if $email != "" then $email else null end),
+      account_uuid: (if $account_uuid != "" then $account_uuid else null end),
+      account_mismatch: $account_mismatch,
       error: null,
       five_hour: (if ($usage != null or $blocks != null) then {
         percent: round1($five_pct),
@@ -183,6 +229,33 @@ jq -n \
         tokens_used: (if $wk != null then ($wk.totalTokens // 0) else null end),
         resets_at: $week_reset,
         week_start: (if $wk != null then ($wk.week // $wk.period) else null end)
+      } else null end),
+      # --- Solo en modo oauth: la API expone más de lo que la GUI mostraba -----
+      # limites por-modelo acotados en el tiempo (weekly_scoped con scope.model),
+      # gasto REAL (dinero de bolsillo) y overage. En fallback ccusage no existen.
+      limits: (if $usage != null then
+        [ ($usage.limits // [])[] | {
+            kind: .kind,
+            model: (.scope.model.display_name // null),
+            percent: .percent,
+            resets_at: (if .resets_at != null then (.resets_at | isoz) else null end),
+            severity: .severity,
+            is_active: .is_active
+          } ]
+        else null end),
+      spend: (if ($usage != null and $usage.spend != null) then {
+        used: (if $usage.spend.used != null then ($usage.spend.used.amount_minor / pow(10; $usage.spend.used.exponent)) else null end),
+        cap:  (if $usage.spend.limit != null then ($usage.spend.limit.amount_minor / pow(10; $usage.spend.limit.exponent)) else null end),
+        currency: ($usage.spend.used.currency // $usage.spend.limit.currency // null),
+        percent: ($usage.spend.percent // null),
+        enabled: ($usage.spend.enabled // false)
+      } else null end),
+      extra_usage: (if ($usage != null and $usage.extra_usage != null) then {
+        used_credits:  ($usage.extra_usage.used_credits // null),
+        monthly_limit: ($usage.extra_usage.monthly_limit // null),
+        currency:      ($usage.extra_usage.currency // null),
+        utilization:   ($usage.extra_usage.utilization // null),
+        enabled:       ($usage.extra_usage.is_enabled // false)
       } else null end)
     }
 ' > "$TMP_FILE"
@@ -214,9 +287,126 @@ if [[ -n "$DAILY_JSON" ]]; then
       | awk -v off="$OFF" 'BEGIN{m=-1;ph=-1} {h=($1+off+24)%24; c[h]++} END{for(i=0;i<24;i++) if(c[i]>m){m=c[i];ph=i}; print ph}')
     [[ -z "$PEAK_HOUR" ]] && PEAK_HOUR=-1
   fi
+
+  # --- Fase 3: uso por proyecto (carpeta ~/.claude/projects/<slug>) -----------
+  # ccusage no separa por proyecto (ni `daily` ni `session` traen la ruta) ->
+  # se agrega a mano desde los mismos jsonl crudos de fase 2, por directorio.
+  # El slug de Claude Code (path con "/" -> "-") se NORMALIZA a un nombre de
+  # proyecto canónico: un subdir/worktree BAJO un repo conocido se fusiona con
+  # su raíz (longest-prefix contra las rutas reales de ~/.claude.json .projects),
+  # los worktrees efímeros (/private/tmp, /tmp) caen a un bucket "(worktrees)",
+  # y lo que no casa usa el último segmento del slug (no el path completo feo).
+  # Un alias opcional (~/.claude/proyectos-alias.json) renombra el canónico.
+  #  $PROJECT_REPOS_JSON: [{slug,name}] de cada repo real conocido.
+  PROJECT_REPOS_JSON="[]"
+  if [[ -r "$HOME/.claude.json" ]]; then
+    PROJECT_REPOS_JSON="$(jq -c '
+      [(.projects // {}) | keys[] | {slug: gsub("/"; "-"), name: (split("/") | last)}]
+    ' "$HOME/.claude.json" 2>/dev/null || echo '[]')"
+    jq -e . <<<"$PROJECT_REPOS_JSON" >/dev/null 2>&1 || PROJECT_REPOS_JSON="[]"
+  fi
+  # Alias opcional: mapa {"<nombre-canónico>":"<alias>"}; tolera que no exista.
+  PROJECT_ALIAS_JSON="{}"
+  if [[ -r "$HOME/.claude/proyectos-alias.json" ]]; then
+    PROJECT_ALIAS_JSON="$(jq -c '.' "$HOME/.claude/proyectos-alias.json" 2>/dev/null || echo '{}')"
+    jq -e . <<<"$PROJECT_ALIAS_JSON" >/dev/null 2>&1 || PROJECT_ALIAS_JSON="{}"
+  fi
+  PROJECT_DAY_TSV=""
+  if [[ -d "$PROJ" ]]; then
+    for d in "$PROJ"/*/; do
+      [[ -d "$d" ]] || continue
+      slug="$(basename "$d")"
+      # Bucket by LOCAL calendar day (same convention ccusage's daily/--breakdown
+      # uses) — the raw timestamp is UTC, so an hour near midnight can land on
+      # the previous/next local day. $OFF (local UTC offset, from fase 2 arriba)
+      # only ever shifts by one day either way, so a plain day rollover suffices.
+      PROJECT_DAY_TSV+="$( { grep -rh '"usage":{' "$d" --include='*.jsonl' 2>/dev/null || true; } | awk -v slug="$slug" -v off="$OFF" '
+        function isLeap(y) { return (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0) }
+        function daysInMonth(y, m,    dim) {
+          split("31 28 31 30 31 30 31 31 30 31 30 31", dim, " ")
+          if (m == 2 && isLeap(y)) return 29
+          return dim[m] + 0
+        }
+        function shiftDay(y, m, d, delta,   ny, nm, nd) {
+          nd = d + delta; ny = y; nm = m
+          if (nd < 1) {
+            nm = m - 1; if (nm < 1) { nm = 12; ny = y - 1 }
+            nd = daysInMonth(ny, nm)
+          } else if (nd > daysInMonth(y, m)) {
+            nd = 1; nm = m + 1; if (nm > 12) { nm = 1; ny = y + 1 }
+          }
+          return sprintf("%04d-%02d-%02d", ny, nm, nd)
+        }
+        {
+          # Claude Code logs one jsonl line per CONTENT BLOCK of an assistant
+          # turn (thinking/tool_use/text), each repeating the SAME message.id
+          # and the SAME cumulative usage — dedupe by id or a multi-block reply
+          # triples its token count.
+          if (match($0, /"id":"msg_[A-Za-z0-9]+"/)) { id = substr($0, RSTART, RLENGTH) } else next
+          if (id in seen) next
+          seen[id] = 1
+          if (match($0, /"timestamp":"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}/)) {
+            ts = substr($0, RSTART + 13, 13)
+            y = substr(ts,1,4) + 0; mo = substr(ts,6,2) + 0; da = substr(ts,9,2) + 0; hh = substr(ts,12,2) + 0
+          } else next
+          lh = hh + off
+          if (lh < 0)       date = shiftDay(y, mo, da, -1)
+          else if (lh >= 24) date = shiftDay(y, mo, da, 1)
+          else               date = sprintf("%04d-%02d-%02d", y, mo, da)
+          inv = 0; outv = 0
+          if (match($0, /"input_tokens":[0-9]+/))  { s = substr($0, RSTART, RLENGTH); sub(/^"input_tokens":/, "", s);  inv  = s + 0 }
+          if (match($0, /"output_tokens":[0-9]+/)) { s = substr($0, RSTART, RLENGTH); sub(/^"output_tokens":/, "", s); outv = s + 0 }
+          I[date] += inv; O[date] += outv
+        }
+        END { for (dt in I) printf "%s\t%s\t%d\t%d\n", slug, dt, I[dt], O[dt] + 0 }
+      ')"$'\n'
+    done
+  fi
+  PROJECT_STATS_JSON='{"projects":[],"by_day":{}}'
+  if [[ -n "${PROJECT_DAY_TSV// /}" ]]; then
+    PROJECT_STATS_JSON="$(printf '%s' "$PROJECT_DAY_TSV" | jq -R -s \
+        --argjson repos "$PROJECT_REPOS_JSON" --argjson aliases "$PROJECT_ALIAS_JSON" '
+      # Nombre canónico de un slug de proyecto:
+      #  1) (o extiende) un repo conocido -> nombre del repo raíz (longest-prefix
+      #     con frontera de segmento: slug == repo.slug o empieza con repo.slug+"-");
+      #  2) worktree efímero (-private-tmp-*, -tmp-*) -> bucket "(worktrees)";
+      #  3) si no casa -> último segmento del slug (no el path completo).
+      # Luego aplica el alias opcional sobre ese nombre canónico.
+      def canon($slug):
+        ( [ $repos[] | select(.slug as $rs | ($slug == $rs or ($slug | startswith($rs + "-")))) ]
+            | max_by(.slug | length) ) as $repo
+        | (if $repo != null then $repo.name
+           elif ($slug | test("^-(private-)?tmp-")) then "(worktrees)"
+           else ($slug | split("-") | last)
+           end) as $base
+        | ($aliases[$base] // $base);
+      (split("\n") | map(select(length > 0) | split("\t"))
+        | map({slug: .[0], date: .[1], in_tok: (.[2]|tonumber), out_tok: (.[3]|tonumber)})
+        | map(. + {name: canon(.slug)})
+      ) as $rows
+      | ($rows | group_by(.name)
+          | map({project: .[0].name, in_tok: (map(.in_tok) | add), out_tok: (map(.out_tok) | add)})
+          | map(. + {tot: (.in_tok + .out_tok)})
+          | sort_by(-.tot)) as $projs
+      | (($projs | map(.tot) | add) // 0) as $grand
+      | ($projs | map(. + {pct: (if $grand > 0 then (.tot * 100 / $grand) else 0 end)})) as $projects
+      | ($rows | group_by(.date)
+          | map({
+              key: .[0].date,
+              value: (group_by(.name)
+                | map({project: .[0].name, tokens: (map(.in_tok + .out_tok) | add)})
+                | sort_by(-.tokens))
+            })
+          | from_entries) as $by_day
+      | {projects: $projects, by_day: $by_day}
+    ' 2>/dev/null || echo '{"projects":[],"by_day":{}}')"
+    jq -e . <<<"$PROJECT_STATS_JSON" >/dev/null 2>&1 || PROJECT_STATS_JSON='{"projects":[],"by_day":{}}'
+  fi
+
   STATS_TMP="$CACHE_DIR/stats.json.tmp"
   if jq -n --argjson daily "$DAILY_JSON" --arg ts "$NOW_ISO" \
-        --argjson sessions "$SESSIONS" --argjson messages "$MESSAGES" --argjson peak "$PEAK_HOUR" '
+        --argjson sessions "$SESSIONS" --argjson messages "$MESSAGES" --argjson peak "$PEAK_HOUR" \
+        --argjson proj "$PROJECT_STATS_JSON" '
       # "tokens" mostrados = in+out (sin cache, que domina los totales crudos)
       ($daily.daily // []) as $d
       | ($d | map({
@@ -228,7 +418,8 @@ if [[ -n "$DAILY_JSON" ]]; then
           models:  (.modelBreakdowns // [] | map({
                       model:   .modelName,
                       tokens:  ((.inputTokens // 0) + (.outputTokens // 0))
-                   }))
+                   })),
+          projects: ($proj.by_day[.period] // [])
         })) as $days
       # agregado por modelo (suma de todos los días)
       | ([ $d[].modelBreakdowns[]? ]
@@ -248,6 +439,7 @@ if [[ -n "$DAILY_JSON" ]]; then
           models: ($models | map(. + {
             pct: (if $grand > 0 then (.tot * 100 / $grand) else 0 end)
           })),
+          projects: $proj.projects,
           summary: {
             total_tokens: $grand,
             total_cost:   (($models | map(.cost) | add) // 0),
