@@ -125,6 +125,34 @@ out="$(run_gate "$Q")";      is_ask "$out"    && ok "ventana · agotada → vuel
 
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
+echo "== (b2) secret-scan: bloquea un secreto staged, deja pasar lo limpio, respeta --no-verify =="
+SCANREPO="$(mktemp -d "${TMPDIR:-/tmp}/brain-scan.XXXXXX")"
+git -C "$SCANREPO" init -q >/dev/null 2>&1
+git -C "$SCANREPO" config user.email t@t >/dev/null 2>&1
+git -C "$SCANREPO" config user.name  tester >/dev/null 2>&1
+scan() { printf '%s' "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$1\"}}" \
+         | CLAUDE_PROJECT_DIR="$SCANREPO" bash "$HOOKS/secret-scan.sh"; }
+# (1) llave AWS falsa staged → deny
+printf 'aws_key = AKIA1234567890ABCDEF\n' > "$SCANREPO/config.txt"
+git -C "$SCANREPO" add config.txt >/dev/null 2>&1
+o="$(scan 'git commit -m x')"
+printf '%s' "$o" | grep -q '"deny"' && ok "secret-scan bloquea una llave AWS staged" || bad "secret-scan no bloqueó; got: $o"
+# (2) --no-verify → pasa (escape deliberado)
+o="$(scan 'git commit --no-verify -m x')"
+[ -z "$o" ] && ok "secret-scan respeta --no-verify (escape)" || bad "secret-scan ignoró --no-verify; got: $o"
+# (3) contenido limpio → silencio
+git -C "$SCANREPO" reset -q >/dev/null 2>&1; rm -f "$SCANREPO/config.txt"
+printf 'hola mundo, sin secretos\n' > "$SCANREPO/readme.txt"
+git -C "$SCANREPO" add readme.txt >/dev/null 2>&1
+o="$(scan 'git commit -m x')"
+[ -z "$o" ] && ok "secret-scan deja pasar contenido limpio" || bad "secret-scan bloqueó limpio; got: $o"
+# (4) un no-git → silencio
+o="$(scan 'ls -la')"
+[ -z "$o" ] && ok "secret-scan ignora comandos no-git" || bad "secret-scan reaccionó a no-git; got: $o"
+rm -rf "$SCANREPO"
+
+# ─────────────────────────────────────────────────────────────────────────────
+echo ""
 echo "== (c) idempotencia: install-brain.sh 2× contra el \$HOME falso =="
 FAKEHOME2="$(mktemp -d "${TMPDIR:-/tmp}/brain-inst.XXXXXX")"
 HOME="$FAKEHOME2" bash "$INSTALLER" >/dev/null 2>&1

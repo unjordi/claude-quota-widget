@@ -1,5 +1,7 @@
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Threading.Tasks;
 using Microsoft.Win32;
 
 namespace ClaudeQuota;
@@ -23,6 +25,20 @@ public sealed class PopupForm : Form
     private int _cerebroScroll;
     private int _cerebroContentH;
 
+    // ── Cerebro VIVO (interactividad + auto-reflejo + curita) ──
+    // Estado REAL leído de ~/.claude (se recarga al abrir la pestaña); nil hasta la 1ª lectura.
+    private BrainState? _brainState;
+    // Hoja del Cerebro actualmente expandida ("<tier>-<idx>"), o null. Solo una abierta a la vez.
+    private string? _expandedKey;
+    // El botón-curita está corriendo el instalador del cerebro.
+    private bool _healing;
+    // Mensaje transitorio tras curar/actualizar el cerebro.
+    private string? _healMsg;
+    // Zonas clicables recolectadas en el último PaintCerebro (coords LÓGICAS pre-scroll):
+    // cada hoja (clave→rect de su fila) y el botón-curita. El hit-testing suma _cerebroScroll.
+    private readonly List<(string key, Rectangle rect)> _leafHits = new();
+    private Rectangle _healHit = Rectangle.Empty;
+
     // logical → device scale (PerMonitorV2); all metrics below are in logical px.
     private float S => DeviceDpi / 96f;
 
@@ -30,7 +46,11 @@ public sealed class PopupForm : Form
 
     // theme
     private Color _bg, _fg;
+    // Paleta compartida con macOS (PopoverView.swift): acento naranja + verde/rojo/azul de estado.
     private readonly Color _accent = Fmt.Hex(Fmt.Accent);
+    private readonly Color _green = Fmt.Hex("#3aa76d");
+    private readonly Color _red = Fmt.Hex("#dc3545");
+    private readonly Color _blue = Fmt.Hex("#4a90d9");
 
     private readonly Panel _rail = new();
     private readonly Panel _content = new();
@@ -48,6 +68,10 @@ public sealed class PopupForm : Form
         AutoScaleMode = AutoScaleMode.Dpi;
         DoubleBuffered = true;
         KeyPreview = true;
+        // 1px hairline frame around the popover: the form's own BackColor (a subtle
+        // fg-tinted line, set in ApplyTheme) peeks through the padding while the docked
+        // panels fill the interior. Gives the popup an edge against the desktop.
+        Padding = new Padding(1);
 
         ApplyTheme();
 
@@ -62,6 +86,7 @@ public sealed class PopupForm : Form
         _content.Dock = DockStyle.Fill;
         _content.BackColor = _bg;
         _content.Paint += ContentPaint;
+        _content.MouseDown += ContentMouseDown;
 
         // 1px separator between rail and content.
         var sep = new Panel { Dock = DockStyle.Left, Width = 1, BackColor = Blend(_bg, _fg, 0.12) };
@@ -104,7 +129,15 @@ public sealed class PopupForm : Form
         _content.Invalidate();
     }
 
-    public void SelectTab(int t) { _tab = t; _cerebroScroll = 0; _rail.Invalidate(); _content.Invalidate(); }
+    public void SelectTab(int t)
+    {
+        _tab = t;
+        _cerebroScroll = 0;
+        // Al mostrar la pestaña Cerebro, re-lee el estado REAL de ~/.claude (doc=realidad).
+        if (t == 4) { _brainState = BrainInspector.Inspect(); _expandedKey = null; _healMsg = null; }
+        _rail.Invalidate();
+        _content.Invalidate();
+    }
 
     // Rueda del ratón: solo scrollea la pestaña Cerebro (las demás caben en el
     // alto fijo del popup). El form tiene el foco mientras el popover está
@@ -122,37 +155,50 @@ public sealed class PopupForm : Form
 
     // ================= Rail =================
 
+    // Rect (device px) del i-ésimo botón del riel. Centralizado para que paint y
+    // hit-testing no se desincronicen si cambia el espaciado.
+    private Rectangle RailBtnRect(int i)
+    {
+        int pad = Sc(6), btnH = Sc(36), gap = Sc(5);
+        return new Rectangle(pad, pad + Sc(2) + i * (btnH + gap), _rail.Width - pad * 2, btnH);
+    }
+
     private void RailPaint(object? sender, PaintEventArgs e)
     {
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
 
-        int pad = Sc(6);
-        int btnH = Sc(34);
         using var font = Px(12.5f, FontStyle.Regular);
         using var fontB = Px(12.5f, FontStyle.Bold);
 
         for (int i = 0; i < TabNames.Length; i++)
         {
-            var r = new Rectangle(pad, pad + i * (btnH + Sc(4)), _rail.Width - pad * 2, btnH);
+            var r = RailBtnRect(i);
             bool active = _tab == i;
             if (active)
-                using (var b = new SolidBrush(Color.FromArgb(46, _accent)))
-                    FillRounded(g, b, r, Sc(6));
+            {
+                // Píldora acento ~16% (como macOS) + barra-indicador acento a la izquierda.
+                using (var b = new SolidBrush(Color.FromArgb(41, _accent)))
+                    FillRounded(g, b, r, Sc(8));
+                int barH = r.Height - Sc(14);
+                using (var ib = new SolidBrush(_accent))
+                    FillRounded(g, ib, new Rectangle(r.X + Sc(2), r.Y + (r.Height - barH) / 2, Sc(3), barH), Sc(1.5f));
+            }
             else if (_hoverRail == i)
-                using (var b = new SolidBrush(Blend(_bg, _fg, 0.08)))
-                    FillRounded(g, b, r, Sc(6));
+            {
+                using (var b = new SolidBrush(Blend(_bg, _fg, 0.06)))
+                    FillRounded(g, b, r, Sc(8));
+            }
 
-            var col = active ? _accent : _fg;
+            var col = active ? _accent : Blend(_bg, _fg, 0.82);
             using var brush = new SolidBrush(col);
             var sf = new StringFormat { LineAlignment = StringAlignment.Center, Alignment = StringAlignment.Near };
             g.DrawString(TabNames[i], active ? fontB : font, brush,
-                new RectangleF(r.X + Sc(10), r.Y, r.Width - Sc(12), r.Height), sf);
+                new RectangleF(r.X + Sc(14), r.Y, r.Width - Sc(16), r.Height), sf);
         }
 
-        // bottom row: refresh + quit
-        using var iconFont = Px(13f, FontStyle.Regular);
+        // bottom row: refresh + quit (fondos redondeados sutiles al hover-less, glifos tenues)
         var (refreshR, quitR) = BottomButtons();
         using (var b1 = new SolidBrush(Blend(_bg, _fg, 0.7)))
             g.DrawString("⟳", Px(15f, FontStyle.Regular), b1, refreshR, Center());
@@ -171,12 +217,8 @@ public sealed class PopupForm : Form
 
     private void RailMouseDown(object? sender, MouseEventArgs e)
     {
-        int pad = Sc(6), btnH = Sc(34);
         for (int i = 0; i < TabNames.Length; i++)
-        {
-            var r = new Rectangle(pad, pad + i * (btnH + Sc(4)), _rail.Width - pad * 2, btnH);
-            if (r.Contains(e.Location)) { SelectTab(i); return; }
-        }
+            if (RailBtnRect(i).Contains(e.Location)) { SelectTab(i); return; }
         var (refreshR, quitR) = BottomButtons();
         if (refreshR.Contains(e.Location)) { _onRefresh(); return; }
         if (quitR.Contains(e.Location)) { Application.Exit(); }
@@ -184,13 +226,10 @@ public sealed class PopupForm : Form
 
     private void RailMouseMove(object? sender, MouseEventArgs e)
     {
-        int pad = Sc(6), btnH = Sc(34), was = _hoverRail;
+        int was = _hoverRail;
         _hoverRail = -1;
         for (int i = 0; i < TabNames.Length; i++)
-        {
-            var r = new Rectangle(pad, pad + i * (btnH + Sc(4)), _rail.Width - pad * 2, btnH);
-            if (r.Contains(e.Location)) { _hoverRail = i; break; }
-        }
+            if (RailBtnRect(i).Contains(e.Location)) { _hoverRail = i; break; }
         if (was != _hoverRail) _rail.Invalidate();
     }
 
@@ -223,11 +262,7 @@ public sealed class PopupForm : Form
 
     private void PaintLimites(Graphics g, int pad)
     {
-        int y = pad;
-        using (var h = Px(15f, FontStyle.Bold))
-        using (var b = new SolidBrush(_fg))
-            g.DrawString("Límites de uso", h, b, pad, y);
-        y += Sc(34);
+        int y = SectionTitle(g, pad, pad, "Límites de uso");
 
         y = UsageSection(g, pad, y, "Sesión (5 h)", _svc.Snapshot?.FiveHour);
         y += Sc(14);
@@ -259,18 +294,22 @@ public sealed class PopupForm : Form
         }
         y += Sc(24);
 
-        // progress bar
-        int barH = Sc(9);
+        // progress bar (cápsula con sutil brillo vertical en el relleno)
+        int barH = Sc(10);
         using (var track = new SolidBrush(Blend(_bg, _fg, 0.12)))
             FillRounded(g, track, new Rectangle(pad, y, w, barH), barH / 2f);
         if (pct is double pv)
         {
             int fw = (int)(w * Math.Clamp(pv / 100.0, 0, 1));
             if (fw > 1)
-                using (var fill = new SolidBrush(Fmt.PctColor(pct)))
-                    FillRounded(g, fill, new Rectangle(pad, y, fw, barH), barH / 2f);
+            {
+                var c = Fmt.PctColor(pct);
+                using var fill = new LinearGradientBrush(
+                    new Rectangle(pad, y - 1, fw, barH + 2), Lighten(c, 0.18), c, LinearGradientMode.Vertical);
+                FillRounded(g, fill, new Rectangle(pad, y, fw, barH), barH / 2f);
+            }
         }
-        y += barH + Sc(8);
+        y += barH + Sc(9);
 
         // caption
         using (var cFont = Px(10f, FontStyle.Regular))
@@ -294,11 +333,7 @@ public sealed class PopupForm : Form
     {
         var s = _svc.Stats?.Summary;
         var streaks = StatsCompute.Streaks(_svc.Stats);
-        int y = pad;
-        using (var h = Px(15f, FontStyle.Bold))
-        using (var b = new SolidBrush(_fg))
-            g.DrawString("Resumen", h, b, pad, y);
-        y += Sc(32);
+        int y = SectionTitle(g, pad, pad, "Resumen");
 
         (string, string)[] cards =
         {
@@ -335,7 +370,9 @@ public sealed class PopupForm : Form
     private void StatCard(Graphics g, Rectangle r, string label, string value)
     {
         using (var bg = new SolidBrush(Blend(_bg, _fg, 0.06)))
-            FillRounded(g, bg, r, Sc(6));
+            FillRounded(g, bg, r, Sc(8));
+        using (var pen = new Pen(Blend(_bg, _fg, 0.10)))
+            DrawRounded(g, pen, r, Sc(8));
         int ipad = Sc(8);
         using (var lFont = Px(9f, FontStyle.Regular))
         using (var lBrush = new SolidBrush(Blend(_bg, _fg, 0.6)))
@@ -378,15 +415,11 @@ public sealed class PopupForm : Form
 
     private void PaintModelos(Graphics g, int pad)
     {
-        int y = pad;
-        using (var h = Px(15f, FontStyle.Bold))
-        using (var b = new SolidBrush(_fg))
-            g.DrawString("Uso por modelo", h, b, pad, y);
-        y += Sc(32);
+        int y = SectionTitle(g, pad, pad, "Uso por modelo");
 
         int chartH = Sc(110);
-        StackedChart(g, new Rectangle(pad, y, _content.Width - pad * 2, chartH));
-        y += chartH + Sc(12);
+        ChartPanel(g, new Rectangle(pad, y, _content.Width - pad * 2, chartH), StackedChart);
+        y += chartH + Sc(14);
 
         var models = _svc.Stats?.Models ?? new List<StatsModel>();
         using var nameFont = Px(11.5f, FontStyle.Bold);
@@ -419,6 +452,16 @@ public sealed class PopupForm : Form
         }
     }
 
+    /// Frame a stacked chart inside a subtle rounded card (labelColor ~4%) with an
+    /// inset drawing area — mirrors the grouped-card look of macOS.
+    private void ChartPanel(Graphics g, Rectangle outer, Action<Graphics, Rectangle> draw)
+    {
+        using (var bg = new SolidBrush(Blend(_bg, _fg, 0.04)))
+            FillRounded(g, bg, outer, Sc(8));
+        int ins = Sc(8);
+        draw(g, new Rectangle(outer.X + ins, outer.Y + ins, outer.Width - ins * 2, outer.Height - ins * 2));
+    }
+
     private void StackedChart(Graphics g, Rectangle area)
     {
         var days = _svc.Stats?.Days ?? new List<StatsDay>();
@@ -445,15 +488,11 @@ public sealed class PopupForm : Form
 
     private void PaintProyectos(Graphics g, int pad)
     {
-        int y = pad;
-        using (var h = Px(15f, FontStyle.Bold))
-        using (var b = new SolidBrush(_fg))
-            g.DrawString("Uso por proyecto", h, b, pad, y);
-        y += Sc(32);
+        int y = SectionTitle(g, pad, pad, "Uso por proyecto");
 
         int chartH = Sc(110);
-        StackedProjectChart(g, new Rectangle(pad, y, _content.Width - pad * 2, chartH));
-        y += chartH + Sc(12);
+        ChartPanel(g, new Rectangle(pad, y, _content.Width - pad * 2, chartH), StackedProjectChart);
+        y += chartH + Sc(14);
 
         var projects = _svc.Stats?.Projects ?? new List<StatsProject>();
         using var nameFont = Px(11.5f, FontStyle.Bold);
@@ -512,17 +551,25 @@ public sealed class PopupForm : Form
         }
     }
 
-    // ----- Tab 4: Cerebro -----
+    // ----- Tab 4: Cerebro (VIVO) -----
     //
     // Infografía del cerebro global de Claude Code, réplica de la pestaña macOS
-    // (PopoverView.swift, `cerebroTab`). Contenido 100% ESTÁTICO: refleja `brain/`
-    // (hooks / norms / skills) y se mantiene a mano cuando cambian las piezas; no
-    // depende de datos en vivo. Jerarquía de más DURO (arriba) a más LEVE (abajo).
-    // Devuelve la altura total dibujada, que ContentPaint usa para acotar el scroll.
+    // (PopoverView.swift, `cerebroTab`). La ESTRUCTURA (qué piezas hay y su explicación)
+    // es curada; el ESTADO de instalación de cada pieza se LEE de la realidad (`~/.claude`)
+    // vía `_brainState` (auto-reflejo). Además cada hoja es CLICABLE (se expande su evento +
+    // detalle) y un recuadro de salud arriba trae el botón-curita self-healing.
+    // Jerarquía de más DURO (arriba) a más LEVE (abajo). Devuelve la altura total dibujada,
+    // que ContentPaint usa para acotar el scroll.
     private int PaintCerebro(Graphics g, int pad)
     {
         int right = _content.Width - pad;      // borde derecho útil del contenido
         int y = pad;
+
+        // Recolectar de cero las zonas clicables de este paint (hit-testing).
+        _leafHits.Clear();
+        _healHit = Rectangle.Empty;
+        // Salvaguarda: si nunca se leyó el estado (p. ej. paint directo en tab 4), léelo ahora.
+        _brainState ??= BrainInspector.Inspect();
 
         // Encabezado de marca: destello acento + 🧠 Cerebro global.
         using (var spFont = Px(12f, FontStyle.Bold))
@@ -540,8 +587,9 @@ public sealed class PopupForm : Form
 
         // Subtítulo tenue (envuelve a varias líneas).
         const string subtitle =
-            "Guardarraíles + gobernanza + normas de Claude Code. Viaja por git, " +
-            "aplica en toda máquina. De más duro (arriba) a más leve (abajo).";
+            "Guardarraíles + gobernanza + normas de Claude Code. Viaja por git, aplica en " +
+            "toda máquina. De más duro (arriba) a más leve (abajo). Toca una pieza para ver " +
+            "su evento y un ejemplo.";
         using (var sf = Px(9.5f, FontStyle.Regular))
         using (var b = new SolidBrush(Blend(_bg, _fg, 0.6)))
         {
@@ -550,8 +598,13 @@ public sealed class PopupForm : Form
             y += (int)Math.Ceiling(sz.Height) + Sc(10);
         }
 
-        foreach (var tier in BrainTiers)
-            y = PaintTier(g, pad, right, y, tier);
+        // Recuadro de salud (auto-reflejo + curita).
+        y = PaintBrainHealth(g, pad, right, y);
+
+        for (int t = 0; t < BrainTiers.Length; t++)
+            y = PaintTier(g, pad, right, y, BrainTiers[t], t);
+
+        y = PaintExtras(g, pad, right, y);
 
         // Pie tenue.
         const string footer =
@@ -567,10 +620,144 @@ public sealed class PopupForm : Form
         return y + pad;
     }
 
+    /// Recuadro de SALUD leído de la realidad, BINARIO (espejo de `brainHealth` en macOS): un sello
+    /// verde "Cerebro global completo y activo" o un curita rojo "Tu cerebro global está incompleto",
+    /// + la hora de lectura + (si falta algo) el botón-curita. SIN leyenda de 4 estados — el matiz
+    /// fino vive en el detalle al tocar cada pieza. Alturas fijas para pintar el fondo antes del texto.
+    private int PaintBrainHealth(Graphics g, int pad, int right, int y)
+    {
+        var st = _brainState!;
+        // Globales = piezas del catálogo cuyo estado NO es por-repo (los 8 hooks globales + 4 normas
+        // + 1 skill = 13). Los 4 hooks repo-scoped se excluyen del conteo.
+        int active = 0, total = 0;
+        foreach (var tier in BrainTiers)
+            foreach (var it in tier.Items)
+            {
+                var s = st.StatusOf(it.Name);
+                if (s == BrainStatus.RepoScoped) continue;
+                total++;
+                if (s == BrainStatus.Installed) active++;
+            }
+        int missing = total - active;
+        bool allGood = missing == 0;
+
+        // El botón-curita SOLO aparece si hay algo que curar; sano → sin botón ni mensaje
+        // (el sello verde ya lo dice todo). Así no reservamos su alto cuando no se muestra.
+        bool showHeal = missing > 0;
+        int inner = Sc(10), line1H = Sc(17), gap = Sc(7), healH = Sc(26);
+        int boxW = right - pad;
+        int boxH = inner + line1H + (showHeal ? gap + healH : 0) + inner;
+
+        // Fondo del recuadro (primero, para que el texto quede encima).
+        using (var bx = new SolidBrush(Blend(_bg, _fg, 0.05)))
+            FillRounded(g, bx, new Rectangle(pad, y, boxW, boxH), Sc(8));
+
+        int cx = pad + inner, cy = y + inner;
+
+        // Línea 1 (BINARIA): sello ✓ verde / curita 🩹 + mensaje + hora a la derecha.
+        string hIcon = allGood ? "✓" : "🩹";
+        var hCol = allGood ? _green : _red;
+        using (var hf = PxFont("Segoe UI Emoji", 10.5f, FontStyle.Bold))
+        using (var hb = new SolidBrush(hCol))
+            g.DrawString(hIcon, hf, hb, cx, cy - Sc(1));
+        string msg = allGood ? "Cerebro global completo y activo" : "Tu cerebro global está incompleto";
+        using (var tf = Px(10f, FontStyle.Bold))
+        using (var tb = new SolidBrush(allGood ? _fg : _red))
+            g.DrawString(msg, tf, tb, cx + Sc(20), cy);
+        using (var clf = Px(8.5f, FontStyle.Regular))
+        using (var clb = new SolidBrush(Blend(_bg, _fg, 0.4)))
+        {
+            string clock = "leído " + st.ScannedAt.ToString("HH:mm");
+            var sf = new StringFormat { Alignment = StringAlignment.Far };
+            g.DrawString(clock, clf, clb, new RectangleF(pad, cy, boxW - inner, line1H), sf);
+        }
+        cy += line1H + gap;
+
+        // Línea 2: botón-curita 🩹 (rojo cruz-roja). Solo si hay algo que curar.
+        if (showHeal)
+        {
+            string label = _healing ? "Curando…" : $"Curar cerebro global ({missing})";
+            string bIcon = _healing ? "⏳" : "🩹";
+            var bCol = Fmt.Hex("#dc3545");
+            int btnPadX = Sc(9), iconW = Sc(16);
+            using (var lblF = Px(9.5f, FontStyle.Bold))
+            {
+                int labW = (int)Math.Ceiling(g.MeasureString(label, lblF).Width);
+                int btnW = btnPadX + iconW + labW + btnPadX;
+                var btnR = new Rectangle(cx, cy, btnW, healH - Sc(2));
+                using (var bg = new SolidBrush(Color.FromArgb(41, bCol)))  // ~16% alpha
+                    FillRounded(g, bg, btnR, Sc(6));
+                using (var icF = PxFont("Segoe UI Emoji", 9.5f, FontStyle.Regular))
+                using (var icB = new SolidBrush(bCol))
+                    g.DrawString(bIcon, icF, icB, btnR.X + btnPadX, btnR.Y + Sc(4));
+                using (var lblB = new SolidBrush(bCol))
+                    g.DrawString(label, lblF, lblB, btnR.X + btnPadX + iconW, btnR.Y + Sc(5));
+                _healHit = btnR;   // zona clicable (coords lógicas pre-scroll)
+
+                // Mensaje transitorio (p. ej. "✗ error") a la derecha del botón.
+                if (!string.IsNullOrEmpty(_healMsg))
+                    using (var mf = Px(8.5f, FontStyle.Regular))
+                    using (var mb = new SolidBrush(Blend(_bg, _fg, 0.6)))
+                        g.DrawString(_healMsg, mf, mb, btnR.Right + Sc(8), btnR.Y + Sc(5));
+            }
+        }
+        else
+        {
+            _healHit = Rectangle.Empty;   // sano → sin zona clicable
+        }
+
+        return y + boxH + Sc(12);
+    }
+
+    /// Sección "➕ OTROS": hooks cableados en settings.json fuera del catálogo del cerebro
+    /// (doc=realidad completa). Espejo de `extrasSection` (Swift). Solo si hay extras.
+    private int PaintExtras(Graphics g, int pad, int right, int y)
+    {
+        var st = _brainState;
+        if (st == null || st.Extras.Count == 0) return y;
+
+        int spineW = Sc(3), spineGap = Sc(10);
+        int tx = pad + spineW + spineGap;
+        int top = y;
+
+        using (var emj = PxFont("Segoe UI Emoji", 12.5f, FontStyle.Regular))
+        using (var b = new SolidBrush(_fg))
+            g.DrawString("➕", emj, b, tx, y);
+        using (var tf = Px(12f, FontStyle.Bold))
+        using (var tb = new SolidBrush(Blend(_bg, _fg, 0.5)))
+            g.DrawString("OTROS", tf, tb, tx + Sc(22), y + Sc(1));
+        y += Sc(20);
+
+        const string sub = "hooks cableados en tu settings.json, fuera del catálogo del cerebro";
+        using (var subF = Px(9.5f, FontStyle.Regular))
+        using (var subB = new SolidBrush(Blend(_bg, _fg, 0.6)))
+        {
+            var sz = g.MeasureString(sub, subF, right - tx);
+            g.DrawString(sub, subF, subB, new RectangleF(tx, y, right - tx, sz.Height + Sc(2)));
+            y += (int)Math.Ceiling(sz.Height) + Sc(5);
+        }
+
+        foreach (var name in st.Extras)
+        {
+            using (var dotF = Px(9f, FontStyle.Regular))
+            using (var dotB = new SolidBrush(Blend(_bg, _fg, 0.5)))
+                g.DrawString("●", dotF, dotB, tx, y);
+            using (var nf = PxFont("Consolas", 10f, FontStyle.Regular))
+            using (var nb = new SolidBrush(_fg))
+                g.DrawString(name, nf, nb, tx + Sc(14), y);
+            y += Sc(16);
+        }
+
+        int bottom = y - Sc(3);
+        using (var sp = new SolidBrush(Blend(_bg, _fg, 0.3)))
+            FillRounded(g, sp, new Rectangle(pad, top, spineW, Math.Max(spineW, bottom - top)), spineW / 2f);
+        return y + Sc(12);
+    }
+
     /// Un nivel del cerebro: espina de color a la izquierda + encabezado
     /// (emoji + TÍTULO en el color del nivel + subtítulo tenue) + hojas con
     /// conectores de árbol monoespaciados. Devuelve la nueva `y`.
-    private int PaintTier(Graphics g, int pad, int right, int y, BrainTier tier)
+    private int PaintTier(Graphics g, int pad, int right, int y, BrainTier tier, int tierIndex)
     {
         int spineW = Sc(3), spineGap = Sc(10);
         int tx = pad + spineW + spineGap;   // x del texto del nivel
@@ -595,7 +782,7 @@ public sealed class PopupForm : Form
 
         // Hojas: conector ├─ salvo la última, que lleva └─.
         for (int i = 0; i < tier.Items.Length; i++)
-            y = PaintLeaf(g, tx, right, y, tier.Items[i], i == tier.Items.Length - 1, tier.Color);
+            y = PaintLeaf(g, tx, right, y, tier.Items[i], i == tier.Items.Length - 1, tier.Color, tierIndex, i);
 
         // Espina de color: se dibuja al final, cuando ya se conoce el alto del nivel.
         int bottom = y - Sc(3);
@@ -605,70 +792,281 @@ public sealed class PopupForm : Form
         return y + Sc(12); // separación entre niveles
     }
 
-    /// Una hoja del árbol: conector monoespaciado (color del nivel, tenue) +
-    /// emoji + nombre en mono; la descripción tenue envuelve debajo del nombre.
-    private int PaintLeaf(Graphics g, int tx, int right, int y, BrainItem item, bool last, Color color)
+    /// Una hoja del árbol: conector monoespaciado (color del nivel, tenue) + punto de ESTADO
+    /// (leído de ~/.claude) + emoji + nombre en mono; la descripción tenue envuelve debajo del
+    /// nombre; un chevron ▸/▾ a la derecha. La fila completa es CLICABLE (se registra en
+    /// `_leafHits`): al tocarla se expande abajo su evento (chip color del nivel) + un párrafo de
+    /// detalle + la etiqueta del estado real. Solo una hoja abierta a la vez (`_expandedKey`).
+    private int PaintLeaf(Graphics g, int tx, int right, int y, BrainItem item, bool last, Color color,
+                          int tierIndex, int idx)
     {
+        string key = $"{tierIndex}-{idx}";
+        bool isOpen = _expandedKey == key;
+        var status = _brainState?.StatusOf(item.Name);
+        int headerTop = y;
+
         using (var cf = PxFont("Consolas", 10.5f, FontStyle.Regular))
         using (var cb = new SolidBrush(Blend(_bg, color, 0.55)))
             g.DrawString(last ? "└─" : "├─", cf, cb, tx, y);
 
-        int ex = tx + Sc(20);               // tras el conector: emoji
+        int dotX = tx + Sc(19);             // punto de estado tras el conector
+        if (status is BrainStatus s)
+            using (var dotF = Px(8.5f, FontStyle.Regular))
+            using (var dotB = new SolidBrush(StatusColor(s)))
+                g.DrawString(BrainInspector.Glyph(s), dotF, dotB, dotX, y + Sc(1));
+
+        int ex = tx + Sc(33);               // emoji de la pieza
         using (var emj = PxFont("Segoe UI Emoji", 10f, FontStyle.Regular))
         using (var b = new SolidBrush(_fg))
             g.DrawString(item.Emoji, emj, b, ex, y);
 
-        int nx = ex + Sc(18);               // tras el emoji: nombre (mono)
+        int nx = ex + Sc(18);               // nombre (mono)
         using (var nf = PxFont("Consolas", 10.5f, FontStyle.Bold))
         using (var nb = new SolidBrush(_fg))
             g.DrawString(item.Name, nf, nb, nx, y);
 
-        // Descripción tenue, envuelta bajo el nombre.
+        // Chevron ▸ (cerrado) / ▾ (abierto) a la derecha.
+        int chevX = right - Sc(12);
+        using (var chf = Px(9f, FontStyle.Bold))
+        using (var chb = new SolidBrush(Blend(_bg, _fg, 0.35)))
+            g.DrawString(isOpen ? "▾" : "▸", chf, chb, chevX, y);
+
+        // Descripción tenue, envuelta bajo el nombre (dejando margen al chevron en la 1ª línea).
         using var df = Px(9f, FontStyle.Regular);
         using var db = new SolidBrush(Blend(_bg, _fg, 0.62));
         int descY = y + Sc(15);
         var descSz = g.MeasureString(item.Desc, df, right - nx);
         g.DrawString(item.Desc, df, db, new RectangleF(nx, descY, right - nx, descSz.Height + Sc(2)));
-        return descY + (int)Math.Ceiling(descSz.Height) + Sc(6);
+        int headerBottom = descY + (int)Math.Ceiling(descSz.Height) + Sc(4);
+
+        // Registrar la zona clicable de la CABECERA (coords lógicas pre-scroll).
+        _leafHits.Add((key, new Rectangle(tx, headerTop - Sc(2), right - tx, headerBottom - (headerTop - Sc(2)))));
+
+        y = headerBottom;
+
+        if (isOpen)
+        {
+            int inx = ex;   // sangría de la expansión, alineada con el emoji
+            // Chip del evento (fondo color del nivel al 15%, texto mono en el color del nivel).
+            using (var evF = PxFont("Consolas", 9f, FontStyle.Bold))
+            {
+                var evSz = g.MeasureString(item.Event, evF);
+                int chipW = (int)Math.Ceiling(evSz.Width) + Sc(10);
+                int chipH = (int)Math.Ceiling(evSz.Height) + Sc(4);
+                var chipR = new Rectangle(inx, y, chipW, chipH);
+                using (var chBg = new SolidBrush(Color.FromArgb(38, color)))  // ~15% alpha
+                    FillRounded(g, chBg, chipR, Sc(3));
+                using (var evB = new SolidBrush(color))
+                    g.DrawString(item.Event, evF, evB, chipR.X + Sc(5), chipR.Y + Sc(2));
+                y += chipH + Sc(4);
+            }
+
+            // Párrafo de detalle.
+            using (var detF = Px(9f, FontStyle.Regular))
+            using (var detB = new SolidBrush(Blend(_bg, _fg, 0.75)))
+            {
+                var sz = g.MeasureString(item.Detail, detF, right - inx);
+                g.DrawString(item.Detail, detF, detB, new RectangleF(inx, y, right - inx, sz.Height + Sc(2)));
+                y += (int)Math.Ceiling(sz.Height) + Sc(4);
+            }
+
+            // Etiqueta del estado real (punto + texto, en el color del estado).
+            if (status is BrainStatus s2)
+            {
+                using (var dotF = Px(8.5f, FontStyle.Regular))
+                using (var dotB = new SolidBrush(StatusColor(s2)))
+                    g.DrawString(BrainInspector.Glyph(s2), dotF, dotB, inx, y);
+                using (var slF = Px(8.5f, FontStyle.Regular))
+                using (var slB = new SolidBrush(StatusColor(s2)))
+                    g.DrawString(BrainInspector.Label(s2), slF, slB, inx + Sc(12), y);
+                y += Sc(15);
+            }
+            y += Sc(4);
+        }
+
+        return y + Sc(6);
     }
 
-    /// Datos ESTÁTICOS del cerebro (reflejan `brain/hooks`, `brain/norms`,
-    /// `brain/skills`). Espejo 1:1 del array `brainTiers` de la GUI macOS.
+    /// Color BINARIO del punto de estado (espejo de `BrainStatus.color` en macOS): verde=bien,
+    /// rojo=falta algo (sin cablear Y ausente comparten rojo), azul discreto=por-repo. El matiz
+    /// fino de los 4 estados sigue en la etiqueta al expandir (BrainInspector.Label).
+    private Color StatusColor(BrainStatus s) => s switch
+    {
+        BrainStatus.Installed => _green,
+        BrainStatus.PresentNotWired => _red,
+        BrainStatus.Absent => _red,
+        BrainStatus.RepoScoped => Blend(_bg, _blue, 0.6),
+        _ => _red,
+    };
+
+    // ── Interactividad + self-healing ──
+
+    /// Clic en la pestaña Cerebro: convierte la Y a coords lógicas (suma el scroll) y prueba
+    /// primero el botón-curita, luego cada hoja. Toggle de la hoja tocada (una sola abierta).
+    private void ContentMouseDown(object? sender, MouseEventArgs e)
+    {
+        if (_tab != 4) return;
+        int ly = e.Y + _cerebroScroll;   // el paint aplica TranslateTransform(0, -_cerebroScroll)
+        if (!_healing && !_healHit.IsEmpty && _healHit.Contains(e.X, ly)) { StartHeal(); return; }
+        foreach (var (key, rect) in _leafHits)
+            if (rect.Contains(e.X, ly))
+            {
+                _expandedKey = _expandedKey == key ? null : key;
+                _content.Invalidate();
+                return;
+            }
+    }
+
+    /// Botón-curita: corre el instalador del cerebro EMPAQUETADO junto al exe
+    /// (`<AppDir>/brain/install-brain.ps1`, que a su vez delega en bash install-brain.sh).
+    /// Async (Task) para no congelar la UI; al terminar re-lee el estado y muestra ✓/✗.
+    private void StartHeal()
+    {
+        if (_healing) return;
+        string script = Path.Combine(AppContext.BaseDirectory, "brain", "install-brain.ps1");
+        if (!File.Exists(script))
+        {
+            _healMsg = "no encontré el instalador junto al app";
+            _content.Invalidate();
+            return;
+        }
+        _healing = true;
+        _healMsg = null;
+        _content.Invalidate();
+
+        Task.Run(() =>
+        {
+            bool ok = false;
+            try { ok = RunBrainInstaller(script) == 0; }
+            catch { ok = false; }
+            // Volver al hilo de UI para releer el estado y repintar.
+            try
+            {
+                BeginInvoke(new Action(() =>
+                {
+                    _brainState = BrainInspector.Inspect();
+                    _healing = false;
+                    _healMsg = ok ? "✓ curado" : "✗ error (¿Git Bash + jq?)";
+                    _content.Invalidate();
+                }));
+            }
+            catch { /* el form pudo cerrarse mientras curaba */ }
+        });
+    }
+
+    /// Corre install-brain.ps1 con pwsh (fallback a powershell), sin ventana, drenando salida.
+    /// Devuelve el exit code; lanza si no hay ningún PowerShell disponible.
+    private static int RunBrainInstaller(string script)
+    {
+        foreach (var shell in new[] { "pwsh", "powershell" })
+        {
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = shell,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                };
+                psi.ArgumentList.Add("-NoProfile");
+                psi.ArgumentList.Add("-ExecutionPolicy");
+                psi.ArgumentList.Add("Bypass");
+                psi.ArgumentList.Add("-File");
+                psi.ArgumentList.Add(script);
+                using var p = Process.Start(psi);
+                if (p == null) continue;
+                // Drenar ambos flujos en paralelo para no bloquear el pipe.
+                var _o = p.StandardOutput.ReadToEndAsync();
+                var _e = p.StandardError.ReadToEndAsync();
+                p.WaitForExit();
+                return p.ExitCode;
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                // Este PowerShell no está en el PATH → probar el siguiente.
+            }
+        }
+        throw new FileNotFoundException("ni pwsh ni powershell disponibles en el PATH");
+    }
+
+    /// Datos del cerebro. La ESTRUCTURA (qué piezas y su explicación + evento + detalle) es curada;
+    /// el ESTADO de instalación se LEE de la realidad (`~/.claude`) vía `_brainState`. Espejo 1:1
+    /// del array `brainTiers` de la GUI macOS (event/detail copiados literales, en español).
     private BrainTier[] BrainTiers =>
     [
         new("🔒", "INVIOLABLE", Fmt.Hex("#dc3545"), "hooks que BLOQUEAN (deny) — no negociables",
         [
-            new("🚧", "git-branch-guard", "push/merge a develop·main → denegado, te redirige a ramita→MR"),
-            new("🔗", "merge-squash-guard", "MR a develop sin --squash → denegado (1 commit limpio)"),
-            new("✋", "confirmar-merge-develop", "merge a develop sin tu OK → denegado; a main exige OK súper-explícito"),
-            new("✅", "dod-verificar", "declarar “listo” sin build+tests+memoria → denegado"),
-            new("💸", "delegacion-gate", "reclutar agente con costo → pide tu consentimiento (puede negar)"),
+            new("🚧", "git-branch-guard", "push/merge a develop·main → denegado, te redirige a ramita→MR",
+                "PreToolUse · Bash",
+                "Escanea cada comando: si ve un `git push` o un merge que apunte a develop/main, lo deniega y te recuerda el flujo ramita→MR. Sin jq falla ABIERTO (no bloquea)."),
+            new("🔗", "merge-squash-guard", "MR a develop sin --squash → denegado (1 commit limpio)",
+                "PreToolUse · Bash",
+                "Un `gh pr merge`/`glab mr merge` a develop sin --squash se deniega, para que la ramita colapse a un commit curado. Los releases a main quedan exentos (conservan historia)."),
+            new("🕵️", "secret-scan", "commit/push con un secreto → denegado",
+                "PreToolUse · Bash",
+                "Escanea lo que ENTRA al repo (staged en commit, saliente en push) buscando llaves/tokens/claves privadas de formato inconfundible (AWS, PEM, Anthropic, OpenAI, GitHub, GitLab, Slack, Google). Si aparece uno → bloquea: una credencial pusheada queda comprometida aunque la borres. Escape: --no-verify."),
+            new("✋", "confirmar-merge-develop", "merge a develop sin tu OK → denegado; a main exige OK súper-explícito",
+                "PreToolUse · Bash",
+                "Antes de integrar por MR busca tu OK explícito en el chat reciente; a main exige lenguaje de release ('hasta main', 'libera'). Un 'sigue/avanza' NO cuenta como autorización."),
+            new("✅", "dod-verificar", "declarar “listo” sin build+tests+memoria → denegado",
+                "Stop",
+                "Al cerrar el turno, si dijiste 'listo/en producción' tras tocar código fuente, exige evidencia de build+tests verdes y memoria al día, o bloquea el cierre."),
+            new("💸", "delegacion-gate", "reclutar agente con costo → pide tu consentimiento (puede negar)",
+                "PreToolUse · Task",
+                "Al reclutar un agente calcula su nivel de costo (gratis/incluido/con costo, según tu ventana de 5h) y pide consentimiento mostrando tu cuota real. Puedes negar y el agente no corre."),
+            new("🛑", "limite-gasto", "reclutar agente con el gasto pasado del techo → denegado",
+                "PreToolUse · Task",
+                "Freno DURO (distinto del gate que pregunta): si el gasto real ya rebasó un techo configurable (sobreuso o ventana 5h), bloquea reclutar más agentes para que un workflow desbocado no siga quemando dinero. Techo por env (LIMITE_GASTO_OVERAGE_PCT / LIMITE_GASTO_5H_PCT)."),
         ]),
         new("🔔", "AUTOMÁTICO", _accent, "hooks que inyectan / recuerdan — no bloquean",
         [
-            new("🧭", "sesion-inicio", "al abrir/retomar reinyecta rama + norma de git + orden de leer memoria"),
-            new("💾", "precompact-volcar-estado", "antes de compactar, vuelca avance/decisiones/pendientes a memoria"),
-            new("📊", "recordar-dashboard", "antes de un push, recuerda actualizar el dashboard del cerebro"),
-            new("📝", "delegacion-registrar", "registra el consentimiento (materializa el “pregunta 1×”)"),
+            new("🧭", "sesion-inicio", "al abrir/retomar reinyecta rama + norma de git + orden de leer memoria",
+                "SessionStart",
+                "Al abrir/retomar sesión o tras compactar, reinyecta la rama actual, la norma de git y la orden de leer MEMORY/estado. Antídoto a 'se me va la onda al cambiar de sesión o compu'."),
+            new("💾", "precompact-volcar-estado", "antes de compactar, vuelca avance/decisiones/pendientes a memoria",
+                "PreCompact",
+                "Justo antes de que el contexto se compacte, te obliga a volcar avance/decisiones/pendientes a la memoria, para no perder el hilo en un sprint largo."),
+            new("📊", "recordar-dashboard", "antes de un push, recuerda actualizar el dashboard del cerebro",
+                "PreToolUse · Bash",
+                "Antes de un `git push` recuerda (no bloquea) actualizar el dashboard del cerebro: una línea a la bitácora + ajustar el mapa si cambió el layout de repos/proyectos."),
+            new("🕰️", "rama-vieja", "push de ramita muy atrás de develop → aviso (no bloquea)",
+                "PreToolUse · Bash",
+                "Antes de un push, si la ramita está muchos commits detrás de origin/develop (base vieja → el MR trae ruido/conflictos), avisa —no bloquea— y sugiere rebasar. Umbral configurable (RAMA_VIEJA_UMBRAL, def 40)."),
+            new("📝", "delegacion-registrar", "registra el consentimiento (materializa el “pregunta 1×”)",
+                "PostToolUse · Task",
+                "Tras un consentimiento aprobado lo registra para no volver a preguntar (1× por máquina o por workflow, según el nivel de costo). Materializa el 'pregunta una sola vez'."),
         ]),
         new("📜", "NORMAS", Fmt.Hex("#4a90d9"), "reglas que Claude se autoimpone (CLAUDE.md)",
         [
-            new("🎯", "Definición de LISTO", "verde técnico ≠ listo; exige tu QA o tu OK expreso"),
-            new("🪞", "Doc = realidad", "cambió algo → actualiza su doc en la misma tanda, sin preguntar"),
-            new("🌿", "Flujo de git", "ramita → MR → develop (squash); main es release-only"),
-            new("💰", "Costo de delegación", "gratis / incluido / con costo — window-aware, lee tu cuota"),
+            new("🎯", "Definición de LISTO", "verde técnico ≠ listo; exige tu QA o tu OK expreso",
+                "CLAUDE.md · norma",
+                "Algo es LISTO solo si tú lo validaste (QA) o autorizaste el cierre. 'Verde técnico' es necesario pero insuficiente; la autorización es acotada y NO transitiva."),
+            new("🪞", "Doc = realidad", "cambió algo → actualiza su doc en la misma tanda, sin preguntar",
+                "CLAUDE.md · norma",
+                "Cuando cambia algo (config, ruta, comportamiento) se actualiza su doc en la misma tanda, sin preguntar. Primero revisar el estado real, luego editar: una doc que miente es peor que nada."),
+            new("🌿", "Flujo de git", "ramita → MR → develop (squash); main es release-only",
+                "CLAUDE.md · norma",
+                "Todo push va a ramitas; se integra por MR a develop con squash; main es release-only (decisión humana deliberada). 1–3 devs → auto-merge; ≥4 devs → se revisa."),
+            new("💰", "Costo de delegación", "gratis / incluido / con costo — window-aware, lee tu cuota",
+                "CLAUDE.md · norma",
+                "Reclutar agentes cuesta según nivel: gratis (local), incluido (Claude dentro de la ventana 5h) o con costo (overage / API externa / desconocido). La cadencia del permiso depende del nivel."),
         ]),
         new("💡", "SKILLS", Fmt.Hex("#3aa76d"), "herramientas opt-in — las invocas tú",
         [
-            new("📦", "cerrar-slice", "build+tests+memoria al día + MR con resumen curado por slice"),
+            new("📦", "cerrar-slice", "build+tests+memoria al día + MR con resumen curado por slice",
+                "skill · opt-in",
+                "Ritual de cierre de un slice: build+tests verdes, memoria al día (bitácora), MR con resumen curado en prosa, y el Paso 5 de cosechar lo genérico de vuelta al cerebro global."),
         ]),
     ];
 
-    /// Un nivel del cerebro (tier) con sus hojas — datos estáticos de la pestaña.
+    /// Un nivel del cerebro (tier) con sus hojas — la ESTRUCTURA es curada.
     private sealed record BrainTier(string Emoji, string Title, Color Color, string Subtitle, BrainItem[] Items);
 
-    /// Una hoja del árbol del cerebro (un hook / norma / skill).
-    private sealed record BrainItem(string Emoji, string Name, string Desc);
+    /// Una hoja del árbol del cerebro (un hook / norma / skill). `Event` y `Detail` se muestran
+    /// al expandir la hoja (chip + párrafo).
+    private sealed record BrainItem(string Emoji, string Name, string Desc, string Event, string Detail);
 
     // ================= helpers =================
 
@@ -685,9 +1083,10 @@ public sealed class PopupForm : Form
     private void ApplyTheme()
     {
         bool light = IsLightTheme();
-        _bg = light ? Color.FromArgb(0xFA, 0xFA, 0xFA) : Color.FromArgb(0x22, 0x22, 0x22);
-        _fg = light ? Color.FromArgb(0x1A, 0x1A, 0x1A) : Color.FromArgb(0xE6, 0xE6, 0xE6);
-        BackColor = _bg;
+        _bg = light ? Color.FromArgb(0xFA, 0xFA, 0xFA) : Color.FromArgb(0x1E, 0x1E, 0x20);
+        _fg = light ? Color.FromArgb(0x1A, 0x1A, 0x1A) : Color.FromArgb(0xE8, 0xE8, 0xEA);
+        // El form solo se ve por el borde de 1px (Padding): tono tenue del fg sobre el fondo.
+        BackColor = Blend(_bg, _fg, 0.16);
     }
 
     private static bool IsLightTheme()
@@ -713,20 +1112,49 @@ public sealed class PopupForm : Form
             (int)(baseC.B + (over.B - baseC.B) * a));
     }
 
-    private static void FillRounded(Graphics g, Brush b, Rectangle r, float radius) =>
-        FillRounded(g, b, new RectangleF(r.X, r.Y, r.Width, r.Height), radius);
+    /// Lighten a color toward white by `a` (0..1) — used for the subtle sheen on progress fills.
+    private static Color Lighten(Color c, double a) => Blend(c, Color.White, a);
 
-    private static void FillRounded(Graphics g, Brush b, RectangleF r, float radius)
+    /// Section title with a short accent underline, so every tab opens with the same
+    /// branded header (mirrors macOS `.headline`). Returns the y below the header.
+    private int SectionTitle(Graphics g, int pad, int y, string text)
     {
-        if (r.Width <= 0 || r.Height <= 0) return;
+        using (var h = Px(15.5f, FontStyle.Bold))
+        using (var b = new SolidBrush(_fg))
+            g.DrawString(text, h, b, pad, y);
+        using (var ab = new SolidBrush(_accent))
+            FillRounded(g, ab, new Rectangle(pad, y + Sc(24), Sc(22), Sc(3)), Sc(1.5f));
+        return y + Sc(38);
+    }
+
+    private static GraphicsPath RoundedPath(RectangleF r, float radius)
+    {
         float rad = Math.Min(radius, Math.Min(r.Width, r.Height) / 2f);
-        using var path = new GraphicsPath();
+        var path = new GraphicsPath();
         float d = rad * 2f;
         path.AddArc(r.X, r.Y, d, d, 180, 90);
         path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
         path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
         path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
         path.CloseFigure();
+        return path;
+    }
+
+    /// Stroke a rounded rectangle (1px hairline borders around cards).
+    private static void DrawRounded(Graphics g, Pen p, Rectangle r, float radius)
+    {
+        if (r.Width <= 0 || r.Height <= 0) return;
+        using var path = RoundedPath(new RectangleF(r.X, r.Y, r.Width, r.Height), radius);
+        g.DrawPath(p, path);
+    }
+
+    private static void FillRounded(Graphics g, Brush b, Rectangle r, float radius) =>
+        FillRounded(g, b, new RectangleF(r.X, r.Y, r.Width, r.Height), radius);
+
+    private static void FillRounded(Graphics g, Brush b, RectangleF r, float radius)
+    {
+        if (r.Width <= 0 || r.Height <= 0) return;
+        using var path = RoundedPath(r, radius);
         g.FillPath(b, path);
     }
 
