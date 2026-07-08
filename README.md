@@ -57,6 +57,17 @@ turns green → amber → red as you approach the cap; click for the full breakd
 
 > **Three platforms:** this repo ships a **KDE Plasma 6 widget** (Linux — the rest of this README), a native **macOS menu-bar app** (in [`macos/`](macos/)), and a native **Windows tray app** (in [`windows/`](windows/)). All three read the same Anthropic OAuth `/usage` data and render the same four-tab breakdown (Límites / Resumen / Modelos / Proyectos).
 
+### The four-tab breakdown
+
+Capturas reales de la app corriendo (menu-bar app en macOS). Las cuatro pestañas comparten el mismo riel a la izquierda:
+
+| | |
+|---|---|
+| ![Resumen](screenshots/resumen.png) | ![Límites](screenshots/limites.png) |
+| **Resumen** — sesiones, mensajes, tokens, rachas, hora pico, modelo favorito, costo API-equiv y el heatmap de actividad diaria. | **Límites** — sesión (5 h) y semanal (7 d) con caps por-modelo y el **gasto real** de bolsillo (spend / extra_usage). |
+| ![Modelos](screenshots/modelos.png) | ![Proyectos](screenshots/proyectos.png) |
+| **Uso por modelo** — barras apiladas por día + una fila por modelo (tokens in/out y %). | **Uso por proyecto** — barras apiladas por día + una fila por carpeta de proyecto (tokens in/out y %). |
+
 ## macOS (menu-bar app)
 
 A native Swift status-bar app: a color-coded **% pill in the menu bar**, click for the 5-hour + weekly breakdown. Same fetch pipeline as the Linux widget, with a `launchd` agent instead of a systemd timer.
