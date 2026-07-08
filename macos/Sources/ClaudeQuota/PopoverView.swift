@@ -69,9 +69,9 @@ struct PopoverView: View {
         case 1:
             ScrollView(.vertical, showsIndicators: false) { resumenTab }
         case 2:
-            ScrollView(.vertical, showsIndicators: false) { modelosTab }
+            modelosTab
         default:
-            ScrollView(.vertical, showsIndicators: false) { proyectosTab }
+            proyectosTab
         }
     }
 
@@ -246,26 +246,31 @@ struct PopoverView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Uso por modelo").font(.headline)
             stackedChart.frame(height: 126)
-            VStack(spacing: 6) {
-                ForEach(model.stats?.models ?? [], id: \.model) { m in
-                    HStack(spacing: 6) {
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(model.modelColor(m.model))
-                            .frame(width: 10, height: 10)
-                        Text(Fmt.prettyModel(m.model)).fontWeight(.bold)
-                        Spacer()
-                        Text("\(Fmt.tok(m.in_tok)) in · \(Fmt.tok(m.out_tok)) out")
-                            .foregroundStyle(label.opacity(0.7))
-                        Text(String(format: "%.1f%%", m.pct ?? 0))
-                            .fontWeight(.bold)
-                            .foregroundStyle(model.modelColor(m.model))
-                            .frame(minWidth: 44, alignment: .trailing)
+            // Encabezado + gráfico fijos; solo la lista scrollea (altura acotada al
+            // espacio restante) → el popover no crece por más modelos que se acumulen.
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(spacing: 6) {
+                    ForEach(model.stats?.models ?? [], id: \.model) { m in
+                        HStack(spacing: 6) {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(model.modelColor(m.model))
+                                .frame(width: 10, height: 10)
+                            Text(Fmt.prettyModel(m.model)).fontWeight(.bold)
+                            Spacer()
+                            Text("\(Fmt.tok(m.in_tok)) in · \(Fmt.tok(m.out_tok)) out")
+                                .foregroundStyle(label.opacity(0.7))
+                            Text(String(format: "%.1f%%", m.pct ?? 0))
+                                .fontWeight(.bold)
+                                .foregroundStyle(model.modelColor(m.model))
+                                .frame(minWidth: 44, alignment: .trailing)
+                        }
                     }
                 }
             }
-            Spacer(minLength: 0)
+            .frame(maxHeight: .infinity)
         }
         .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var stackedChart: some View {
@@ -299,26 +304,31 @@ struct PopoverView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Uso por proyecto").font(.headline)
             stackedProjectChart.frame(height: 126)
-            VStack(spacing: 6) {
-                ForEach(model.stats?.projects ?? [], id: \.project) { p in
-                    HStack(spacing: 6) {
-                        RoundedRectangle(cornerRadius: 2)
-                            .fill(model.projectColor(p.project))
-                            .frame(width: 10, height: 10)
-                        Text(p.project ?? "—").fontWeight(.bold).lineLimit(1)
-                        Spacer()
-                        Text("\(Fmt.tok(p.in_tok)) in · \(Fmt.tok(p.out_tok)) out")
-                            .foregroundStyle(label.opacity(0.7))
-                        Text(String(format: "%.1f%%", p.pct ?? 0))
-                            .fontWeight(.bold)
-                            .foregroundStyle(model.projectColor(p.project))
-                            .frame(minWidth: 44, alignment: .trailing)
+            // Encabezado + gráfico fijos; solo la lista scrollea (altura acotada al
+            // espacio restante) → el popover no crece por más proyectos que se acumulen.
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(spacing: 6) {
+                    ForEach(model.stats?.projects ?? [], id: \.project) { p in
+                        HStack(spacing: 6) {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(model.projectColor(p.project))
+                                .frame(width: 10, height: 10)
+                            Text(p.project ?? "—").fontWeight(.bold).lineLimit(1)
+                            Spacer()
+                            Text("\(Fmt.tok(p.in_tok)) in · \(Fmt.tok(p.out_tok)) out")
+                                .foregroundStyle(label.opacity(0.7))
+                            Text(String(format: "%.1f%%", p.pct ?? 0))
+                                .fontWeight(.bold)
+                                .foregroundStyle(model.projectColor(p.project))
+                                .frame(minWidth: 44, alignment: .trailing)
+                        }
                     }
                 }
             }
-            Spacer(minLength: 0)
+            .frame(maxHeight: .infinity)
         }
         .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var stackedProjectChart: some View {
