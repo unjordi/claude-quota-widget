@@ -347,6 +347,13 @@ enum Fmt {
         return f.string(from: NSNumber(value: n.rounded())) ?? "\(Int(n.rounded()))"
     }
 
+    /// fmtUsd: importe en dólares compacto — 2 decimales bajo $1000, entero arriba.
+    /// Para el costo "equivalente API" (tokens×tarifa) de modelos/proyectos.
+    static func usd(_ v: Double?) -> String {
+        guard let v else { return "—" }
+        return v >= 1000 ? String(format: "$%.0f", v) : String(format: "$%.2f", v)
+    }
+
     /// fmtMoney: "$5.35" (used/cap ya vienen divididos por 10^exponent).
     static func money(_ v: Double?, _ currency: String?) -> String {
         guard let v else { return "—" }
