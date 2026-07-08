@@ -55,11 +55,11 @@ turns green → amber → red as you approach the cap; click for the full breakd
 
 ![Panel pill + popup](screenshots/panel-and-popup.png)
 
-> **Three platforms:** this repo ships a **KDE Plasma 6 widget** (Linux — the rest of this README), a native **macOS menu-bar app** (in [`macos/`](macos/)), and a native **Windows tray app** (in [`windows/`](windows/)). All three read the same Anthropic OAuth `/usage` data and render the same four-tab breakdown (Límites / Resumen / Modelos / Proyectos).
+> **Three platforms:** this repo ships a **KDE Plasma 6 widget** (Linux — the rest of this README), a native **macOS menu-bar app** (in [`macos/`](macos/)), and a native **Windows tray app** (in [`windows/`](windows/)). All three read the same Anthropic OAuth `/usage` data and render the same breakdown (Límites / Resumen / Modelos / Proyectos) **plus a `Cerebro` tab** that maps the installed global brain.
 
-### The four-tab breakdown
+### The breakdown tabs
 
-Capturas reales de la app corriendo (menu-bar app en macOS). Las cuatro pestañas comparten el mismo riel a la izquierda:
+Capturas reales de la app corriendo (menu-bar app en macOS). Las pestañas comparten el mismo riel a la izquierda:
 
 | | |
 |---|---|
@@ -67,6 +67,12 @@ Capturas reales de la app corriendo (menu-bar app en macOS). Las cuatro pestaña
 | **Resumen** — sesiones, mensajes, tokens, rachas, hora pico, modelo favorito, costo API-equiv y el heatmap de actividad diaria. | **Límites** — sesión (5 h) y semanal (7 d) con caps por-modelo y el **gasto real** de bolsillo (spend / extra_usage). |
 | ![Modelos](screenshots/modelos.png) | ![Proyectos](screenshots/proyectos.png) |
 | **Uso por modelo** — barras apiladas por día + una fila por modelo (tokens in/out y %). | **Uso por proyecto** — barras apiladas por día + una fila por carpeta de proyecto (tokens in/out y %). |
+
+### The `Cerebro` tab — the global brain, at a glance
+
+<p align="center"><img src="screenshots/cerebro.png" alt="Pestaña Cerebro" width="360"></p>
+
+La pestaña **Cerebro 🧠** es una infografía de lo que `install-brain.sh` deja en tu `~/.claude`, jerarquizado de **inviolable → sugerencia leve** como un árbol de directorios: 🔒 **INVIOLABLE** (hooks que *bloquean*: git-branch-guard, merge-squash-guard, confirmar-merge-develop, dod-verificar, delegacion-gate) → 🔔 **AUTOMÁTICO** (hooks que inyectan/recuerdan, no bloquean) → 📜 **NORMAS** (reglas que Claude se autoimpone: Definición de LISTO, doc=realidad, flujo git, costo de delegación) → 💡 **SKILLS** (opt-in). Cada nivel con su espina de color; contenido estático que refleja [`brain/`](brain/).
 
 ## macOS (menu-bar app)
 
