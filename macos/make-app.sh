@@ -23,6 +23,13 @@ cp "$BIN" "$APP/Contents/MacOS/ClaudeQuota"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 cp "$ICNS" "$APP/Contents/Resources/AppIcon.icns"
 
+# Empaqueta el cerebro DENTRO del app para que el botón "Completar/actualizar cerebro global"
+# de la pestaña Cerebro pueda correr install-brain.sh sin depender de dónde esté el clon del repo.
+if [[ -d "$ROOT/../brain" ]]; then
+    rm -rf "$APP/Contents/Resources/brain"
+    cp -R "$ROOT/../brain" "$APP/Contents/Resources/brain"
+fi
+
 # Ad-hoc codesign so Gatekeeper/TCC treat it as a stable identity across rebuilds.
 codesign --force --sign - "$APP" >&2 2>/dev/null || true
 

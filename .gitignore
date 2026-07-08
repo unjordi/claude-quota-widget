@@ -12,3 +12,6 @@
 .claude/settings.local.json
 # memorias personales/sensibles que NO viajan al equipo
 .claude/memory/*.local.md
+
+# brain/ empaquetado en el plasmoid al instalar (Linux) — temporal, no versionar
+src/plasmoid/contents/brain/

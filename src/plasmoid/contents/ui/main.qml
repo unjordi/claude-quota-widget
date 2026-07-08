@@ -17,6 +17,8 @@ PlasmoidItem {
     property var stats: null
 
     property int currentTab: 0
+    // Al abrir/volver a la pestaña Cerebro (idx 3) re-lee el estado real de ~/.claude (doc = realidad).
+    onCurrentTabChanged: if (currentTab === 3) scanBrain()
 
     readonly property string cacheDir: {
         const raw = "" + StandardPaths.writableLocation(StandardPaths.GenericCacheLocation)
@@ -50,6 +52,35 @@ PlasmoidItem {
         engine: "executable"
         connectedSources: []
         onNewData: function(source, data) { disconnectSource(source); reload() }
+    }
+
+    // Lectura del estado real del cerebro (brain-scan.sh scan → JSON). Reusa el engine "executable"
+    // que ya usamos para state.json/stats.json (evita depender de binarios raros o de XHR a file://).
+    P5Support.DataSource {
+        id: brainSource
+        engine: "executable"
+        connectedSources: []
+        onNewData: function(source, data) {
+            if (data["exit code"] === 0 && data.stdout) {
+                try {
+                    root.brainState = JSON.parse(data.stdout)
+                    root.brainScannedAt = Qt.formatTime(new Date(), "hh:mm")
+                } catch (e) { /* deja el estado previo si el parse falla */ }
+            }
+            disconnectSource(source)
+        }
+    }
+
+    // Curita self-healing: corre brain-scan.sh heal (que localiza y ejecuta install-brain.sh).
+    P5Support.DataSource {
+        id: healSource
+        engine: "executable"
+        connectedSources: []
+        onNewData: function(source, data) {
+            root.brainHeal = (data["exit code"] === 0) ? "ok" : "error"
+            disconnectSource(source)
+            root.scanBrain()   // re-lee el estado tras curar
+        }
     }
 
     function reload() {
@@ -159,49 +190,186 @@ PlasmoidItem {
         return m
     }
 
-    // ---------- Datos ESTÁTICOS de la pestaña Cerebro ----------
-    // Reflejan `brain/` (hooks / normas / skills), de más duro (arriba) a más leve (abajo).
-    // NO dependen de datos en vivo; se mantienen a mano cuando cambian las piezas del cerebro.
+    // ---------- Pestaña Cerebro: ESTRUCTURA curada + ESTADO real ----------
+    // La ESTRUCTURA (qué piezas hay, su explicación, su evento y detalle) es curada y espeja el
+    // BrainItem de PopoverView.swift; el ESTADO de instalación de cada pieza se LEE de la realidad
+    // (~/.claude vía brain-scan.sh) y se resuelve con brainStatus(). Textos en español, literales del Swift.
+    // De más duro (arriba) a más leve (abajo).
     readonly property var brainTiers: [
         {
             emoji: "🔒", title: "INVIOLABLE", color: "#dc3545",
             subtitle: "hooks que BLOQUEAN (deny) — no negociables",
             items: [
-                { emoji: "🚧", name: "git-branch-guard",       desc: "push/merge a develop·main → denegado, te redirige a ramita→MR" },
-                { emoji: "🔗", name: "merge-squash-guard",     desc: "MR a develop sin --squash → denegado (1 commit limpio)" },
-                { emoji: "✋", name: "confirmar-merge-develop", desc: "merge a develop sin tu OK → denegado; a main exige OK súper-explícito" },
-                { emoji: "✅", name: "dod-verificar",          desc: "declarar “listo” sin build+tests+memoria → denegado" },
-                { emoji: "💸", name: "delegacion-gate",        desc: "reclutar agente con costo → pide tu consentimiento (puede negar)" }
+                { emoji: "🚧", name: "git-branch-guard",       desc: "push/merge a develop·main → denegado, te redirige a ramita→MR",
+                  event: "PreToolUse · Bash",
+                  detail: "Escanea cada comando: si ve un `git push` o un merge que apunte a develop/main, lo deniega y te recuerda el flujo ramita→MR. Sin jq falla ABIERTO (no bloquea)." },
+                { emoji: "🔗", name: "merge-squash-guard",     desc: "MR a develop sin --squash → denegado (1 commit limpio)",
+                  event: "PreToolUse · Bash",
+                  detail: "Un `gh pr merge`/`glab mr merge` a develop sin --squash se deniega, para que la ramita colapse a un commit curado. Los releases a main quedan exentos (conservan historia)." },
+                { emoji: "🕵️", name: "secret-scan",            desc: "commit/push con un secreto → denegado",
+                  event: "PreToolUse · Bash",
+                  detail: "Escanea lo que ENTRA al repo (staged en commit, saliente en push) buscando llaves/tokens/claves privadas de formato inconfundible (AWS, PEM, Anthropic, OpenAI, GitHub, GitLab, Slack, Google). Si aparece uno → bloquea: una credencial pusheada queda comprometida aunque la borres. Escape: --no-verify." },
+                { emoji: "✋", name: "confirmar-merge-develop", desc: "merge a develop sin tu OK → denegado; a main exige OK súper-explícito",
+                  event: "PreToolUse · Bash",
+                  detail: "Antes de integrar por MR busca tu OK explícito en el chat reciente; a main exige lenguaje de release ('hasta main', 'libera'). Un 'sigue/avanza' NO cuenta como autorización." },
+                { emoji: "✅", name: "dod-verificar",          desc: "declarar “listo” sin build+tests+memoria → denegado",
+                  event: "Stop",
+                  detail: "Al cerrar el turno, si dijiste 'listo/en producción' tras tocar código fuente, exige evidencia de build+tests verdes y memoria al día, o bloquea el cierre." },
+                { emoji: "💸", name: "delegacion-gate",        desc: "reclutar agente con costo → pide tu consentimiento (puede negar)",
+                  event: "PreToolUse · Task",
+                  detail: "Al reclutar un agente calcula su nivel de costo (gratis/incluido/con costo, según tu ventana de 5h) y pide consentimiento mostrando tu cuota real. Puedes negar y el agente no corre." },
+                { emoji: "🛑", name: "limite-gasto",           desc: "reclutar agente con el gasto pasado del techo → denegado",
+                  event: "PreToolUse · Task",
+                  detail: "Freno DURO (distinto del gate que pregunta): si el gasto real ya rebasó un techo configurable (sobreuso o ventana 5h), bloquea reclutar más agentes para que un workflow desbocado no siga quemando dinero. Techo por env (LIMITE_GASTO_OVERAGE_PCT / LIMITE_GASTO_5H_PCT)." }
             ]
         },
         {
             emoji: "🔔", title: "AUTOMÁTICO", color: "#e8884a",
             subtitle: "hooks que inyectan / recuerdan — no bloquean",
             items: [
-                { emoji: "🧭", name: "sesion-inicio",             desc: "al abrir/retomar reinyecta rama + norma de git + orden de leer memoria" },
-                { emoji: "💾", name: "precompact-volcar-estado",  desc: "antes de compactar, vuelca avance/decisiones/pendientes a memoria" },
-                { emoji: "📊", name: "recordar-dashboard",        desc: "antes de un push, recuerda actualizar el dashboard del cerebro" },
-                { emoji: "📝", name: "delegacion-registrar",      desc: "registra el consentimiento (materializa el “pregunta 1×”)" }
+                { emoji: "🧭", name: "sesion-inicio",             desc: "al abrir/retomar reinyecta rama + norma de git + orden de leer memoria",
+                  event: "SessionStart",
+                  detail: "Al abrir/retomar sesión o tras compactar, reinyecta la rama actual, la norma de git y la orden de leer MEMORY/estado. Antídoto a 'se me va la onda al cambiar de sesión o compu'." },
+                { emoji: "💾", name: "precompact-volcar-estado",  desc: "antes de compactar, vuelca avance/decisiones/pendientes a memoria",
+                  event: "PreCompact",
+                  detail: "Justo antes de que el contexto se compacte, te obliga a volcar avance/decisiones/pendientes a la memoria, para no perder el hilo en un sprint largo." },
+                { emoji: "📊", name: "recordar-dashboard",        desc: "antes de un push, recuerda actualizar el dashboard del cerebro",
+                  event: "PreToolUse · Bash",
+                  detail: "Antes de un `git push` recuerda (no bloquea) actualizar el dashboard del cerebro: una línea a la bitácora + ajustar el mapa si cambió el layout de repos/proyectos." },
+                { emoji: "🕰️", name: "rama-vieja",                desc: "push de ramita muy atrás de develop → aviso (no bloquea)",
+                  event: "PreToolUse · Bash",
+                  detail: "Antes de un push, si la ramita está muchos commits detrás de origin/develop (base vieja → el MR trae ruido/conflictos), avisa —no bloquea— y sugiere rebasar. Umbral configurable (RAMA_VIEJA_UMBRAL, def 40)." },
+                { emoji: "📝", name: "delegacion-registrar",      desc: "registra el consentimiento (materializa el “pregunta 1×”)",
+                  event: "PostToolUse · Task",
+                  detail: "Tras un consentimiento aprobado lo registra para no volver a preguntar (1× por máquina o por workflow, según el nivel de costo). Materializa el 'pregunta una sola vez'." }
             ]
         },
         {
             emoji: "📜", title: "NORMAS", color: "#4a90d9",
             subtitle: "reglas que Claude se autoimpone (CLAUDE.md)",
             items: [
-                { emoji: "🎯", name: "Definición de LISTO",   desc: "verde técnico ≠ listo; exige tu QA o tu OK expreso" },
-                { emoji: "🪞", name: "Doc = realidad",        desc: "cambió algo → actualiza su doc en la misma tanda, sin preguntar" },
-                { emoji: "🌿", name: "Flujo de git",          desc: "ramita → MR → develop (squash); main es release-only" },
-                { emoji: "💰", name: "Costo de delegación",   desc: "gratis / incluido / con costo — window-aware, lee tu cuota" }
+                { emoji: "🎯", name: "Definición de LISTO",   desc: "verde técnico ≠ listo; exige tu QA o tu OK expreso",
+                  event: "CLAUDE.md · norma",
+                  detail: "Algo es LISTO solo si tú lo validaste (QA) o autorizaste el cierre. 'Verde técnico' es necesario pero insuficiente; la autorización es acotada y NO transitiva." },
+                { emoji: "🪞", name: "Doc = realidad",        desc: "cambió algo → actualiza su doc en la misma tanda, sin preguntar",
+                  event: "CLAUDE.md · norma",
+                  detail: "Cuando cambia algo (config, ruta, comportamiento) se actualiza su doc en la misma tanda, sin preguntar. Primero revisar el estado real, luego editar: una doc que miente es peor que nada." },
+                { emoji: "🌿", name: "Flujo de git",          desc: "ramita → MR → develop (squash); main es release-only",
+                  event: "CLAUDE.md · norma",
+                  detail: "Todo push va a ramitas; se integra por MR a develop con squash; main es release-only (decisión humana deliberada). 1–3 devs → auto-merge; ≥4 devs → se revisa." },
+                { emoji: "💰", name: "Costo de delegación",   desc: "gratis / incluido / con costo — window-aware, lee tu cuota",
+                  event: "CLAUDE.md · norma",
+                  detail: "Reclutar agentes cuesta según nivel: gratis (local), incluido (Claude dentro de la ventana 5h) o con costo (overage / API externa / desconocido). La cadencia del permiso depende del nivel." }
             ]
         },
         {
             emoji: "💡", title: "SKILLS", color: "#3aa76d",
             subtitle: "herramientas opt-in — las invocas tú",
             items: [
-                { emoji: "📦", name: "cerrar-slice", desc: "build+tests+memoria al día + MR con resumen curado por slice" }
+                { emoji: "📦", name: "cerrar-slice", desc: "build+tests+memoria al día + MR con resumen curado por slice",
+                  event: "skill · opt-in",
+                  detail: "Ritual de cierre de un slice: build+tests verdes, memoria al día (bitácora), MR con resumen curado en prosa, y el Paso 5 de cosechar lo genérico de vuelta al cerebro global." }
             ]
         }
     ]
+
+    // ---------- Cerebro VIVO: estado real leído de ~/.claude ----------
+    // Espeja BrainInspector.swift. brainState = { present:[], wired:[], hasNorms, skills:[] } o null.
+    property var brainState: null
+    property string brainScannedAt: ""        // hora de la última lectura (hh:mm)
+    property string brainHeal: ""             // "", "running", "ok", "error" (estado del botón-curita)
+    property string brainExpandedKey: ""      // "<tier>-<idx>" de la hoja expandida (solo una a la vez)
+
+    // Catálogo conocido (mismos conjuntos que BrainState.knownGlobalHooks / knownRepoHooks del Swift).
+    readonly property var brainGlobalHooks: ["git-branch-guard","merge-squash-guard","recordar-dashboard","secret-scan","rama-vieja","limite-gasto","delegacion-gate","delegacion-registrar"]
+    readonly property var brainRepoHooks:   ["sesion-inicio","precompact-volcar-estado","dod-verificar","confirmar-merge-develop"]
+
+    // Ruta del helper bash, resuelta relativa a este main.qml (…/contents/ui/ → …/contents/brain-scan.sh).
+    readonly property string brainScript: {
+        var u = "" + Qt.resolvedUrl("../brain-scan.sh")
+        if (u.startsWith("file://")) u = u.substring("file://".length)
+        return u
+    }
+    function scanBrain()  { brainSource.connectSource("bash '" + brainScript + "' scan") }
+    function healBrainGlobal() {
+        root.brainHeal = "running"
+        healSource.connectSource("bash '" + brainScript + "' heal")
+    }
+
+    function inArr(a, x) { return a && a.indexOf(x) !== -1 }
+
+    // Estado real de una pieza por nombre; espeja status(_:_:) del Swift. "" si aún no hay lectura.
+    function brainStatus(name) {
+        var st = root.brainState
+        if (!st) return ""
+        if (inArr(root.brainGlobalHooks, name)) {
+            var p = inArr(st.present, name), w = inArr(st.wired, name)
+            return p && w ? "installed" : (p ? "presentNotWired" : "absent")
+        }
+        if (inArr(root.brainRepoHooks, name)) return "repoScoped"
+        if (name === "cerrar-slice") return inArr(st.skills, "cerrar-slice") ? "installed" : "absent"
+        if (name === "Definición de LISTO" || name === "Doc = realidad"
+            || name === "Flujo de git" || name === "Costo de delegación")
+            return st.hasNorms ? "installed" : "absent"
+        return "absent"
+    }
+    // Símbolo/color de cara al usuario COLAPSADOS a binario (los 4 estados se conservan por dentro
+    // para el matiz fino del detalle al tocar, vía brainStatusLabel). Espeja BrainStatus.symbol/.color
+    // del Swift: installed → ✓ verde; presentNotWired Y absent → ！ rojo (se ven igual: "faltante");
+    // repoScoped → ◈ azul discreto (al 60%). "" (aún sin lectura) → sin punto.
+    function brainDot(s) {
+        if (s === "installed") return "✓"
+        if (s === "repoScoped") return "◈"
+        if (s === "") return ""
+        return "！"   // presentNotWired / absent / desconocido → faltante
+    }
+    function brainDotColor(s) {
+        if (s === "installed") return "#3aa76d"
+        if (s === "repoScoped") return Qt.rgba(0.290, 0.565, 0.851, 0.6)   // #4a90d9 @ 60%
+        return "#dc3545"   // faltante (sin cablear / ausente / desconocido)
+    }
+    function brainStatusLabel(s) {
+        if (s === "installed") return "instalado + cableado en tu ~/.claude"
+        if (s === "presentNotWired") return "el script existe pero NO está cableado en settings.json"
+        if (s === "repoScoped") return "viaja por repo: se copia al .claude/ de cada proyecto"
+        return "no instalado en tu ~/.claude"
+    }
+
+    // Nombres de todas las piezas del catálogo (para el recuadro de salud).
+    readonly property var brainAllNames: {
+        var out = []
+        for (var t = 0; t < brainTiers.length; t++)
+            for (var i = 0; i < brainTiers[t].items.length; i++)
+                out.push(brainTiers[t].items[i].name)
+        return out
+    }
+    // Globales = todas menos las repo-scoped. Activas = installed.
+    readonly property int brainTotal: {
+        if (!brainState) return 0
+        var n = 0
+        for (var i = 0; i < brainAllNames.length; i++)
+            if (brainStatus(brainAllNames[i]) !== "repoScoped") n++
+        return n
+    }
+    readonly property int brainActive: {
+        if (!brainState) return 0
+        var n = 0
+        for (var i = 0; i < brainAllNames.length; i++) {
+            var s = brainStatus(brainAllNames[i])
+            if (s !== "repoScoped" && s === "installed") n++
+        }
+        return n
+    }
+    // Hooks cableados fuera del catálogo (sección "➕ OTROS" — doc = realidad completa).
+    readonly property var brainExtras: {
+        if (!brainState || !brainState.wired) return []
+        var known = brainGlobalHooks.concat(brainRepoHooks)
+        var out = []
+        for (var i = 0; i < brainState.wired.length; i++)
+            if (known.indexOf(brainState.wired[i]) === -1) out.push(brainState.wired[i])
+        out.sort()
+        return out
+    }
 
     Plasmoid.status: PlasmaCore.Types.ActiveStatus
     Plasmoid.icon: "speedometer"
@@ -456,14 +624,16 @@ PlasmoidItem {
                 }
             }
 
-            // ===== Tab 3: Cerebro =====
-            // Infografía ESTÁTICA del cerebro global de Claude Code (refleja `brain/`):
-            // los componentes instalados, jerarquizados de INVIOLABLE (hooks que deniegan)
-            // → SKILLS opt-in. Se mantiene a mano cuando cambian las piezas de `brain/`.
+            // ===== Tab 3: Cerebro (VIVO) =====
+            // Infografía del cerebro global de Claude Code: la ESTRUCTURA es curada (refleja `brain/`),
+            // pero el ESTADO de cada pieza se LEE de la realidad (~/.claude vía brain-scan.sh) y se pinta
+            // con un punto de estado por hoja + un recuadro de salud arriba. Cada hoja es clickeable
+            // (despliega su evento + detalle). Se re-lee al abrir la pestaña. Espeja cerebroTab del Swift.
             PC3.ScrollView {
                 id: cerebroScroll
                 contentWidth: availableWidth   // sin scroll horizontal; solo vertical
                 clip: true
+                Component.onCompleted: root.scanBrain()   // primera lectura al construir la vista
                 ColumnLayout {
                     width: cerebroScroll.availableWidth
                     spacing: Kirigami.Units.largeSpacing
@@ -481,12 +651,17 @@ PlasmoidItem {
                     PC3.Label {
                         Layout.fillWidth: true; opacity: 0.6; wrapMode: Text.WordWrap
                         font.pointSize: Kirigami.Theme.smallFont.pointSize
-                        text: "Guardarraíles + gobernanza + normas de Claude Code. Viaja por git, aplica en toda máquina. De más duro (arriba) a más leve (abajo)."
+                        text: "Guardarraíles + gobernanza + normas de Claude Code. Viaja por git, aplica en toda máquina. De más duro (arriba) a más leve (abajo). Toca una pieza para ver su evento y un ejemplo."
                     }
+
+                    // Recuadro de SALUD: piezas globales activas + leyenda + hora + botón-curita.
+                    BrainHealth { Layout.fillWidth: true }
+
                     Repeater {
                         model: root.brainTiers
                         delegate: BrainTier {
                             Layout.fillWidth: true
+                            tierIndex: index
                             emoji: modelData.emoji
                             title: modelData.title
                             accent: modelData.color
@@ -494,6 +669,44 @@ PlasmoidItem {
                             items: modelData.items
                         }
                     }
+
+                    // ➕ OTROS: hooks cableados en tu settings.json fuera del catálogo del cerebro.
+                    RowLayout {
+                        Layout.fillWidth: true
+                        visible: root.brainExtras.length > 0
+                        spacing: Kirigami.Units.smallSpacing
+                        Rectangle {
+                            Layout.preferredWidth: 3; Layout.fillHeight: true
+                            Layout.topMargin: 2; Layout.bottomMargin: 2
+                            radius: 1
+                            color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.3)
+                        }
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: Kirigami.Units.smallSpacing
+                            RowLayout {
+                                Layout.fillWidth: true; spacing: Kirigami.Units.smallSpacing
+                                PC3.Label { text: "➕"; font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.1 }
+                                PC3.Label { text: "OTROS"; font.bold: true; opacity: 0.5 }
+                                Item { Layout.fillWidth: true }
+                            }
+                            PC3.Label {
+                                Layout.fillWidth: true; opacity: 0.6; wrapMode: Text.WordWrap
+                                font.pointSize: Kirigami.Theme.smallFont.pointSize
+                                text: "hooks cableados en tu settings.json, fuera del catálogo del cerebro"
+                            }
+                            Repeater {
+                                model: root.brainExtras
+                                delegate: RowLayout {
+                                    Layout.fillWidth: true; spacing: Kirigami.Units.smallSpacing
+                                    PC3.Label { text: "●"; color: "#3aa76d"; opacity: 0.55; font.pointSize: Kirigami.Theme.smallFont.pointSize }
+                                    PC3.Label { text: modelData; font.family: "monospace" }
+                                    Item { Layout.fillWidth: true }
+                                }
+                            }
+                        }
+                    }
+
                     PC3.Label {
                         Layout.fillWidth: true; opacity: 0.45; wrapMode: Text.WordWrap
                         font.pointSize: Kirigami.Theme.smallFont.pointSize
@@ -538,11 +751,108 @@ PlasmoidItem {
         MouseArea { id: mouse; anchors.fill: parent; hoverEnabled: true; onClicked: root.currentTab = idx }
     }
 
+    // Recuadro de SALUD del cerebro global, de cara al usuario BINARIO (espeja brainHealth del Swift):
+    // todo activo → ✓ verde "Cerebro global completo y activo"; falta algo → 🩹 rojo "Tu cerebro global
+    // está incompleto". Conserva la hora de lectura y el botón-curita 🩹 (solo si falta algo). SIN leyenda
+    // de 4 estados: el matiz fino vive en el detalle al tocar cada pieza (brainStatusLabel).
+    component BrainHealth: Rectangle {
+        id: health
+        readonly property bool ready: root.brainState !== null
+        readonly property bool allGood: ready && root.brainActive === root.brainTotal
+        readonly property int missing: ready ? (root.brainTotal - root.brainActive) : 0
+        readonly property bool healingNow: root.brainHeal === "running"
+        readonly property color healTint: missing > 0 ? "#dc3545" : "#e8884a"
+        Layout.fillWidth: true
+        implicitHeight: healthCol.implicitHeight + Kirigami.Units.smallSpacing * 2
+        radius: Kirigami.Units.smallSpacing
+        color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.05)
+
+        ColumnLayout {
+            id: healthCol
+            anchors.fill: parent
+            anchors.margins: Kirigami.Units.smallSpacing
+            spacing: Kirigami.Units.smallSpacing
+
+            // Línea 1 (BINARIA): sello + veredicto de una línea + hora de lectura. Sin conteo N/M ni
+            // leyenda de cara al usuario: verde = todo bien, rojo = algo falta (cúralo).
+            RowLayout {
+                Layout.fillWidth: true; spacing: Kirigami.Units.smallSpacing
+                PC3.Label { text: health.allGood ? "✓" : "🩹"; color: health.allGood ? "#3aa76d" : "#dc3545"; font.bold: true }
+                PC3.Label {
+                    Layout.fillWidth: true; font.bold: true; wrapMode: Text.WordWrap
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    text: health.ready
+                          ? (health.allGood ? "Cerebro global completo y activo"
+                                             : "Tu cerebro global está incompleto")
+                          : "leyendo tu ~/.claude…"
+                }
+                PC3.Label {
+                    visible: root.brainScannedAt !== ""
+                    text: "leído " + root.brainScannedAt
+                    opacity: 0.4; font.pointSize: Kirigami.Theme.smallFont.pointSize * 0.9
+                }
+            }
+
+            // Línea 2: botón-curita self-healing 🩹 (rojo cruz-roja). SOLO visible si hay algo que
+            // curar; sano (10/10) → sin botón ni "curado" (el sello verde ya lo dice todo).
+            RowLayout {
+                Layout.fillWidth: true; spacing: Kirigami.Units.smallSpacing
+                visible: health.missing > 0
+                Rectangle {
+                    id: healBtn
+                    radius: Kirigami.Units.smallSpacing
+                    color: Qt.rgba(health.healTint.r, health.healTint.g, health.healTint.b, 0.16)
+                    implicitWidth: healRow.implicitWidth + Kirigami.Units.smallSpacing * 2
+                    implicitHeight: healRow.implicitHeight + Kirigami.Units.smallSpacing
+                    opacity: health.healingNow ? 0.7 : 1.0
+                    RowLayout {
+                        id: healRow
+                        anchors.centerIn: parent
+                        spacing: Kirigami.Units.smallSpacing
+                        PC3.Label {
+                            // Curita/cruz-roja como glifo (no hay ícono Breeze fiable de "bandage").
+                            text: health.healingNow ? "…" : "🩹"
+                            color: health.healTint
+                        }
+                        PC3.Label {
+                            font.bold: true; font.pointSize: Kirigami.Theme.smallFont.pointSize
+                            color: health.healTint
+                            text: health.healingNow
+                                  ? "Curando…"
+                                  : (health.missing > 0
+                                     ? "Curar cerebro global (" + health.missing + ")"
+                                     : "Actualizar cerebro global")
+                        }
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        enabled: !health.healingNow
+                        onClicked: root.healBrainGlobal()
+                        PC3.ToolTip.text: "Corre install-brain.sh (localiza el instalador; en Linux ver la NOTA DE RUTA en brain-scan.sh): copia/cablea hooks globales, skill y normas en tu ~/.claude. Idempotente."
+                        PC3.ToolTip.visible: containsMouse
+                        PC3.ToolTip.delay: 500
+                    }
+                }
+                PC3.Label {
+                    visible: root.brainHeal === "ok" || root.brainHeal === "error"
+                    text: root.brainHeal === "ok" ? "✓ curado" : "✗ error (¿jq / ruta del install-brain.sh?)"
+                    opacity: 0.6; font.pointSize: Kirigami.Theme.smallFont.pointSize * 0.9
+                }
+                Item { Layout.fillWidth: true }
+            }
+        }
+    }
+
     // Un nivel (tier) del cerebro: espina/barra de color a la izquierda + encabezado
     // (emoji + TÍTULO en el color del nivel + subtítulo tenue) + hojas con conectores
     // de árbol monoespaciados (├─ para todas menos la última, └─ para la última).
+    // Cada hoja es CLICKEABLE: al tocarla se despliega su evento (chip) + detalle + estado,
+    // con chevron ▸/▾. Solo una hoja abierta a la vez (root.brainExpandedKey).
     component BrainTier: RowLayout {
         id: tier
+        property int tierIndex: 0
         property string emoji: ""
         property string title: ""
         property color accent: Kirigami.Theme.textColor
@@ -569,22 +879,87 @@ PlasmoidItem {
             }
             Repeater {
                 model: tier.items
-                delegate: RowLayout {
-                    Layout.fillWidth: true; spacing: Kirigami.Units.smallSpacing
-                    PC3.Label {
-                        Layout.alignment: Qt.AlignTop
-                        text: index === tier.items.length - 1 ? "└─" : "├─"
-                        font.family: "monospace"; color: tier.accent; opacity: 0.55
+                delegate: ColumnLayout {
+                    id: leaf
+                    Layout.fillWidth: true
+                    spacing: 2
+                    readonly property string leafKey: tier.tierIndex + "-" + index
+                    readonly property bool open: root.brainExpandedKey === leafKey
+                    readonly property string st: root.brainStatus(modelData.name)
+
+                    // Cabecera CLICKEABLE: el MouseArea es el item del layout; el RowLayout va anclado
+                    // dentro (conector + punto de estado + emoji + nombre + desc + chevron ▸/▾).
+                    MouseArea {
+                        Layout.fillWidth: true
+                        implicitHeight: headerRow.implicitHeight
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.brainExpandedKey = leaf.open ? "" : leaf.leafKey
+                        RowLayout {
+                            id: headerRow
+                            anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
+                            spacing: Kirigami.Units.smallSpacing
+                            PC3.Label {
+                                Layout.alignment: Qt.AlignTop
+                                text: index === tier.items.length - 1 ? "└─" : "├─"
+                                font.family: "monospace"; color: tier.accent; opacity: 0.55
+                            }
+                            PC3.Label {
+                                Layout.alignment: Qt.AlignTop
+                                text: root.brainDot(leaf.st); color: root.brainDotColor(leaf.st)
+                                font.pointSize: Kirigami.Theme.smallFont.pointSize
+                            }
+                            PC3.Label { Layout.alignment: Qt.AlignTop; text: modelData.emoji }
+                            PC3.Label {
+                                Layout.alignment: Qt.AlignTop
+                                text: modelData.name; font.family: "monospace"; font.bold: true
+                            }
+                            PC3.Label {
+                                Layout.fillWidth: true; Layout.alignment: Qt.AlignTop
+                                text: modelData.desc; opacity: 0.62; wrapMode: Text.WordWrap
+                                font.pointSize: Kirigami.Theme.smallFont.pointSize
+                            }
+                            PC3.Label {
+                                Layout.alignment: Qt.AlignTop
+                                text: leaf.open ? "▾" : "▸"; opacity: 0.35
+                                font.pointSize: Kirigami.Theme.smallFont.pointSize
+                            }
+                        }
                     }
-                    PC3.Label { Layout.alignment: Qt.AlignTop; text: modelData.emoji }
-                    PC3.Label {
-                        Layout.alignment: Qt.AlignTop
-                        text: modelData.name; font.family: "monospace"; font.bold: true
-                    }
-                    PC3.Label {
-                        Layout.fillWidth: true; Layout.alignment: Qt.AlignTop
-                        text: modelData.desc; opacity: 0.62; wrapMode: Text.WordWrap
-                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+
+                    // Detalle desplegado: chip del evento (color del nivel) + párrafo + estado leído.
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: Kirigami.Units.gridUnit * 1.2
+                        Layout.rightMargin: Kirigami.Units.smallSpacing
+                        visible: leaf.open
+                        spacing: 3
+                        Rectangle {
+                            Layout.alignment: Qt.AlignLeft
+                            radius: 3
+                            color: Qt.rgba(tier.accent.r, tier.accent.g, tier.accent.b, 0.15)
+                            implicitWidth: chip.implicitWidth + Kirigami.Units.smallSpacing * 2
+                            implicitHeight: chip.implicitHeight + 2
+                            PC3.Label {
+                                id: chip
+                                anchors.centerIn: parent
+                                text: modelData.event; color: tier.accent; font.bold: true
+                                font.family: "monospace"; font.pointSize: Kirigami.Theme.smallFont.pointSize * 0.9
+                            }
+                        }
+                        PC3.Label {
+                            Layout.fillWidth: true; text: modelData.detail; opacity: 0.75; wrapMode: Text.WordWrap
+                            font.pointSize: Kirigami.Theme.smallFont.pointSize
+                        }
+                        RowLayout {
+                            visible: leaf.st !== ""
+                            spacing: 4
+                            PC3.Label { text: root.brainDot(leaf.st); color: root.brainDotColor(leaf.st); font.pointSize: Kirigami.Theme.smallFont.pointSize }
+                            PC3.Label {
+                                text: root.brainStatusLabel(leaf.st); color: root.brainDotColor(leaf.st)
+                                font.pointSize: Kirigami.Theme.smallFont.pointSize * 0.95
+                            }
+                        }
                     }
                 }
             }

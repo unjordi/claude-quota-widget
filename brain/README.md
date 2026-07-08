@@ -35,6 +35,9 @@ Se dividen en dos **tiers** según su alcance:
 |---|---|---|
 | `git-branch-guard.sh` | PreToolUse/Bash | Bloquea `git push`/merge a `develop`/`main` y redirige al flujo ramita→MR→develop. |
 | `merge-squash-guard.sh` | PreToolUse/Bash | Bloquea un `glab mr merge`/`gh pr merge` sin `--squash` (la ramita colapsa a 1 commit limpio). |
+| `secret-scan.sh` | PreToolUse/Bash | Bloquea un `git commit`/`git push` si lo que entra al repo trae un SECRETO (AWS/PEM/Anthropic/OpenAI/GitHub/GitLab/Slack/Google). Escapes: `--no-verify` / `CLAUDE_SKIP_SECRET_SCAN=1`. |
+| `rama-vieja.sh` | PreToolUse/Bash | Antes de un `git push`, AVISA (no bloquea) si la ramita está muy atrás de `origin/develop` (base vieja → MR con ruido). Umbral `RAMA_VIEJA_UMBRAL` (def 40). |
+| `limite-gasto.sh` | PreToolUse/Task | FRENO DURO: bloquea reclutar agentes cuando el gasto real rebasa un techo (`LIMITE_GASTO_OVERAGE_PCT` def 90 / `LIMITE_GASTO_5H_PCT` def off). Complementa al gate (que pregunta). |
 | `recordar-dashboard.sh` | PreToolUse/Bash | Antes de un `git push`, RECUERDA (no bloquea) actualizar el dashboard del cerebro. |
 | `delegacion-gate.sh` | PreToolUse/Task | Pide consentimiento de COSTO al reclutar un agente (ver modelo de costo abajo). |
 | `delegacion-registrar.sh` | PostToolUse/Task | Materializa el "pregunta 1×": registra el consentimiento tras un `ask` aprobado. |
