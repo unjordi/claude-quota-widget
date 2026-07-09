@@ -21,6 +21,8 @@ struct PopoverView: View {
     @ObservedObject private var updater = Updater.shared
     /// Summary del chat bajo el cursor (se muestra en el pie de la pestaña Chats).
     @State private var hoveredSummary: String? = nil
+    /// Proyecto expandido en la pestaña Proyectos (muestra sus sesiones para resumir).
+    @State private var expandedProject: String? = nil
 
     // Neutral surfaces adapt to light/dark via labelColor; accents are fixed hex.
     private var label: Color { Color(nsColor: .labelColor) }
@@ -352,18 +354,9 @@ struct PopoverView: View {
             ScrollView(.vertical, showsIndicators: true) {
                 VStack(spacing: 6) {
                     ForEach(model.stats?.projects ?? [], id: \.project) { p in
-                        HStack(spacing: 6) {
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(model.projectColor(p.project))
-                                .frame(width: 10, height: 10)
-                            Text(p.project ?? "—").fontWeight(.bold).lineLimit(1)
-                            Spacer()
-                            Text("\(Fmt.tok(p.in_tok)) in · \(Fmt.tok(p.out_tok)) out")
-                                .foregroundStyle(label.opacity(0.7))
-                            Text(String(format: "%.1f%%", p.pct ?? 0))
-                                .fontWeight(.bold)
-                                .foregroundStyle(model.projectColor(p.project))
-                                .frame(minWidth: 44, alignment: .trailing)
+                        projectRow(p)
+                        if expandedProject == (p.project ?? "—") {
+                            sessionsList(for: p.project ?? "—")
                         }
                     }
                 }
@@ -372,6 +365,72 @@ struct PopoverView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// Fila de proyecto: swatch + nombre (+ chevron si tiene sesiones) + tokens + %. Tap despliega
+    /// sus sesiones de Claude Code para resumir.
+    @ViewBuilder
+    private func projectRow(_ p: StatsProject) -> some View {
+        let name = p.project ?? "—"
+        let n = model.sessions.filter { $0.project == name }.count
+        Button {
+            expandedProject = (expandedProject == name) ? nil : name
+        } label: {
+            HStack(spacing: 6) {
+                RoundedRectangle(cornerRadius: 2).fill(model.projectColor(p.project)).frame(width: 10, height: 10)
+                Text(name).fontWeight(.bold).lineLimit(1)
+                if n > 0 {
+                    Image(systemName: expandedProject == name ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9)).foregroundStyle(label.opacity(0.5))
+                }
+                Spacer()
+                Text("\(Fmt.tok(p.in_tok)) in · \(Fmt.tok(p.out_tok)) out").foregroundStyle(label.opacity(0.7))
+                Text(String(format: "%.1f%%", p.pct ?? 0)).fontWeight(.bold)
+                    .foregroundStyle(model.projectColor(p.project)).frame(minWidth: 44, alignment: .trailing)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(n == 0)
+    }
+
+    /// Sesiones de un proyecto (al desplegar): cada una resume en su cwd.
+    @ViewBuilder
+    private func sessionsList(for name: String) -> some View {
+        let ss = Array(model.sessions.filter { $0.project == name }.prefix(12))
+        VStack(spacing: 3) {
+            ForEach(ss) { s in sessionRow(s) }
+        }
+        .padding(.leading, 18)
+    }
+
+    @ViewBuilder
+    private func sessionRow(_ s: Session) -> some View {
+        Button { resume(s) } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.uturn.left.circle").font(.system(size: 11)).foregroundStyle(accent)
+                Text(s.label ?? "(sesión)").font(.caption).lineLimit(1)
+                Spacer(minLength: 8)
+                Text(Self.relDate(s.updated_at)).font(.system(size: 10)).foregroundStyle(label.opacity(0.5))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Resumir en \(s.cwd)")
+    }
+
+    /// Abre Terminal.app y resume la sesión: `cd <cwd> && claude --resume <id>`.
+    private func resume(_ s: Session) {
+        let cmd = "cd \(shQuote(s.cwd)) && claude --resume \(shQuote(s.id))"
+        let osa = "tell application \"Terminal\"\nactivate\ndo script \"\(appleEscape(cmd))\"\nend tell"
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        proc.arguments = ["-e", osa]
+        try? proc.run()
+    }
+    private func shQuote(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+    private func appleEscape(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
     }
 
     private var stackedProjectChart: some View {
