@@ -19,6 +19,8 @@ struct PopoverView: View {
     @State private var healMsg: String? = nil
     /// Autoupdate del widget (winturbo-style): chequeo de versión + botón de actualizar.
     @ObservedObject private var updater = Updater.shared
+    /// Para abrir un chat en claude.ai al hacer click en la pestaña Chats.
+    @Environment(\.openURL) private var openURL
 
     // Neutral surfaces adapt to light/dark via labelColor; accents are fixed hex.
     private var label: Color { Color(nsColor: .labelColor) }
@@ -47,7 +49,8 @@ struct PopoverView: View {
             railButton(1, "chart.bar.doc.horizontal", "Resumen")
             railButton(2, "chart.bar", "Modelos")
             railButton(3, "folder", "Proyectos")
-            railButton(4, "brain", "Cerebro", badge: updater.updateAvailable, heal: brainIncomplete)
+            railButton(4, "message", "Chats")
+            railButton(5, "brain", "Cerebro", badge: updater.updateAvailable, heal: brainIncomplete)
             Spacer()
             HStack(spacing: 6) {
                 Button(action: onRefresh) {
@@ -97,6 +100,8 @@ struct PopoverView: View {
             modelosTab
         case 3:
             proyectosTab
+        case 4:
+            chatsTab
         default:
             ScrollView(.vertical, showsIndicators: true) { cerebroTab }
         }
@@ -392,7 +397,75 @@ struct PopoverView: View {
         }
     }
 
-    // ===== Tab 4: Cerebro =====
+    // ===== Tab 4: Chats =====
+
+    /// Conversaciones recientes del app de escritorio (leídas del cache local por chats-extract.js,
+    /// sin red ni cookies). Click abre el chat en claude.ai; hover muestra el summary.
+    private var chatsTab: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Chats").font(.headline)
+            if model.chats.isEmpty {
+                Text("Sin conversaciones locales.\nAbre el app de escritorio de Claude y espera al próximo refresco.")
+                    .font(.caption).foregroundStyle(label.opacity(0.6))
+                Spacer()
+            } else {
+                ScrollView(.vertical, showsIndicators: true) {
+                    VStack(spacing: 6) {
+                        ForEach(model.chats.prefix(20)) { c in chatRow(c) }
+                    }
+                }
+                .frame(maxHeight: .infinity)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// Una fila de la pestaña Chats: título + badge de modelo + fecha; click abre, hover -> summary.
+    @ViewBuilder
+    private func chatRow(_ c: Chat) -> some View {
+        Button {
+            if let u = URL(string: "https://claude.ai/chat/\(c.uuid)") { openURL(u) }
+        } label: {
+            HStack(spacing: 8) {
+                Text(c.title).fontWeight(.medium).lineLimit(1)
+                Spacer(minLength: 8)
+                if let m = c.model { modelBadge(m) }
+                Text(Self.relDate(c.updated_at ?? c.created_at))
+                    .font(.caption).foregroundStyle(label.opacity(0.6))
+                    .frame(minWidth: 48, alignment: .trailing)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(c.summary ?? "")
+    }
+
+    @ViewBuilder
+    private func modelBadge(_ m: String) -> some View {
+        let col = model.modelColor(m)
+        Text(Fmt.prettyModel(m))
+            .font(.caption2).fontWeight(.bold)
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(col.opacity(0.22), in: Capsule())
+            .foregroundStyle(col)
+    }
+
+    /// Fecha relativa desde el prefijo YYYY-MM-DD de un ISO (granularidad de día, robusto a micros).
+    static func relDate(_ iso: String?) -> String {
+        guard let iso, iso.count >= 10 else { return "" }
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "UTC")
+        guard let d = f.date(from: String(iso.prefix(10))) else { return "" }
+        let days = Calendar.current.dateComponents([.day], from: d, to: Date()).day ?? 0
+        if days <= 0 { return "hoy" }
+        if days == 1 { return "ayer" }
+        if days < 7 { return "hace \(days)d" }
+        if days < 30 { return "hace \(days / 7)sem" }
+        return "hace \(days / 30)mes"
+    }
+
+    // ===== Tab 5: Cerebro =====
 
     /// Infografía del cerebro global de Claude Code: los componentes instalados,
     /// jerarquizados de Hooks Forzosos (los que deniegan) → Skills (opt-in, las invocas tú).
