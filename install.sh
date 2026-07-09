@@ -184,7 +184,7 @@ The Claude-Code brain is installed globally (hooks + delegation-cost governance 
   ~/.claude). See README.md; re-run any time (idempotent). Skip it with --no-brain.
 
 Next steps:
-  - Right-click your Plasma panel -> Add or Manage Widgets -> search "Claude Code Quota"
+  - Right-click your Plasma panel -> Add or Manage Widgets -> search "Claude Brain Widget"
   - Drag it onto the panel (or into the system tray slot).
   - Hover for the breakdown; tune caps in: $LIMITS_DEFAULT
 

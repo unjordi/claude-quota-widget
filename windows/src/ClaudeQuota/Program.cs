@@ -98,7 +98,7 @@ internal static class Program
             _tray = new NotifyIcon
             {
                 Visible = true,
-                Text = "Claude Quota",
+                Text = "Claude Brain Widget",
                 ContextMenuStrip = BuildMenu(),
             };
             _tray.MouseClick += OnTrayClick;
