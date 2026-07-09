@@ -32,7 +32,7 @@ if (Test-Path $pub) { Remove-Item $pub -Recurse -Force }
 dotnet publish $proj -c $Configuration -r win-x64 --self-contained true `
     -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
     -o $pub
-if ($LASTEXITCODE -ne 0) { throw "dotnet publish falló ($LASTEXITCODE)" }
+if ($LASTEXITCODE -ne 0) { throw "dotnet publish fallo ($LASTEXITCODE)" }
 
 Write-Host "==> Instalando en $dest ..." -ForegroundColor Cyan
 New-Item -ItemType Directory -Force -Path $dest | Out-Null
@@ -51,7 +51,7 @@ $version = [ordered]@{ sha = $sha; date = $date; repo = $repoRoot; branch = $bra
 $version | ConvertTo-Json -Compress | Set-Content -Path (Join-Path $dest 'version.json') -Encoding utf8
 Write-Host "==> version.json embebido (sha $sha, rama $branch) para el autoupdate." -ForegroundColor Green
 
-# Empaqueta el cerebro (brain/) JUNTO al exe para que el boton-curita 🩹 de la pestaña Cerebro
+# Empaqueta el cerebro (brain/) JUNTO al exe para que el boton-curita de la pestana Cerebro
 # pueda correr install-brain.ps1 sin depender de donde este el clon del repo. El boton lo busca
 # en <AppDir>\brain\install-brain.ps1 (relativo a AppContext.BaseDirectory).
 $brainSrc = Join-Path $here '..\brain'
@@ -82,7 +82,7 @@ if ($NoLaunch) {
 
 Write-Host ""
 Write-Host "Listo. El icono de 2 barras (5h / 7d) aparece en la bandeja." -ForegroundColor Green
-Write-Host "Clic izquierdo = popup de 4 pestañas · clic derecho = menú (Actualizar / Salir)." -ForegroundColor Green
+Write-Host "Clic izquierdo = popup de 4 pestanas | clic derecho = menu (Actualizar / Salir)." -ForegroundColor Green
 Write-Host ""
 Write-Host "Nota: los tokens/sesiones/hora pico salen de tus transcripts locales." -ForegroundColor DarkGray
-Write-Host "El costo `$ (API-equiv) requiere Node + ccusage en el PATH; si no, sale '—'." -ForegroundColor DarkGray
+Write-Host "El costo `$ (API-equiv) requiere Node + ccusage en el PATH; si no, sale '-'." -ForegroundColor DarkGray
