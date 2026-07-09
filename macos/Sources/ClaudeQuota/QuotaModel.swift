@@ -122,6 +122,19 @@ struct HeatCell: Identifiable {
     let tokens: Double
 }
 
+// MARK: - chats.json (conversaciones del app de escritorio — fuente LOCAL, sin red)
+
+/// Una conversación cacheada por el app de escritorio (leída de su IndexedDB por chats-extract.js).
+struct Chat: Codable, Identifiable {
+    let uuid: String
+    let title: String
+    let summary: String?
+    let model: String?
+    let updated_at: String?
+    let created_at: String?
+    var id: String { uuid }
+}
+
 // MARK: - Model
 
 /// Reads the cache files every refresh tick and exposes derived view state.
@@ -130,6 +143,7 @@ struct HeatCell: Identifiable {
 final class QuotaModel: ObservableObject {
     @Published var snapshot: Snapshot?
     @Published var stats: Stats?
+    @Published var chats: [Chat] = []
     @Published var loadError: String?
 
     /// ~/Library/Caches/claude-quota/state.json — same path the fetch script writes.
@@ -141,6 +155,11 @@ final class QuotaModel: ObservableObject {
     static var statsURL: URL {
         let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         return cache.appendingPathComponent("claude-quota/stats.json")
+    }
+    /// ~/Library/Caches/claude-quota/chats.json — conversaciones del app de escritorio (fuente local).
+    static var chatsURL: URL {
+        let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        return cache.appendingPathComponent("claude-quota/chats.json")
     }
 
     /// Reload from disk. On read/parse failure of state.json we keep the last good
@@ -157,6 +176,11 @@ final class QuotaModel: ObservableObject {
         if let data = try? Data(contentsOf: Self.statsURL),
            let s = try? JSONDecoder().decode(Stats.self, from: data) {
             stats = s
+        }
+        // chats.json es best-effort: ausente/roto deja `chats` intacto (pestaña vacía).
+        if let data = try? Data(contentsOf: Self.chatsURL),
+           let c = try? JSONDecoder().decode([Chat].self, from: data) {
+            chats = c
         }
     }
 
