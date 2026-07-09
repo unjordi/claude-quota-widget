@@ -147,7 +147,7 @@ The Claude-Code brain is installed globally (hooks + delegation-cost governance 
 Next steps:
   - Look for the colored % pill in your menu bar (top-right). Click it for the breakdown.
   - Tune caps in: $LIMITS_DEFAULT
-  - To launch at login: System Settings -> General -> Login Items -> add "Claude Quota".
+  - To launch at login: System Settings -> General -> Login Items -> add "Claude Brain Widget".
 
 Debug:
   launchctl print gui/$(id -u)/$LABEL | grep -E 'state|last exit'

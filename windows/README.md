@@ -1,4 +1,4 @@
-# Claude Quota — Windows tray app
+# Claude Brain Widget — Windows tray app
 
 A native **WinForms tray widget** (.NET 10) that puts your Claude Code
 subscription usage in the Windows notification area. It's the Windows port of

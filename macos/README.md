@@ -1,4 +1,4 @@
-# Claude Code Quota — macOS menu-bar app
+# Claude Brain Widget — macOS menu-bar app
 
 The macOS sibling of the [KDE Plasma widget](../README.md). Puts your Claude
 Code subscription usage in the menu bar: a two-row `5h` / `7d` indicator with a
@@ -156,7 +156,7 @@ and launchd agent, primes the cache with one run, and launches the app. Look for
 the `5h` / `7d` indicator in your menu bar.
 
 To launch at login: **System Settings → General → Login Items → +** and add
-**Claude Quota**.
+**Claude Brain Widget**.
 
 ## Tuning the fallback caps
 

@@ -30,7 +30,7 @@ cd claude-brain
 ```
 
 Luego en Plasma: clic derecho en el panel → **Agregar o administrar widgets…** → busca
-**"Claude Code Quota"** → arrástralo al panel.
+**"Claude Brain Widget"** → arrástralo al panel.
 
 **Prerrequisitos:** KDE Plasma 6, `jq` (normalización JSON), y `npm` para instalar `ccusage` (el
 instalador corre `npm i -g ccusage`; si ya lo tienes en `PATH` se usa directo; con `--no-ccusage` cae
