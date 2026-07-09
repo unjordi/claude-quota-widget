@@ -21,6 +21,8 @@ struct PopoverView: View {
     @ObservedObject private var updater = Updater.shared
     /// Para abrir un chat en claude.ai al hacer click en la pestaña Chats.
     @Environment(\.openURL) private var openURL
+    /// Summary del chat bajo el cursor (se muestra en el pie de la pestaña Chats).
+    @State private var hoveredSummary: String? = nil
 
     // Neutral surfaces adapt to light/dark via labelColor; accents are fixed hex.
     private var label: Color { Color(nsColor: .labelColor) }
@@ -409,8 +411,7 @@ struct PopoverView: View {
                     .font(.caption).foregroundStyle(label.opacity(0.6))
                 Spacer()
             } else {
-                chatsPerDayChart.frame(height: 90)                 // chats/día apilados por modelo
-                VStack(spacing: 4) {                               // desglose por modelo con %
+                VStack(spacing: 4) {                               // reparto por modelo con %
                     ForEach(chatsByModel) { chatModelRow($0) }
                 }
                 Divider().overlay(label.opacity(0.12))
@@ -421,32 +422,17 @@ struct PopoverView: View {
                     }
                 }
                 .frame(maxHeight: .infinity)
+                // Pie: resumen del chat bajo el cursor (hover CONFIABLE vía onHover; el .help no salía).
+                Divider().overlay(label.opacity(0.12))
+                Text(hoveredSummary ?? "Pasa el cursor sobre un chat para ver su resumen.")
+                    .font(.caption)
+                    .foregroundStyle(label.opacity(hoveredSummary == nil ? 0.4 : 0.75))
+                    .lineLimit(4)
+                    .frame(maxWidth: .infinity, minHeight: 56, alignment: .topLeading)
             }
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
-    /// Gráfica de barras apiladas: una barra por día, altura = # chats, segmentos por color de modelo.
-    private var chatsPerDayChart: some View {
-        let days = chatDays
-        let maxC = Double(maxDayChatCount)
-        return GeometryReader { geo in
-            let h = geo.size.height
-            HStack(alignment: .bottom, spacing: 2) {
-                ForEach(days.indices, id: \.self) { i in
-                    VStack(spacing: 0) {
-                        Spacer(minLength: 0)
-                        ForEach(days[i].segs.indices, id: \.self) { j in
-                            Rectangle()
-                                .fill(model.modelColor(days[i].segs[j].0))
-                                .frame(height: h * CGFloat(Double(days[i].segs[j].1) / maxC))
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                }
-            }
-        }
     }
 
     /// Fila del desglose por modelo: swatch + modelo + conteo + %.
@@ -477,9 +463,9 @@ struct PopoverView: View {
                     .frame(minWidth: 48, alignment: .trailing)
             }
             .contentShape(Rectangle())
-            .help(c.summary ?? "")     // hover -> summary (en el contenido de la fila)
         }
         .buttonStyle(.plain)
+        .onHover { hovering in hoveredSummary = hovering ? (c.summary ?? "") : nil }
     }
 
     @ViewBuilder
@@ -503,23 +489,6 @@ struct PopoverView: View {
         return counts.map { ChatModelStat(model: $0.key, count: $0.value,
                                           pct: Double($0.value) * 100 / Double(total)) }
             .sorted { $0.count > $1.count }
-    }
-
-    /// Chats agrupados por día (asc) → segmentos (modelo, conteo) para la gráfica apilada.
-    private var chatDays: [(day: String, segs: [(String, Int)])] {
-        var byDay: [String: [String: Int]] = [:]
-        for c in model.chats {
-            let day = String((c.updated_at ?? c.created_at ?? "").prefix(10))
-            guard !day.isEmpty else { continue }
-            byDay[day, default: [:]][c.model ?? "?", default: 0] += 1
-        }
-        return byDay.keys.sorted().map { day in
-            (day, byDay[day]!.map { ($0.key, $0.value) }.sorted { $0.0 < $1.0 })
-        }
-    }
-
-    private var maxDayChatCount: Int {
-        max(1, chatDays.map { $0.segs.reduce(0) { $0 + $1.1 } }.max() ?? 1)
     }
 
     /// Fecha relativa desde el prefijo YYYY-MM-DD de un ISO (granularidad de día, robusto a micros).
