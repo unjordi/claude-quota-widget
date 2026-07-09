@@ -143,6 +143,16 @@ struct ChatModelStat: Identifiable {
     var id: String { model }
 }
 
+/// Una sesión de Claude Code (para el dropdown de "resumir" en Proyectos). Se resume con
+/// `claude --resume <id>` en su `cwd`.
+struct Session: Codable, Identifiable {
+    let id: String            // sessionId (= nombre del .jsonl)
+    let project: String
+    let cwd: String
+    let updated_at: String?
+    let label: String?
+}
+
 // MARK: - Model
 
 /// Reads the cache files every refresh tick and exposes derived view state.
@@ -152,6 +162,7 @@ final class QuotaModel: ObservableObject {
     @Published var snapshot: Snapshot?
     @Published var stats: Stats?
     @Published var chats: [Chat] = []
+    @Published var sessions: [Session] = []
     @Published var loadError: String?
 
     /// ~/Library/Caches/claude-quota/state.json — same path the fetch script writes.
@@ -168,6 +179,11 @@ final class QuotaModel: ObservableObject {
     static var chatsURL: URL {
         let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         return cache.appendingPathComponent("claude-quota/chats.json")
+    }
+    /// ~/Library/Caches/claude-quota/sessions.json — sesiones de Claude Code por proyecto.
+    static var sessionsURL: URL {
+        let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        return cache.appendingPathComponent("claude-quota/sessions.json")
     }
 
     /// Reload from disk. On read/parse failure of state.json we keep the last good
@@ -189,6 +205,11 @@ final class QuotaModel: ObservableObject {
         if let data = try? Data(contentsOf: Self.chatsURL),
            let c = try? JSONDecoder().decode([Chat].self, from: data) {
             chats = c
+        }
+        // sessions.json es best-effort: ausente/roto deja `sessions` intacto (dropdown vacío).
+        if let data = try? Data(contentsOf: Self.sessionsURL),
+           let s = try? JSONDecoder().decode([Session].self, from: data) {
+            sessions = s
         }
     }
 
