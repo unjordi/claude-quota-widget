@@ -19,8 +19,6 @@ struct PopoverView: View {
     @State private var healMsg: String? = nil
     /// Autoupdate del widget (winturbo-style): chequeo de versión + botón de actualizar.
     @ObservedObject private var updater = Updater.shared
-    /// Para abrir un chat en claude.ai al hacer click en la pestaña Chats.
-    @Environment(\.openURL) private var openURL
     /// Summary del chat bajo el cursor (se muestra en el pie de la pestaña Chats).
     @State private var hoveredSummary: String? = nil
 
@@ -448,23 +446,18 @@ struct PopoverView: View {
         }
     }
 
-    /// Una fila de chat: título + badge de modelo + fecha; click abre en claude.ai, hover -> summary.
+    /// Una fila de chat (read-only): título + badge de modelo + fecha; hover -> summary (en el pie).
     @ViewBuilder
     private func chatRow(_ c: Chat) -> some View {
-        Button {
-            if let u = URL(string: "https://claude.ai/chat/\(c.uuid)") { openURL(u) }
-        } label: {
-            HStack(spacing: 8) {
-                Text(c.title).fontWeight(.medium).lineLimit(1)
-                Spacer(minLength: 8)
-                if let m = c.model { modelBadge(m) }
-                Text(Self.relDate(c.updated_at ?? c.created_at))
-                    .font(.caption).foregroundStyle(label.opacity(0.6))
-                    .frame(minWidth: 48, alignment: .trailing)
-            }
-            .contentShape(Rectangle())
+        HStack(spacing: 8) {
+            Text(c.title).fontWeight(.medium).lineLimit(1)
+            Spacer(minLength: 8)
+            if let m = c.model { modelBadge(m) }
+            Text(Self.relDate(c.updated_at ?? c.created_at))
+                .font(.caption).foregroundStyle(label.opacity(0.6))
+                .frame(minWidth: 48, alignment: .trailing)
         }
-        .buttonStyle(.plain)
+        .contentShape(Rectangle())
         .onHover { hovering in hoveredSummary = hovering ? (c.summary ?? "") : nil }
     }
 
