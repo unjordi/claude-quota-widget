@@ -16,6 +16,21 @@ PlasmoidItem {
     property string snapshotError: ""
     // ---------- Data: stats locales de ccusage (stats.json) ----------
     property var stats: null
+    // ---------- Data: vista sincronizada entre máquinas (stats-global.json) — feature (e) ----------
+    // Producida por el bloque "(e) Sync" del fetch (fusión de los snapshots de cada máquina vía la
+    // carpeta de nube). null si el sync no está activo / no existe el archivo (fail-open: el toggle
+    // "todas las máquinas" no se ofrece). Espeja QuotaModel.statsGlobal del PopoverView.swift.
+    property var statsGlobal: null
+    // (e) Toggle "todas las máquinas": cuando está activo y hay stats-global.json, los recomputes de
+    // rango (rDays y lo derivado) leen de la vista combinada en vez del stats local. Espeja @State useGlobal.
+    property bool useGlobal: false
+    // Fuente de stats ACTIVA según el toggle (e). Si se pidió global pero no hay sync, cae a local.
+    // Espeja `activeStats` del PopoverView.swift. rSessionCount/chats se quedan SIEMPRE locales.
+    readonly property var activeStats: (useGlobal && statsGlobal) ? statsGlobal : stats
+    // ¿Hay vista sincronizada con datos? (gobierna si se ofrece el par de píldoras 🖥/☁️).
+    readonly property bool hasGlobal: statsGlobal && statsGlobal.machines && statsGlobal.machines.length > 0
+    // Cuántas máquinas aportaron a la vista combinada (para el conteo en la píldora ☁️).
+    readonly property int globalMachineCount: hasGlobal ? statsGlobal.machines.length : 0
     // ---------- Data: chats del app de escritorio (chats.json) y sesiones de Claude Code
     // (sessions.json), ambos producidos por el fetch (chats-extract.js / sessions-extract.js). null
     // = aún no leído / no existe (fail-open: la pestaña Chats se oculta, el dropdown de sesiones sale vacío).
@@ -59,7 +74,13 @@ PlasmoidItem {
         engine: "executable"
         connectedSources: []
         onNewData: function(source, data) {
-            if (source.indexOf("stats.json") !== -1) {
+            if (source.indexOf("stats-global.json") !== -1) {
+                // (e) Sync: presente solo si el sync está activo. Fail-open: ausente/roto -> se queda
+                // null -> el toggle "todas las máquinas" no se ofrece. (Se chequea ANTES que stats.json.)
+                if (data["exit code"] === 0 && data.stdout) {
+                    try { root.statsGlobal = JSON.parse(data.stdout) } catch (e) {}
+                }
+            } else if (source.indexOf("stats.json") !== -1) {
                 if (data["exit code"] === 0 && data.stdout) {
                     try { root.stats = JSON.parse(data.stdout) } catch (e) {}
                 }
@@ -225,6 +246,8 @@ PlasmoidItem {
     function reload() {
         catSource.connectSource("cat " + cacheDir + "/state.json")
         catSource.connectSource("cat " + cacheDir + "/stats.json")
+        // (e) Sync: fail-open (2>/dev/null) — ausente si el sync no está activo -> statsGlobal null.
+        catSource.connectSource("cat " + cacheDir + "/stats-global.json 2>/dev/null")
         catSource.connectSource("cat " + cacheDir + "/chats.json")
         catSource.connectSource("cat " + cacheDir + "/sessions.json")
         // Mapas de alias (fail-open): para la lógica de "canónico" y "Restaurar original".
@@ -452,14 +475,18 @@ PlasmoidItem {
         return dayKey(d)
     }
 
-    // Días de stats.days[] dentro del rango (todos si ∞). Compara por prefijo de fecha (string).
+    // Días de days[] dentro del rango (todos si ∞). Compara por prefijo de fecha (string).
+    // Lee de la fuente ACTIVA (local o combinada según el toggle (e)); todo lo que deriva de rDays
+    // —rModels/rProjects/rTokens/rMessages/rCost/rActiveDays/rMaxDay*— hereda esa fuente sin más cambios.
+    // (rSessionCount y rChats se quedan LOCALES a propósito.)
     readonly property var rDays: {
-        if (!stats || !stats.days) return []
+        var src = activeStats
+        if (!src || !src.days) return []
         var cut = rangeCutoff()
-        if (cut === "") return stats.days
+        if (cut === "") return src.days
         var out = []
-        for (var i = 0; i < stats.days.length; i++)
-            if ((stats.days[i].date || "") >= cut) out.push(stats.days[i])
+        for (var i = 0; i < src.days.length; i++)
+            if ((src.days[i].date || "") >= cut) out.push(src.days[i])
         return out
     }
 
@@ -1077,7 +1104,7 @@ PlasmoidItem {
                     }
                 }
                 // El heatmap se queda all-time (histórico completo); el footer solo recorta las tarjetas.
-                RangeFooter {}
+                RangeFooter { machineToggle: true }
             }
 
             // ===== Tab 2: Modelos =====
@@ -1141,7 +1168,7 @@ PlasmoidItem {
                         }
                     }
                 }
-                RangeFooter {}
+                RangeFooter { machineToggle: true }
             }
 
             // ===== Tab 3: Proyectos =====
@@ -1307,7 +1334,7 @@ PlasmoidItem {
                         }
                     }
                 }
-                RangeFooter {}
+                RangeFooter { machineToggle: true }
             }
 
             // ===== Tab 4: Chats =====
@@ -1607,7 +1634,10 @@ PlasmoidItem {
 
     // Footer con las 4 píldoras de rango {hoy·7d·30d·∞} al PIE de Resumen/Modelos/Proyectos/Chats.
     // La activa va en acento (#e8884a @20% de fondo); las demás tenues. Espeja rangeFooter del Swift.
+    // Si `machineToggle` y hay vista sincronizada (e), agrega a la derecha el par 🖥 esta / ☁️ todas.
     component RangeFooter: RowLayout {
+        // Muestra el par de píldoras 🖥/☁️ a la derecha (solo Resumen/Modelos/Proyectos, NO Chats).
+        property bool machineToggle: false
         Layout.fillWidth: true
         Layout.topMargin: 2
         spacing: Kirigami.Units.smallSpacing
@@ -1638,6 +1668,45 @@ PlasmoidItem {
             }
         }
         Item { Layout.fillWidth: true }
+        // (e) Par 🖥 esta máquina / ☁️ todas. Solo si se pidió el toggle Y hay stats-global.json con
+        // datos. Mismo estilo que las píldoras de rango (activa en acento @20%). Espeja `machinePills`.
+        RowLayout {
+            spacing: Kirigami.Units.smallSpacing
+            visible: machineToggle && root.hasGlobal
+            Repeater {
+                // 0 = 🖥 esta máquina (useGlobal=false); 1 = ☁️ todas (useGlobal=true, con conteo si >1).
+                model: 2
+                delegate: Rectangle {
+                    readonly property bool global: index === 1
+                    readonly property bool on: root.useGlobal === global
+                    radius: Kirigami.Units.smallSpacing
+                    implicitHeight: mpLbl.implicitHeight + Kirigami.Units.smallSpacing
+                    implicitWidth: mpLbl.implicitWidth + Kirigami.Units.largeSpacing
+                    color: on ? Qt.rgba(0.91, 0.53, 0.29, 0.20)   // #e8884a @ 20%
+                              : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.06)
+                    PC3.Label {
+                        id: mpLbl
+                        anchors.centerIn: parent
+                        text: global ? ("☁️" + (root.globalMachineCount > 1 ? " " + root.globalMachineCount : ""))
+                                     : "🖥"
+                        font.bold: on
+                        color: on ? "#e8884a" : Kirigami.Theme.textColor
+                        opacity: on ? 1.0 : 0.7
+                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.useGlobal = global
+                        PC3.ToolTip.text: root.useGlobal ? "Mostrando el uso combinado de todas tus máquinas (sync)"
+                                                         : "Mostrando solo esta máquina"
+                        PC3.ToolTip.visible: containsMouse
+                        PC3.ToolTip.delay: 500
+                    }
+                }
+            }
+        }
     }
 
     // Recuadro de SALUD del cerebro global, de cara al usuario BINARIO (espeja brainHealth del Swift):

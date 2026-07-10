@@ -87,6 +87,17 @@ apiladas sobre esos días (reescaladas a su propio máximo). El **heatmap** de R
 all-time; **Racha** y **Hora pico** también (son métricas de todo el histórico). A ∞ todo coincide
 con lo que se mostraba antes del filtro.
 
+## Toggle 🖥 / ☁️ — esta máquina vs. todas (sync)
+
+A la derecha del footer de rango de **Resumen / Modelos / Proyectos** aparece —**solo si hay sync
+activo**— un par de píldoras: **🖥 esta máquina** (default) y **☁️ todas** (con el número de máquinas
+si hay más de una). Al elegir ☁️ los recomputes de rango (tarjetas, tablas y gráficas) leen de
+`~/.cache/claude-quota/stats-global.json` en vez del `stats.json` local — la vista **combinada de
+todas tus máquinas** que produce el bloque *(e) Sync* del fetch al fusionar los snapshots depositados
+en la carpeta de nube. **Conteo de sesiones, Chats, heatmap, Racha y Hora pico se quedan siempre
+locales.** Si no existe `stats-global.json` (sync apagado) el toggle no se muestra (fail-open), y no
+aparece en **Chats**.
+
 ## La pestaña "Chats" (solo si hay conversaciones locales)
 
 Lee `~/.cache/claude-quota/chats.json` (lo produce el fetch con `chats-extract.js`, leyendo el caché
