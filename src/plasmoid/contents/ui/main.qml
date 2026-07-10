@@ -1,6 +1,7 @@
 import QtCore
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Controls as QQC2
 import org.kde.plasma.plasmoid
 import org.kde.plasma.plasma5support as P5Support
 import org.kde.plasma.core as PlasmaCore
@@ -15,11 +16,37 @@ PlasmoidItem {
     property string snapshotError: ""
     // ---------- Data: stats locales de ccusage (stats.json) ----------
     property var stats: null
+    // ---------- Data: vista sincronizada entre máquinas (stats-global.json) — feature (e) ----------
+    // Producida por el bloque "(e) Sync" del fetch (fusión de los snapshots de cada máquina vía la
+    // carpeta de nube). null si el sync no está activo / no existe el archivo (fail-open: el toggle
+    // "todas las máquinas" no se ofrece). Espeja QuotaModel.statsGlobal del PopoverView.swift.
+    property var statsGlobal: null
+    // (e) Toggle "todas las máquinas": cuando está activo y hay stats-global.json, los recomputes de
+    // rango (rDays y lo derivado) leen de la vista combinada en vez del stats local. Espeja @State useGlobal.
+    property bool useGlobal: false
+    // Fuente de stats ACTIVA según el toggle (e). Si se pidió global pero no hay sync, cae a local.
+    // Espeja `activeStats` del PopoverView.swift. rSessionCount/chats se quedan SIEMPRE locales.
+    readonly property var activeStats: (useGlobal && statsGlobal) ? statsGlobal : stats
+    // ¿Hay vista sincronizada con datos? (gobierna si se ofrece el par de píldoras 🖥/☁️).
+    readonly property bool hasGlobal: statsGlobal && statsGlobal.machines && statsGlobal.machines.length > 0
+    // Cuántas máquinas aportaron a la vista combinada (para el conteo en la píldora ☁️).
+    readonly property int globalMachineCount: hasGlobal ? statsGlobal.machines.length : 0
     // ---------- Data: chats del app de escritorio (chats.json) y sesiones de Claude Code
     // (sessions.json), ambos producidos por el fetch (chats-extract.js / sessions-extract.js). null
     // = aún no leído / no existe (fail-open: la pestaña Chats se oculta, el dropdown de sesiones sale vacío).
     property var chats: null
     property var sessions: null
+
+    // ---------- Alias de renombrado (clic-secundario) ----------
+    // Copias EN MEMORIA de los mapas que el data layer lee: proyectos-alias.json (lo lee el fetch)
+    // y sesiones-alias.json (lo lee sessions-extract.js). Se releen en cada reload() (cat, fail-open a
+    // {}). El widget los ESCRIBE al renombrar; escribir + refetch = el nombre nuevo se propaga. La
+    // semántica espeja QuotaModel.swift (renameProject/renameSession/aliasMap). Base = CLAUDE_CONFIG_DIR
+    // o ~/.claude, resuelta por el shell al leer/escribir (aliasDir).
+    property var projAliasMap: ({})
+    property var sessAliasMap: ({})
+    // Expresión de shell para la base de los mapas (idéntica a claude-quota-fetch / sessions-extract.js).
+    readonly property string aliasDir: "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 
     // ---------- Filtro de rango {hoy·7d·30d·∞} (Resumen/Modelos/Proyectos/Chats) ----------
     // rangeIdx: 0=hoy (daysBack 0), 1=7d (6), 2=30d (29), 3=∞ (sin recorte). Default ∞ (todo el histórico).
@@ -47,7 +74,13 @@ PlasmoidItem {
         engine: "executable"
         connectedSources: []
         onNewData: function(source, data) {
-            if (source.indexOf("stats.json") !== -1) {
+            if (source.indexOf("stats-global.json") !== -1) {
+                // (e) Sync: presente solo si el sync está activo. Fail-open: ausente/roto -> se queda
+                // null -> el toggle "todas las máquinas" no se ofrece. (Se chequea ANTES que stats.json.)
+                if (data["exit code"] === 0 && data.stdout) {
+                    try { root.statsGlobal = JSON.parse(data.stdout) } catch (e) {}
+                }
+            } else if (source.indexOf("stats.json") !== -1) {
                 if (data["exit code"] === 0 && data.stdout) {
                     try { root.stats = JSON.parse(data.stdout) } catch (e) {}
                 }
@@ -61,6 +94,15 @@ PlasmoidItem {
                 if (data["exit code"] === 0 && data.stdout) {
                     try { root.sessions = JSON.parse(data.stdout) } catch (e) {}
                 }
+            } else if (source.indexOf("proyectos-alias.json") !== -1) {
+                // Fail-open: sin archivo / JSON roto -> mapa vacío (no hay alias activo).
+                var pm = {}
+                if (data["exit code"] === 0 && data.stdout) { try { pm = JSON.parse(data.stdout) || {} } catch (e) { pm = {} } }
+                root.projAliasMap = pm
+            } else if (source.indexOf("sesiones-alias.json") !== -1) {
+                var sm = {}
+                if (data["exit code"] === 0 && data.stdout) { try { sm = JSON.parse(data.stdout) || {} } catch (e) { sm = {} } }
+                root.sessAliasMap = sm
             } else {
                 if (data["exit code"] === 0 && data.stdout) {
                     try { root.snapshot = JSON.parse(data.stdout); root.snapshotError = "" }
@@ -78,6 +120,17 @@ PlasmoidItem {
         engine: "executable"
         connectedSources: []
         onNewData: function(source, data) { disconnectSource(source); reload() }
+    }
+
+    // Escritura de los mapas de alias (proyectos-alias.json / sesiones-alias.json). Reusa el engine
+    // "executable" (igual que catSource lee con `cat`). Al TERMINAR la escritura dispara forceRefresh()
+    // — así el refetch relee el archivo YA escrito (evita la carrera write-vs-refetch). Espeja el
+    // `writeMap` + `onRefresh()` de PopoverView.swift.
+    P5Support.DataSource {
+        id: writeAliasSource
+        engine: "executable"
+        connectedSources: []
+        onNewData: function(source, data) { disconnectSource(source); root.forceRefresh() }
     }
 
     // Lanzador de terminal para "resumir" una sesión de Claude Code (pestaña Proyectos). Corre el
@@ -193,11 +246,75 @@ PlasmoidItem {
     function reload() {
         catSource.connectSource("cat " + cacheDir + "/state.json")
         catSource.connectSource("cat " + cacheDir + "/stats.json")
+        // (e) Sync: fail-open (2>/dev/null) — ausente si el sync no está activo -> statsGlobal null.
+        catSource.connectSource("cat " + cacheDir + "/stats-global.json 2>/dev/null")
         catSource.connectSource("cat " + cacheDir + "/chats.json")
         catSource.connectSource("cat " + cacheDir + "/sessions.json")
+        // Mapas de alias (fail-open): para la lógica de "canónico" y "Restaurar original".
+        catSource.connectSource("cat \"" + aliasDir + "/proyectos-alias.json\" 2>/dev/null")
+        catSource.connectSource("cat \"" + aliasDir + "/sesiones-alias.json\" 2>/dev/null")
     }
     function forceRefresh() {
         refreshRunner.connectSource("systemctl --user start claude-quota.service")
+    }
+
+    // ---------- Renombrado por clic-secundario (espeja QuotaModel.swift) ----------
+    // Serializa un mapa {clave:valor} con LLAVES ORDENADAS + pretty (2 espacios) → diff limpio si el
+    // archivo se versiona/sincroniza. (JSON.stringify con array-replacer respeta el orden del array.)
+    function serializeAliasMap(map) {
+        var keys = Object.keys(map).sort()
+        return JSON.stringify(map, keys, 2)
+    }
+    // Escribe el mapa en <aliasDir>/<file> y, al terminar, refetch. Contenido single-quoted y escapado
+    // ('->'\'') para blindar cualquier carácter; `printf '%s'` NO interpreta % ni \ del argumento.
+    function writeAliasMap(file, map) {
+        var json = serializeAliasMap(map)
+        var esc = json.replace(/'/g, "'\\''")
+        var cmd = "mkdir -p \"" + aliasDir + "\" && printf '%s' '" + esc + "' > \"" + aliasDir + "/" + file + "\""
+        writeAliasSource.connectSource(cmd)
+    }
+    // (c) Proyecto: la lista muestra el nombre YA aliaseado. La llave canónica = la entrada cuyo VALOR
+    // == mostrado; si no hay, el mostrado ES el canónico. Nuevo vacío o == canónico → BORRA (revierte).
+    function renameProject(shown, newName) {
+        var map = {}; for (var k in projAliasMap) map[k] = projAliasMap[k]
+        var canonical = shown
+        for (var kk in map) if (map[kk] === shown) { canonical = kk; break }
+        var v = ("" + newName).trim()
+        if (v === "" || v === canonical) delete map[canonical]
+        else map[canonical] = v
+        projAliasMap = map
+        writeAliasMap("proyectos-alias.json", map)
+    }
+    // (d) Sesión: llave = id (estable). Vacío → borra (revierte a la etiqueta derivada del transcript).
+    function renameSession(id, newName) {
+        var map = {}; for (var k in sessAliasMap) map[k] = sessAliasMap[k]
+        var v = ("" + newName).trim()
+        if (v === "") delete map[id]
+        else map[id] = v
+        sessAliasMap = map
+        writeAliasMap("sesiones-alias.json", map)
+    }
+    // ¿El proyecto mostrado tiene alias activo? (es llave O valor del mapa) — para "Restaurar original".
+    function projectAliased(shown) {
+        if (projAliasMap[shown] !== undefined) return true
+        for (var k in projAliasMap) if (projAliasMap[k] === shown) return true
+        return false
+    }
+    function sessionAliased(id) { return sessAliasMap[id] !== undefined && sessAliasMap[id] !== null }
+
+    // Estado del diálogo de renombrado (compartido por proyecto y sesión).
+    property string renameKind: ""   // "project" | "session"
+    property string renameKey: ""    // (c) nombre mostrado del proyecto · (d) id de la sesión
+    function startRename(kind, key, current) {
+        renameKind = kind; renameKey = key
+        renameField.text = current
+        renameDialog.open()
+        renameField.selectAll(); renameField.forceActiveFocus()
+    }
+    function applyRenameFromDialog() {
+        if (renameKind === "project") renameProject(renameKey, renameField.text)
+        else if (renameKind === "session") renameSession(renameKey, renameField.text)
+        renameDialog.close()
     }
 
     // epoch ms del último forceRefresh disparado por un reset ya pasado (guard anti-bucle).
@@ -358,14 +475,18 @@ PlasmoidItem {
         return dayKey(d)
     }
 
-    // Días de stats.days[] dentro del rango (todos si ∞). Compara por prefijo de fecha (string).
+    // Días de days[] dentro del rango (todos si ∞). Compara por prefijo de fecha (string).
+    // Lee de la fuente ACTIVA (local o combinada según el toggle (e)); todo lo que deriva de rDays
+    // —rModels/rProjects/rTokens/rMessages/rCost/rActiveDays/rMaxDay*— hereda esa fuente sin más cambios.
+    // (rSessionCount y rChats se quedan LOCALES a propósito.)
     readonly property var rDays: {
-        if (!stats || !stats.days) return []
+        var src = activeStats
+        if (!src || !src.days) return []
         var cut = rangeCutoff()
-        if (cut === "") return stats.days
+        if (cut === "") return src.days
         var out = []
-        for (var i = 0; i < stats.days.length; i++)
-            if ((stats.days[i].date || "") >= cut) out.push(stats.days[i])
+        for (var i = 0; i < src.days.length; i++)
+            if ((src.days[i].date || "") >= cut) out.push(src.days[i])
         return out
     }
 
@@ -823,6 +944,42 @@ PlasmoidItem {
         Layout.preferredHeight: Kirigami.Units.gridUnit * 17
         spacing: 0
 
+        // Diálogo de renombrado (compartido por proyecto y sesión). Se abre desde el menú de
+        // clic-secundario vía root.startRename(...). Vacío → "Restaurar original" (borra el alias).
+        Kirigami.PromptDialog {
+            id: renameDialog
+            title: root.renameKind === "session" ? "Renombrar sesión" : "Renombrar proyecto"
+            subtitle: root.renameKind === "session"
+                ? "Nueva etiqueta para esta sesión. Vacío para restaurar la original."
+                : "Nuevo nombre para este proyecto. Vacío para restaurar el original."
+            standardButtons: QQC2.Dialog.NoButton
+            customFooterActions: [
+                Kirigami.Action {
+                    text: "Guardar"
+                    icon.name: "dialog-ok-apply"
+                    onTriggered: root.applyRenameFromDialog()
+                },
+                Kirigami.Action {
+                    text: "Restaurar original"
+                    icon.name: "edit-undo"
+                    visible: root.renameKind === "session"
+                        ? root.sessionAliased(root.renameKey)
+                        : root.projectAliased(root.renameKey)
+                    onTriggered: { renameField.text = ""; root.applyRenameFromDialog() }
+                },
+                Kirigami.Action {
+                    text: "Cancelar"
+                    icon.name: "dialog-cancel"
+                    onTriggered: renameDialog.close()
+                }
+            ]
+            PC3.TextField {
+                id: renameField
+                Layout.fillWidth: true
+                onAccepted: root.applyRenameFromDialog()
+            }
+        }
+
         // riel vertical de pestañas
         ColumnLayout {
             Layout.fillHeight: true
@@ -947,7 +1104,7 @@ PlasmoidItem {
                     }
                 }
                 // El heatmap se queda all-time (histórico completo); el footer solo recorta las tarjetas.
-                RangeFooter {}
+                RangeFooter { machineToggle: true }
             }
 
             // ===== Tab 2: Modelos =====
@@ -1011,7 +1168,7 @@ PlasmoidItem {
                         }
                     }
                 }
-                RangeFooter {}
+                RangeFooter { machineToggle: true }
             }
 
             // ===== Tab 3: Proyectos =====
@@ -1072,8 +1229,26 @@ PlasmoidItem {
                                     Layout.fillWidth: true
                                     implicitHeight: prow.implicitHeight
                                     hoverEnabled: true
+                                    acceptedButtons: Qt.LeftButton | Qt.RightButton
                                     cursorShape: nSess > 0 ? Qt.PointingHandCursor : Qt.ArrowCursor
-                                    onClicked: if (nSess > 0) root.expandedProject = expanded ? "" : projName
+                                    onClicked: function(mouse) {
+                                        if (mouse.button === Qt.RightButton) projMenu.popup()
+                                        else if (nSess > 0) root.expandedProject = expanded ? "" : projName
+                                    }
+                                    // Clic-secundario → renombrar el proyecto (y restaurar si tiene alias).
+                                    QQC2.Menu {
+                                        id: projMenu
+                                        QQC2.MenuItem {
+                                            text: "Renombrar…"
+                                            onTriggered: root.startRename("project", projName, projName)
+                                        }
+                                        QQC2.MenuItem {
+                                            text: "Restaurar original"
+                                            visible: root.projectAliased(projName)
+                                            height: visible ? implicitHeight : 0
+                                            onTriggered: root.renameProject(projName, "")
+                                        }
+                                    }
                                     RowLayout {
                                         id: prow
                                         anchors.left: parent.left; anchors.right: parent.right
@@ -1113,11 +1288,29 @@ PlasmoidItem {
                                             Layout.fillWidth: true
                                             implicitHeight: srow.implicitHeight
                                             hoverEnabled: true
+                                            acceptedButtons: Qt.LeftButton | Qt.RightButton
                                             cursorShape: Qt.PointingHandCursor
-                                            onClicked: root.resumeSession(modelData.cwd, modelData.id)
+                                            onClicked: function(mouse) {
+                                                if (mouse.button === Qt.RightButton) sessMenu.popup()
+                                                else root.resumeSession(modelData.cwd, modelData.id)
+                                            }
                                             PC3.ToolTip.text: "Resumir en " + modelData.cwd
                                             PC3.ToolTip.visible: containsMouse
                                             PC3.ToolTip.delay: 500
+                                            // Clic-secundario → renombrar la sesión (llave = id estable).
+                                            QQC2.Menu {
+                                                id: sessMenu
+                                                QQC2.MenuItem {
+                                                    text: "Renombrar…"
+                                                    onTriggered: root.startRename("session", modelData.id, modelData.label ? modelData.label : "")
+                                                }
+                                                QQC2.MenuItem {
+                                                    text: "Restaurar original"
+                                                    visible: root.sessionAliased(modelData.id)
+                                                    height: visible ? implicitHeight : 0
+                                                    onTriggered: root.renameSession(modelData.id, "")
+                                                }
+                                            }
                                             RowLayout {
                                                 id: srow
                                                 anchors.left: parent.left; anchors.right: parent.right
@@ -1141,7 +1334,7 @@ PlasmoidItem {
                         }
                     }
                 }
-                RangeFooter {}
+                RangeFooter { machineToggle: true }
             }
 
             // ===== Tab 4: Chats =====
@@ -1441,7 +1634,10 @@ PlasmoidItem {
 
     // Footer con las 4 píldoras de rango {hoy·7d·30d·∞} al PIE de Resumen/Modelos/Proyectos/Chats.
     // La activa va en acento (#e8884a @20% de fondo); las demás tenues. Espeja rangeFooter del Swift.
+    // Si `machineToggle` y hay vista sincronizada (e), agrega a la derecha el par 🖥 esta / ☁️ todas.
     component RangeFooter: RowLayout {
+        // Muestra el par de píldoras 🖥/☁️ a la derecha (solo Resumen/Modelos/Proyectos, NO Chats).
+        property bool machineToggle: false
         Layout.fillWidth: true
         Layout.topMargin: 2
         spacing: Kirigami.Units.smallSpacing
@@ -1472,6 +1668,45 @@ PlasmoidItem {
             }
         }
         Item { Layout.fillWidth: true }
+        // (e) Par 🖥 esta máquina / ☁️ todas. Solo si se pidió el toggle Y hay stats-global.json con
+        // datos. Mismo estilo que las píldoras de rango (activa en acento @20%). Espeja `machinePills`.
+        RowLayout {
+            spacing: Kirigami.Units.smallSpacing
+            visible: machineToggle && root.hasGlobal
+            Repeater {
+                // 0 = 🖥 esta máquina (useGlobal=false); 1 = ☁️ todas (useGlobal=true, con conteo si >1).
+                model: 2
+                delegate: Rectangle {
+                    readonly property bool global: index === 1
+                    readonly property bool on: root.useGlobal === global
+                    radius: Kirigami.Units.smallSpacing
+                    implicitHeight: mpLbl.implicitHeight + Kirigami.Units.smallSpacing
+                    implicitWidth: mpLbl.implicitWidth + Kirigami.Units.largeSpacing
+                    color: on ? Qt.rgba(0.91, 0.53, 0.29, 0.20)   // #e8884a @ 20%
+                              : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.06)
+                    PC3.Label {
+                        id: mpLbl
+                        anchors.centerIn: parent
+                        text: global ? ("☁️" + (root.globalMachineCount > 1 ? " " + root.globalMachineCount : ""))
+                                     : "🖥"
+                        font.bold: on
+                        color: on ? "#e8884a" : Kirigami.Theme.textColor
+                        opacity: on ? 1.0 : 0.7
+                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.useGlobal = global
+                        PC3.ToolTip.text: root.useGlobal ? "Mostrando el uso combinado de todas tus máquinas (sync)"
+                                                         : "Mostrando solo esta máquina"
+                        PC3.ToolTip.visible: containsMouse
+                        PC3.ToolTip.delay: 500
+                    }
+                }
+            }
+        }
     }
 
     // Recuadro de SALUD del cerebro global, de cara al usuario BINARIO (espeja brainHealth del Swift):

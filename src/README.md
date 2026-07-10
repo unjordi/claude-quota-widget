@@ -63,11 +63,20 @@ nombre canónico: subdirectorios y worktrees bajo un repo conocido (de `.project
 segmento** del path. Para renombrar un proyecto canónico, deja un mapa en `~/.claude/proyectos-alias.json`
 (`cp brain/proyectos-alias.example.json …`), aplicado después de normalizar. El archivo es opcional.
 
+**Renombrar desde el widget (clic-secundario).** No hace falta editar el JSON a mano: **clic-secundario
+sobre una fila de proyecto** abre un menú con **"Renombrar…"** (y **"Restaurar original"** si ya tiene
+alias). El widget escribe `~/.claude/proyectos-alias.json` (llaves ordenadas, para diff limpio) y dispara
+un refetch, así el nombre nuevo aparece solo. Vacío = revertir al canónico. La llave canónica se resuelve
+sola: si la fila ya muestra un alias, se reescribe esa entrada, no se crea una nueva. Respeta
+`CLAUDE_CONFIG_DIR` (base = ese dir o `~/.claude`).
+
 Cada fila de proyecto con **sesiones de Claude Code** trae un chevron (▸): despliégala para ver sus
 sesiones recientes (de `sessions.json`, máx 12) y **haz clic en una para "resumirla"** — abre una
 terminal en su `cwd` y corre `claude --resume <id>`. En Linux se intenta la primera terminal
 disponible en cascada: `konsole` (KDE) → `x-terminal-emulator` (default Debian/Ubuntu) →
-`gnome-terminal` → `xterm`.
+`gnome-terminal` → `xterm`. **Clic-secundario sobre una sesión** ofrece el mismo "Renombrar…" /
+"Restaurar original": escribe `~/.claude/sesiones-alias.json` con llave = `id` de la sesión (estable),
+que `sessions-extract.js` lee para sustituir la etiqueta derivada del transcript.
 
 ## Filtro de rango {hoy · 7d · 30d · ∞}
 
@@ -77,6 +86,17 @@ default). El corte filtra `stats.days[]` por fecha local y recalcula tarjetas, t
 apiladas sobre esos días (reescaladas a su propio máximo). El **heatmap** de Resumen se queda
 all-time; **Racha** y **Hora pico** también (son métricas de todo el histórico). A ∞ todo coincide
 con lo que se mostraba antes del filtro.
+
+## Toggle 🖥 / ☁️ — esta máquina vs. todas (sync)
+
+A la derecha del footer de rango de **Resumen / Modelos / Proyectos** aparece —**solo si hay sync
+activo**— un par de píldoras: **🖥 esta máquina** (default) y **☁️ todas** (con el número de máquinas
+si hay más de una). Al elegir ☁️ los recomputes de rango (tarjetas, tablas y gráficas) leen de
+`~/.cache/claude-quota/stats-global.json` en vez del `stats.json` local — la vista **combinada de
+todas tus máquinas** que produce el bloque *(e) Sync* del fetch al fusionar los snapshots depositados
+en la carpeta de nube. **Conteo de sesiones, Chats, heatmap, Racha y Hora pico se quedan siempre
+locales.** Si no existe `stats-global.json` (sync apagado) el toggle no se muestra (fail-open), y no
+aparece en **Chats**.
 
 ## La pestaña "Chats" (solo si hay conversaciones locales)
 
