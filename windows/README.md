@@ -125,6 +125,27 @@ autostart entry, and launches it. Re-run any time to update in place; it also mi
 source with `dotnet publish` — that path needs the [.NET 10 SDK](https://dotnet.microsoft.com/download).
 `-Build` forces it.
 
+### Gotcha: "running scripts is disabled on this system" (ExecutionPolicy)
+
+En algunas máquinas Windows el instalador **chilla por permisos de ejecución** aunque lo lances con
+`iex`. Motivo: `iex` corre una *cadena* (no la frena la policy), pero `bootstrap.ps1` después ejecuta el
+**archivo** `install.ps1`, y correr un `.ps1` **sí** está sujeto a la ExecutionPolicy. Si está en
+`Restricted`/`AllSigned`, verás algo como *"... cannot be loaded because running scripts is disabled on
+this system"*. Solución (elige una):
+
+```powershell
+# A) Permitir scripts SOLO en este proceso y re-lanzar (no cambia tu config global):
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+irm https://raw.githubusercontent.com/unjordi/claude-brain/main/bootstrap.ps1 | iex
+
+# B) O abre PowerShell ya con bypass y corre el one-liner:
+#    powershell -ExecutionPolicy Bypass -NoProfile -Command "irm https://raw.githubusercontent.com/unjordi/claude-brain/main/bootstrap.ps1 | iex"
+
+# C) Persistente para tu usuario (una vez): Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+`-Scope Process` es lo más limpio: aplica solo a esa ventana, no toca la política global de la máquina.
+
 ## Autoupdate ligero (winturbo-style)
 
 Igual que el puerto macOS, `install.ps1` escribe un `version.json` **junto al exe**
