@@ -59,6 +59,23 @@ public static partial class Fmt
         return $"{hh} {ampm}";
     }
 
+    /// relDate: fecha relativa desde el prefijo YYYY-MM-DD de un ISO (granularidad de día,
+    /// robusto a micros). Espeja `PopoverView.relDate` de macOS: "hoy" / "ayer" / "hace 3d" /
+    /// "hace 2sem" / "hace 1mes". Parsea el prefijo como UTC y cuenta días hasta hoy (UTC).
+    public static string RelDate(string? iso)
+    {
+        if (string.IsNullOrEmpty(iso) || iso.Length < 10) return "";
+        if (!DateTime.TryParseExact(iso[..10], "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var d))
+            return "";
+        int days = (int)(DateTime.UtcNow.Date - d.Date).TotalDays;
+        if (days <= 0) return "hoy";
+        if (days == 1) return "ayer";
+        if (days < 7) return $"hace {days}d";
+        if (days < 30) return $"hace {days / 7}sem";
+        return $"hace {days / 30}mes";
+    }
+
     [GeneratedRegex("^claude-")] private static partial Regex ClaudePrefix();
     [GeneratedRegex(@"^[0-9]+\.[0-9]+$")] private static partial Regex Dotted();
     private static readonly HashSet<string> Noise = new() { "preview", "exp", "latest" };
