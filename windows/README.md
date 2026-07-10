@@ -152,6 +152,39 @@ If the active account ever differs from the pinned one, the footer turns red wit
 All three platforms share this guard (Linux/macOS read the same pin from
 `~/.config/claude-quota/account`, overridable via `$CLAUDE_QUOTA_ACCOUNT`).
 
+## Sync between machines (opt-in)
+
+Roll up your Claude usage across every computer you use into one **combined view**.
+It is **opt-in** — nothing is uploaded unless you point the widget at a cloud folder
+your machines already share (Google Drive, etc.). Turn it on by setting the sync
+folder in **one** of two ways (the env var wins):
+
+- Env var `CLAUDE_QUOTA_SYNC_DIR`, or
+- a plain-text file `%LOCALAPPDATA%\claude-quota\sync-dir` (same config style as the
+  account pin).
+
+The value is either an **explicit path** to the shared folder, or the literal
+`auto` to autodetect Google Drive on Windows. `auto` probes, in order:
+`%USERPROFILE%\My Drive`, `%USERPROFILE%\Google Drive`, `%USERPROFILE%\Mi unidad`,
+`G:\My Drive`, `G:\Mi unidad`, `G:\` — and uses the first that exists, under a
+`claude-brain-sync` subfolder. An explicit path is used **verbatim** (no subfolder
+appended), so several machines must point at the *same* folder. Empty/unset = off.
+
+How it works (mirrors the mac/linux `claude-quota-fetch` bash+jq exactly, so the
+files are interchangeable across platforms):
+
+1. After each fetch, this machine writes its own snapshot `<hostname>.json` =
+   `{ machine, updated_at, account, stats }` into the sync folder (atomic write).
+2. It reads every `*.json` there, keeps only those whose `account` matches this
+   machine's (uuid, else email, else `default`), and merges them by day/model/
+   project into `%LOCALAPPDATA%\claude-quota\stats-global.json`.
+
+The combined view drives a toggle in the footer of **Resumen / Modelos / Proyectos**:
+**🖥 this machine** vs **☁️ all** (the ☁️ pill shows the machine count when >1). The
+toggle appears **only** when `stats-global.json` exists. Chats and per-project
+sessions always stay local. Every step is **fail-open**: no cloud folder, a locked
+file, or a broken snapshot just leaves the last good state and hides the toggle.
+
 ## Uninstall
 
 ```powershell
@@ -178,7 +211,8 @@ the headless way to eyeball the UI without clicking the tray. Source layout:
 |---|---|
 | `Program.cs` | entry point, tray host, 10 s poll timer, autostart, popup positioning |
 | `QuotaService.cs` | the fetch pipeline (OAuth + transcript parse + ccusage), cache I/O |
-| `Models.cs` | `state.json` / `stats.json` / OAuth DTOs |
+| `SyncService.cs` | (e) cross-machine sync: writes `<host>.json`, merges → `stats-global.json` |
+| `Models.cs` | `state.json` / `stats.json` / `stats-global.json` / OAuth DTOs |
 | `Format.cs` | pctColor, `Fmt.*`, `Rel.*`, prettyModel, palette — ports of main.qml |
 | `StatsCompute.cs` | streaks, heatmap cells, model colors |
 | `TrayIconRenderer.cs` | the two-row tray bitmap → `Icon` |

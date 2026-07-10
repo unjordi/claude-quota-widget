@@ -23,6 +23,9 @@ public sealed class QuotaService
 {
     public Snapshot? Snapshot { get; private set; }
     public Stats? Stats { get; private set; }
+    /// Vista fusionada de TODAS las máquinas de la misma cuenta (stats-global.json), producida por el
+    /// sync (e). null si el sync no está activo o aún no hay snapshot; su presencia activa el toggle 🖥/☁️.
+    public Stats? StatsGlobal { get; private set; }
     /// Conversaciones del app de escritorio (chats.json) y sesiones de Claude Code (sessions.json),
     /// producidas por los extractores de node. Best-effort: si no hay node/script quedan vacías.
     public List<Chat> Chats { get; private set; } = new();
@@ -38,6 +41,11 @@ public sealed class QuotaService
                      "claude-quota");
     public static string StateFile => Path.Combine(CacheDir, "state.json");
     public static string StatsFile => Path.Combine(CacheDir, "stats.json");
+    /// stats-global.json — vista fusionada de todas las máquinas (sync (e)); mismo dir del cache.
+    public static string StatsGlobalFile => Path.Combine(CacheDir, "stats-global.json");
+    /// Config del sync (e): ruta de la carpeta de nube. Texto plano (como el archivo `account`), o
+    /// "auto" para autodetectar Google Drive. El env CLAUDE_QUOTA_SYNC_DIR gana sobre este archivo.
+    public static string SyncDirConfigFile => Path.Combine(CacheDir, "sync-dir");
     /// chats.json / sessions.json — mismo dir del cache que state/stats (los emite node).
     public static string ChatsFile => Path.Combine(CacheDir, "chats.json");
     public static string SessionsFile => Path.Combine(CacheDir, "sessions.json");
@@ -214,6 +222,16 @@ public sealed class QuotaService
         }
         catch { /* stats are best-effort */ }
 
+        // stats-global.json (sync (e)): presente solo si el sync está activo. Ausente -> StatsGlobal null
+        // (el toggle 🖥/☁️ no aparece). Best-effort: roto deja el valor anterior intacto.
+        try
+        {
+            StatsGlobal = File.Exists(StatsGlobalFile)
+                ? JsonSerializer.Deserialize<Stats>(File.ReadAllText(StatsGlobalFile))
+                : null;
+        }
+        catch { }
+
         // chats.json / sessions.json son best-effort: ausente/roto deja la lista anterior intacta.
         try
         {
@@ -249,6 +267,13 @@ public sealed class QuotaService
         // stats.json is local-only, so always refresh it regardless of OAuth.
         WriteAtomic(StatsFile, JsonSerializer.Serialize(stats, JsonOpts));
         Stats = stats;
+
+        // (e) Sync entre máquinas (opt-in): sube el snapshot de ESTA máquina a la carpeta de nube y
+        // fusiona los de todas las de la misma cuenta -> stats-global.json. Fail-open (null si off/falla).
+        // account = uuid preferido, luego email, luego "default" (espeja el jq del fetch mac/linux).
+        string account = !string.IsNullOrEmpty(uuid) ? uuid!
+                       : !string.IsNullOrEmpty(email) ? email! : "default";
+        StatsGlobal = SyncService.Produce(stats, account, now, CacheDir, StatsGlobalFile, JsonOpts);
 
         // chats.json / sessions.json via los extractores de node (fail-open).
         await RunExtractorsAsync();
