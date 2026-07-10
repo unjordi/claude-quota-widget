@@ -29,6 +29,16 @@ public sealed class PopupForm : Form
     // con footer no scrollean, así que el hit-test usa e.Location directo).
     private readonly List<(int idx, Rectangle rect)> _rangeHits = new();
 
+    // (e) Toggle 🖥 esta máquina / ☁️ todas (footer de Resumen/Modelos/Proyectos). Solo aparece si
+    // existe stats-global.json (sync activo). _useGlobal enruta las 3 pestañas a la fuente activa
+    // (global vs local), como `activeStats` de macOS. Chats/sesiones se quedan locales.
+    private bool _useGlobal = false;
+    private readonly List<(bool global, Rectangle rect)> _machineHits = new();
+
+    // Fuente de stats activa para Resumen/Modelos/Proyectos: global si el toggle está en ☁️ y hay vista
+    // fusionada, si no la local. Espeja `activeStats` de PopoverView.swift.
+    private Stats? ActiveStats => (_useGlobal && _svc.StatsGlobal != null) ? _svc.StatsGlobal : _svc.Stats;
+
     // ── Pestaña Proyectos: sesiones expandibles (resumir) ──
     // Proyecto expandido (muestra sus sesiones), o null. Zonas clicables de filas de proyecto y de
     // sesión del último PaintProyectos.
@@ -401,11 +411,11 @@ public sealed class PopupForm : Form
 
     private void PaintResumen(Graphics g, int pad)
     {
-        var s = _svc.Stats?.Summary;
-        bool hasStats = _svc.Stats != null;
-        var streaks = StatsCompute.Streaks(_svc.Stats);   // rachas all-time
-        // Agregados recalculados sobre el rango (a ∞ coinciden con summary).
-        var days = StatsCompute.RangedDays(_svc.Stats, _range);
+        var s = ActiveStats?.Summary;
+        bool hasStats = ActiveStats != null;
+        var streaks = StatsCompute.Streaks(_svc.Stats);   // rachas all-time (siempre local, como macOS)
+        // Agregados recalculados sobre el rango (a ∞ coinciden con summary), de la fuente activa (local/global).
+        var days = StatsCompute.RangedDays(ActiveStats, _range);
         double toks = days.Sum(d => d.Tokens);
         double cost = days.Sum(d => d.Cost ?? 0);
         double msgs = days.Sum(d => d.Messages);
@@ -447,8 +457,8 @@ public sealed class PopupForm : Form
             g.DrawString("Actividad diaria (local)", cFont, cBrush, pad, y);
         y += Sc(18);
 
-        Heatmap(g, pad, y);   // heatmap SIEMPRE all-time (como macOS)
-        PaintRangeFooter(g, pad);
+        Heatmap(g, pad, y);   // heatmap SIEMPRE local + all-time (como macOS)
+        PaintRangeFooter(g, pad, machineToggle: true);
     }
 
     /// Sesiones (sessions.json) dentro del rango, por updated_at (espeja rangedSessionCount de macOS).
@@ -469,9 +479,12 @@ public sealed class PopupForm : Form
 
     /// Dibuja las 4 píldoras al PIE del contenido; la activa en acento (espeja `rangeFooter` de macOS).
     /// Registra sus zonas clicables en `_rangeHits`. Devuelve la Y superior del footer (para acotar listas).
-    private int PaintRangeFooter(Graphics g, int pad)
+    /// Si <paramref name="machineToggle"/> y hay vista global (stats-global.json), agrega a la derecha el
+    /// par 🖥 esta máquina / ☁️ todas (sync (e)) y registra sus zonas en `_machineHits`.
+    private int PaintRangeFooter(Graphics g, int pad, bool machineToggle = false)
     {
         _rangeHits.Clear();
+        _machineHits.Clear();
         int pillH = Sc(20), gap = Sc(4);
         int py = _content.Height - Sc(8) - pillH;
         int x = pad;
@@ -492,7 +505,45 @@ public sealed class PopupForm : Form
             _rangeHits.Add((i, r));
             x += w + gap;
         }
+
+        // (e) Par 🖥/☁️ a la derecha del footer — solo si el sync está activo (existe stats-global.json).
+        if (machineToggle && _svc.StatsGlobal != null)
+            PaintMachineToggle(g, pad, py, pillH);
+
         return py;
+    }
+
+    /// Dibuja las píldoras 🖥 esta máquina / ☁️ todas, alineadas a la derecha del footer. La activa va en
+    /// acento (espeja `machinePills` de macOS). ☁️ muestra el número de máquinas si son >1.
+    private void PaintMachineToggle(Graphics g, int pad, int py, int pillH)
+    {
+        int n = _svc.StatsGlobal?.Machines?.Count ?? 0;
+        int gap = Sc(4);
+        using var glyphFont = PxFont("Segoe UI Emoji", 10f, FontStyle.Regular);
+        using var fB = Px(9.5f, FontStyle.Bold);
+        var center = Center();
+
+        string cloudLbl = n > 1 ? "☁ " + n : "☁";
+        int wThis = (int)Math.Ceiling(g.MeasureString("🖥", glyphFont).Width) + Sc(14);
+        int wCloud = (int)Math.Ceiling(g.MeasureString(cloudLbl, glyphFont).Width) + Sc(14);
+
+        int right = _content.Width - pad;
+        int xThis = right - wCloud - gap - wThis;
+        int xCloud = right - wCloud;
+
+        DrawTogglePill(g, new Rectangle(xThis, py, wThis, pillH), "🖥", glyphFont, center, on: !_useGlobal);
+        DrawTogglePill(g, new Rectangle(xCloud, py, wCloud, pillH), cloudLbl, glyphFont, center, on: _useGlobal);
+
+        _machineHits.Add((false, new Rectangle(xThis, py, wThis, pillH)));   // 🖥 -> esta máquina
+        _machineHits.Add((true, new Rectangle(xCloud, py, wCloud, pillH)));  // ☁️ -> todas
+    }
+
+    private void DrawTogglePill(Graphics g, Rectangle r, string lbl, Font font, StringFormat center, bool on)
+    {
+        using (var bg = new SolidBrush(on ? Color.FromArgb(51, _accent) : Blend(_bg, _fg, 0.06)))
+            FillRounded(g, bg, r, Sc(5));
+        using (var tb = new SolidBrush(on ? _accent : Blend(_bg, _fg, 0.7)))
+            g.DrawString(lbl, font, tb, r, center);
     }
 
     /// Y superior donde empieza el footer de rango — límite inferior para las listas scrolleables.
@@ -548,7 +599,7 @@ public sealed class PopupForm : Form
     {
         int y = SectionTitle(g, pad, pad, "Uso por modelo");
 
-        var days = StatsCompute.RangedDays(_svc.Stats, _range);
+        var days = StatsCompute.RangedDays(ActiveStats, _range);
         double maxTok = StatsCompute.MaxDayTokens(days);
         int chartH = Sc(110);
         ChartPanel(g, new Rectangle(pad, y, _content.Width - pad * 2, chartH),
@@ -584,7 +635,7 @@ public sealed class PopupForm : Form
             }
             y += rowH;
         }
-        PaintRangeFooter(g, pad);
+        PaintRangeFooter(g, pad, machineToggle: true);
     }
 
     /// Frame a stacked chart inside a subtle rounded card (labelColor ~4%) with an
@@ -623,7 +674,7 @@ public sealed class PopupForm : Form
     {
         int y = SectionTitle(g, pad, pad, "Uso por proyecto");
 
-        var days = StatsCompute.RangedDays(_svc.Stats, _range);
+        var days = StatsCompute.RangedDays(ActiveStats, _range);
         double maxTok = StatsCompute.MaxDayProjectTokens(days);
         int chartH = Sc(110);
         ChartPanel(g, new Rectangle(pad, y, _content.Width - pad * 2, chartH),
@@ -685,7 +736,7 @@ public sealed class PopupForm : Form
             if (_expandedProject == name && n > 0)
                 y = PaintSessions(g, pad, right, y, name, listBottom);
         }
-        PaintRangeFooter(g, pad);
+        PaintRangeFooter(g, pad, machineToggle: true);
     }
 
     /// Lista de sesiones de un proyecto (indentada): flecha + etiqueta + fecha relativa. Cada fila
@@ -1352,6 +1403,15 @@ public sealed class PopupForm : Form
                 if (rect.Contains(e.Location))
                 {
                     if (_range != idx) { _range = idx; _content.Invalidate(); }
+                    return;
+                }
+
+        // (e) Toggle 🖥/☁️ del footer (solo Resumen/Modelos/Proyectos, y solo si el sync está activo).
+        if (_tab is 1 or 2 or 3)
+            foreach (var (global, rect) in _machineHits)
+                if (rect.Contains(e.Location))
+                {
+                    if (_useGlobal != global) { _useGlobal = global; _content.Invalidate(); }
                     return;
                 }
 
