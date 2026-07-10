@@ -25,6 +25,9 @@ struct PopoverView: View {
     @State private var expandedProject: String? = nil
     /// Rango de tiempo activo (footer {hoy·7d·30d·∞}) para Resumen/Modelos/Proyectos/Chats.
     @State private var range: TimeRange = .all
+    /// Rename en curso (c: proyecto vía clic-secundario / d: sesión), o nil. `renameText` es el campo.
+    @State private var renameTarget: RenameTarget? = nil
+    @State private var renameText: String = ""
 
     // Neutral surfaces adapt to light/dark via labelColor; accents are fixed hex.
     private var label: Color { Color(nsColor: .labelColor) }
@@ -43,6 +46,32 @@ struct PopoverView: View {
         // cerebro le falta una pieza (🩹). Throttle 15 min en el chequeo de red.
         .task { await updater.checkIfStale() }
         .onAppear { brainState = BrainInspector.inspect() }
+        .alert(renameTarget?.kind == .session ? "Renombrar sesión" : "Renombrar proyecto",
+               isPresented: Binding(get: { renameTarget != nil },
+                                    set: { if !$0 { renameTarget = nil } }),
+               presenting: renameTarget) { t in
+            TextField(t.current, text: $renameText)
+            Button("Guardar") { applyRename(t) }
+            Button("Restaurar original", role: .destructive) { renameText = ""; applyRename(t) }
+            Button("Cancelar", role: .cancel) { renameTarget = nil }
+        } message: { t in
+            Text(t.kind == .session
+                 ? "Nueva etiqueta para esta sesión. Vacío para restaurar la original."
+                 : "Nuevo nombre para “\(t.current)”. Vacío para restaurar el original.")
+        }
+    }
+
+    private func startRename(_ t: RenameTarget) { renameText = t.current; renameTarget = t }
+
+    /// Escribe el alias y dispara un refetch — el fetch (proyectos) / sessions-extract (sesiones)
+    /// releen los mapas y el widget se recarga con el nombre nuevo.
+    private func applyRename(_ t: RenameTarget) {
+        switch t.kind {
+        case .project: model.renameProject(t.key, to: renameText)
+        case .session: model.renameSession(t.key, to: renameText)
+        }
+        renameTarget = nil
+        onRefresh()
     }
 
     // MARK: - Rail
@@ -397,6 +426,14 @@ struct PopoverView: View {
         }
         .buttonStyle(.plain)
         .disabled(n == 0)
+        .contextMenu {
+            Button("Renombrar…") { startRename(RenameTarget(kind: .project, key: name, current: name)) }
+            if model.projectAliased(name) {
+                Button("Restaurar original") {
+                    model.renameProject(name, to: ""); onRefresh()
+                }
+            }
+        }
     }
 
     /// Sesiones de un proyecto (al desplegar): cada una resume en su cwd.
@@ -422,6 +459,14 @@ struct PopoverView: View {
         }
         .buttonStyle(.plain)
         .help("Resumir en \(s.cwd)")
+        .contextMenu {
+            Button("Renombrar…") {
+                startRename(RenameTarget(kind: .session, key: s.id, current: s.label ?? ""))
+            }
+            if model.sessionAliased(s.id) {
+                Button("Restaurar original") { model.renameSession(s.id, to: ""); onRefresh() }
+            }
+        }
     }
 
     /// Abre Terminal.app y resume la sesión: `cd <cwd> && claude --resume <id>`.
@@ -1151,6 +1196,15 @@ private enum TimeRange: CaseIterable, Identifiable {
     var label: String { switch self { case .today: "hoy"; case .d7: "7d"; case .d30: "30d"; case .all: "∞" } }
     /// Días hacia atrás desde hoy (incluyente); nil = sin recorte.
     var daysBack: Int? { switch self { case .today: 0; case .d7: 6; case .d30: 29; case .all: nil } }
+}
+
+/// Objetivo de un rename por clic-secundario: (c) proyecto o (d) sesión.
+private struct RenameTarget: Identifiable {
+    enum Kind { case project, session }
+    let kind: Kind
+    let key: String        // (c) nombre mostrado del proyecto · (d) id de la sesión
+    let current: String    // texto que se precarga en el campo
+    var id: String { "\(key)" }
 }
 
 /// Fila de uso agregada (modelo o proyecto) recalculada por rango: in/out/total/%.

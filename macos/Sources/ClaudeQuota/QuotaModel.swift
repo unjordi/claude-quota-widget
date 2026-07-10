@@ -191,6 +191,53 @@ final class QuotaModel: ObservableObject {
         return cache.appendingPathComponent("claude-quota/sessions.json")
     }
 
+    /// ~/.claude (o CLAUDE_CONFIG_DIR) — base de los mapas de alias que escribe el widget.
+    static var claudeBase: URL {
+        if let cfg = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"], !cfg.isEmpty {
+            return URL(fileURLWithPath: cfg)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude")
+    }
+
+    private func aliasMap(_ file: String) -> [String: String] {
+        guard let data = try? Data(contentsOf: Self.claudeBase.appendingPathComponent(file)),
+              let m = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
+        return m
+    }
+
+    private func writeMap(_ file: String, _ map: [String: String]) {
+        try? FileManager.default.createDirectory(at: Self.claudeBase, withIntermediateDirectories: true)
+        let url = Self.claudeBase.appendingPathComponent(file)
+        // Orden estable de las llaves → diff limpio si el archivo se versiona/sincroniza (útil para (e)).
+        let enc = JSONEncoder(); enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+        if let data = try? enc.encode(map) { try? data.write(to: url) }
+    }
+
+    /// (c) Renombra un proyecto. La lista muestra el nombre YA aliaseado, así que la llave canónica
+    /// (la que el fetch usa) es la entrada cuyo VALOR == nombre mostrado; si no hay, el mostrado es el
+    /// canónico. Nombre nuevo vacío (o == canónico) BORRA el alias → revierte. Requiere refetch después.
+    func renameProject(_ shown: String, to newName: String) {
+        var map = aliasMap("proyectos-alias.json")
+        let canonical = map.first(where: { $0.value == shown })?.key ?? shown
+        let v = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if v.isEmpty || v == canonical { map.removeValue(forKey: canonical) } else { map[canonical] = v }
+        writeMap("proyectos-alias.json", map)
+    }
+
+    /// (d) Renombra una sesión por su id (nombre del .jsonl, estable). Vacío revierte a la etiqueta derivada.
+    func renameSession(_ id: String, to newName: String) {
+        var map = aliasMap("sesiones-alias.json")
+        let v = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if v.isEmpty { map.removeValue(forKey: id) } else { map[id] = v }
+        writeMap("sesiones-alias.json", map)
+    }
+
+    /// ¿El proyecto mostrado tiene un alias activo? (es llave o valor del mapa) — para "Restaurar original".
+    func projectAliased(_ shown: String) -> Bool {
+        let m = aliasMap("proyectos-alias.json"); return m[shown] != nil || m.values.contains(shown)
+    }
+    func sessionAliased(_ id: String) -> Bool { aliasMap("sesiones-alias.json")[id] != nil }
+
     /// Reload from disk. On read/parse failure of state.json we keep the last good
     /// snapshot (so a mid-write torn read doesn't blank the UI) but record the error.
     /// stats.json is best-effort: absent/broken just leaves `stats` untouched.
