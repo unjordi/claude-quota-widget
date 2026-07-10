@@ -119,6 +119,24 @@ if ($NoAutostart) {
     Write-Host "==> Autoarranque: activado (inicia con Windows)" -ForegroundColor Green
 }
 
+# Acceso directo en el menu Inicio -> se re-abre tecleando "Claude Brain" (si la cierras, tray app sin
+# ventana no deja como reinvocarla). Usa WScript.Shell (sin deps). Migra un .lnk viejo con el otro nombre.
+$startMenu = [Environment]::GetFolderPath('Programs')   # %APPDATA%\...\Start Menu\Programs
+Remove-Item (Join-Path $startMenu 'Claude Quota.lnk') -ErrorAction SilentlyContinue   # nombre viejo (migracion)
+try {
+    $lnk = Join-Path $startMenu 'Claude Brain.lnk'
+    $ws  = New-Object -ComObject WScript.Shell
+    $sc  = $ws.CreateShortcut($lnk)
+    $sc.TargetPath       = $exe
+    $sc.WorkingDirectory = $dest
+    $sc.IconLocation     = $exe        # el mismo icono del exe
+    $sc.Description       = 'Claude Brain Widget'
+    $sc.Save()
+    Write-Host "==> Acceso directo en el menu Inicio: 'Claude Brain'." -ForegroundColor Green
+} catch {
+    Write-Host "==> Aviso: no pude crear el acceso directo del menu Inicio ($($_.Exception.Message))." -ForegroundColor Yellow
+}
+
 if ($NoLaunch) {
     Write-Host "==> Instalado (sin lanzar; arranca en el proximo inicio de sesion)." -ForegroundColor Cyan
 } else {

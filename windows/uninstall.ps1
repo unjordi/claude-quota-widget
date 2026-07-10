@@ -21,6 +21,11 @@ Write-Host "==> Quitando autoarranque..." -ForegroundColor Cyan
 Remove-ItemProperty -Path $runKey -Name 'ClaudeBrain'
 Remove-ItemProperty -Path $runKey -Name 'ClaudeQuota'   # nombre viejo (migracion)
 
+Write-Host "==> Quitando acceso directo del menu Inicio..." -ForegroundColor Cyan
+$startMenu = [Environment]::GetFolderPath('Programs')
+Remove-Item (Join-Path $startMenu 'Claude Brain.lnk') -Force
+Remove-Item (Join-Path $startMenu 'Claude Quota.lnk') -Force   # nombre viejo
+
 foreach ($n in @('ClaudeBrain','ClaudeQuota')) {
     $d = Join-Path $env:LOCALAPPDATA "Programs\$n"
     if (Test-Path $d) { Write-Host "==> Borrando $d ..." -ForegroundColor Cyan; Remove-Item $d -Recurse -Force }
