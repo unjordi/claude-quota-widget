@@ -64,6 +64,15 @@ struct Stats: Codable {
     let models: [StatsModel]?
     let projects: [StatsProject]?
     let summary: StatsSummary?
+    /// Solo en stats-global.json (vista "todas las máquinas"): qué máquinas aportaron y cuánto.
+    let machines: [MachineStat]?
+}
+
+/// Una máquina que aportó a la vista sincronizada (stats-global.json).
+struct MachineStat: Codable {
+    let name: String?
+    let updated_at: String?
+    let tokens: Double?
 }
 
 struct StatsDay: Codable {
@@ -72,17 +81,22 @@ struct StatsDay: Codable {
     let out_tok: Double?
     let tokens: Double?
     let cost: Double?
+    let messages: Double?
     let models: [DayModel]?
     let projects: [DayProject]?
 }
 
 struct DayModel: Codable {
     let model: String?
+    let in_tok: Double?
+    let out_tok: Double?
     let tokens: Double?
 }
 
 struct DayProject: Codable {
     let project: String?
+    let in_tok: Double?
+    let out_tok: Double?
     let tokens: Double?
 }
 
@@ -122,6 +136,37 @@ struct HeatCell: Identifiable {
     let tokens: Double
 }
 
+// MARK: - chats.json (conversaciones del app de escritorio — fuente LOCAL, sin red)
+
+/// Una conversación cacheada por el app de escritorio (leída de su IndexedDB por chats-extract.js).
+struct Chat: Codable, Identifiable {
+    let uuid: String
+    let title: String
+    let summary: String?
+    let model: String?
+    let updated_at: String?
+    let created_at: String?
+    var id: String { uuid }
+}
+
+/// Reparto de chats por modelo (para la lista con % de la pestaña Chats).
+struct ChatModelStat: Identifiable {
+    let model: String
+    let count: Int
+    let pct: Double
+    var id: String { model }
+}
+
+/// Una sesión de Claude Code (para el dropdown de "resumir" en Proyectos). Se resume con
+/// `claude --resume <id>` en su `cwd`.
+struct Session: Codable, Identifiable {
+    let id: String            // sessionId (= nombre del .jsonl)
+    let project: String
+    let cwd: String
+    let updated_at: String?
+    let label: String?
+}
+
 // MARK: - Model
 
 /// Reads the cache files every refresh tick and exposes derived view state.
@@ -130,6 +175,10 @@ struct HeatCell: Identifiable {
 final class QuotaModel: ObservableObject {
     @Published var snapshot: Snapshot?
     @Published var stats: Stats?
+    /// Vista sincronizada entre máquinas (stats-global.json). nil si el sync (e) no está activo.
+    @Published var statsGlobal: Stats?
+    @Published var chats: [Chat] = []
+    @Published var sessions: [Session] = []
     @Published var loadError: String?
 
     /// ~/Library/Caches/claude-quota/state.json — same path the fetch script writes.
@@ -142,6 +191,68 @@ final class QuotaModel: ObservableObject {
         let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         return cache.appendingPathComponent("claude-quota/stats.json")
     }
+    /// ~/Library/Caches/claude-quota/stats-global.json — vista fusionada de todas las máquinas (sync (e)).
+    static var statsGlobalURL: URL {
+        let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        return cache.appendingPathComponent("claude-quota/stats-global.json")
+    }
+    /// ~/Library/Caches/claude-quota/chats.json — conversaciones del app de escritorio (fuente local).
+    static var chatsURL: URL {
+        let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        return cache.appendingPathComponent("claude-quota/chats.json")
+    }
+    /// ~/Library/Caches/claude-quota/sessions.json — sesiones de Claude Code por proyecto.
+    static var sessionsURL: URL {
+        let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        return cache.appendingPathComponent("claude-quota/sessions.json")
+    }
+
+    /// ~/.claude (o CLAUDE_CONFIG_DIR) — base de los mapas de alias que escribe el widget.
+    static var claudeBase: URL {
+        if let cfg = ProcessInfo.processInfo.environment["CLAUDE_CONFIG_DIR"], !cfg.isEmpty {
+            return URL(fileURLWithPath: cfg)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude")
+    }
+
+    private func aliasMap(_ file: String) -> [String: String] {
+        guard let data = try? Data(contentsOf: Self.claudeBase.appendingPathComponent(file)),
+              let m = try? JSONDecoder().decode([String: String].self, from: data) else { return [:] }
+        return m
+    }
+
+    private func writeMap(_ file: String, _ map: [String: String]) {
+        try? FileManager.default.createDirectory(at: Self.claudeBase, withIntermediateDirectories: true)
+        let url = Self.claudeBase.appendingPathComponent(file)
+        // Orden estable de las llaves → diff limpio si el archivo se versiona/sincroniza (útil para (e)).
+        let enc = JSONEncoder(); enc.outputFormatting = [.prettyPrinted, .sortedKeys]
+        if let data = try? enc.encode(map) { try? data.write(to: url) }
+    }
+
+    /// (c) Renombra un proyecto. La lista muestra el nombre YA aliaseado, así que la llave canónica
+    /// (la que el fetch usa) es la entrada cuyo VALOR == nombre mostrado; si no hay, el mostrado es el
+    /// canónico. Nombre nuevo vacío (o == canónico) BORRA el alias → revierte. Requiere refetch después.
+    func renameProject(_ shown: String, to newName: String) {
+        var map = aliasMap("proyectos-alias.json")
+        let canonical = map.first(where: { $0.value == shown })?.key ?? shown
+        let v = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if v.isEmpty || v == canonical { map.removeValue(forKey: canonical) } else { map[canonical] = v }
+        writeMap("proyectos-alias.json", map)
+    }
+
+    /// (d) Renombra una sesión por su id (nombre del .jsonl, estable). Vacío revierte a la etiqueta derivada.
+    func renameSession(_ id: String, to newName: String) {
+        var map = aliasMap("sesiones-alias.json")
+        let v = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if v.isEmpty { map.removeValue(forKey: id) } else { map[id] = v }
+        writeMap("sesiones-alias.json", map)
+    }
+
+    /// ¿El proyecto mostrado tiene un alias activo? (es llave o valor del mapa) — para "Restaurar original".
+    func projectAliased(_ shown: String) -> Bool {
+        let m = aliasMap("proyectos-alias.json"); return m[shown] != nil || m.values.contains(shown)
+    }
+    func sessionAliased(_ id: String) -> Bool { aliasMap("sesiones-alias.json")[id] != nil }
 
     /// Reload from disk. On read/parse failure of state.json we keep the last good
     /// snapshot (so a mid-write torn read doesn't blank the UI) but record the error.
@@ -157,6 +268,20 @@ final class QuotaModel: ObservableObject {
         if let data = try? Data(contentsOf: Self.statsURL),
            let s = try? JSONDecoder().decode(Stats.self, from: data) {
             stats = s
+        }
+        // stats-global.json (sync (e)): presente solo si el sync está activo. Ausente -> statsGlobal nil
+        // -> el toggle "todas" no se ofrece.
+        statsGlobal = (try? Data(contentsOf: Self.statsGlobalURL))
+            .flatMap { try? JSONDecoder().decode(Stats.self, from: $0) }
+        // chats.json es best-effort: ausente/roto deja `chats` intacto (pestaña vacía).
+        if let data = try? Data(contentsOf: Self.chatsURL),
+           let c = try? JSONDecoder().decode([Chat].self, from: data) {
+            chats = c
+        }
+        // sessions.json es best-effort: ausente/roto deja `sessions` intacto (dropdown vacío).
+        if let data = try? Data(contentsOf: Self.sessionsURL),
+           let s = try? JSONDecoder().decode([Session].self, from: data) {
+            sessions = s
         }
     }
 
@@ -246,6 +371,14 @@ final class QuotaModel: ObservableObject {
     var maxDayTokens: Double {
         guard let days = stats?.days, !days.isEmpty else { return 1 }
         return max(1, days.map { $0.tokens ?? 0 }.max() ?? 1)
+    }
+
+    // Máximo de la SUMA de proyectos por día — para normalizar la gráfica de Proyectos con su propio
+    // eje. Los tokens por-modelo (con caché) y por-proyecto (in+out crudos) difieren, así que un día
+    // puede sumar más en proyectos que maxDayTokens y la barra se saldría del viewport si se usa ese.
+    var maxDayProjectTokens: Double {
+        guard let days = stats?.days, !days.isEmpty else { return 1 }
+        return max(1, days.map { ($0.projects ?? []).reduce(0) { $0 + ($1.tokens ?? 0) } }.max() ?? 1)
     }
 
     // rachas (días consecutivos con uso), port de streaks{} en main.qml

@@ -23,6 +23,13 @@ public sealed class QuotaService
 {
     public Snapshot? Snapshot { get; private set; }
     public Stats? Stats { get; private set; }
+    /// Vista fusionada de TODAS las máquinas de la misma cuenta (stats-global.json), producida por el
+    /// sync (e). null si el sync no está activo o aún no hay snapshot; su presencia activa el toggle 🖥/☁️.
+    public Stats? StatsGlobal { get; private set; }
+    /// Conversaciones del app de escritorio (chats.json) y sesiones de Claude Code (sessions.json),
+    /// producidas por los extractores de node. Best-effort: si no hay node/script quedan vacías.
+    public List<Chat> Chats { get; private set; } = new();
+    public List<Session> Sessions { get; private set; } = new();
     public string? LoadError { get; private set; }
 
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(15) };
@@ -34,11 +41,20 @@ public sealed class QuotaService
                      "claude-quota");
     public static string StateFile => Path.Combine(CacheDir, "state.json");
     public static string StatsFile => Path.Combine(CacheDir, "stats.json");
+    /// stats-global.json — vista fusionada de todas las máquinas (sync (e)); mismo dir del cache.
+    public static string StatsGlobalFile => Path.Combine(CacheDir, "stats-global.json");
+    /// Config del sync (e): ruta de la carpeta de nube. Texto plano (como el archivo `account`), o
+    /// "auto" para autodetectar Google Drive. El env CLAUDE_QUOTA_SYNC_DIR gana sobre este archivo.
+    public static string SyncDirConfigFile => Path.Combine(CacheDir, "sync-dir");
+    /// chats.json / sessions.json — mismo dir del cache que state/stats (los emite node).
+    public static string ChatsFile => Path.Combine(CacheDir, "chats.json");
+    public static string SessionsFile => Path.Combine(CacheDir, "sessions.json");
     /// Optional pinned account (uuid or email) — the account-guard config.
     /// If present and the active account differs, the UI warns of a mismatch.
     public static string AccountPinFile => Path.Combine(CacheDir, "account");
     /// Config dir: CLAUDE_CONFIG_DIR if set (Claude Code honors it), else ~/.claude.
-    private static string ClaudeDir
+    /// Público: es la base donde el widget ESCRIBE los mapas de alias (proyectos/sesiones).
+    public static string ClaudeDir
     {
         get
         {
@@ -68,6 +84,65 @@ public sealed class QuotaService
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never,
         WriteIndented = true,
     };
+
+    // ---- (c/d) alias de proyectos/sesiones (renombrar por clic-secundario) ----
+    // Espeja QuotaModel.swift (renameProject/renameSession/aliasMap/writeMap/projectAliased/
+    // sessionAliased). Los mapas { "<clave>": "<valor>" } viven en la base de Claude (ClaudeDir).
+    // El fetch (proyectos) y sessions-extract vía QuotaService (sesiones) los RELEEN: tras escribir
+    // hay que disparar un refetch para que la lista muestre el nombre nuevo.
+    /// ~/.claude/proyectos-alias.json — { "<nombre canónico>": "<alias>" }.
+    public static string ProjectAliasFile => Path.Combine(ClaudeDir, "proyectos-alias.json");
+    /// ~/.claude/sesiones-alias.json — { "<id de sesión>": "<etiqueta>" }.
+    public static string SessionAliasFile => Path.Combine(ClaudeDir, "sesiones-alias.json");
+
+    private static Dictionary<string, string> AliasMap(string file)
+    {
+        // Fail-open: ausente/ilegible → mapa vacío (nunca rompe el rename por un JSON torcido).
+        try
+        {
+            if (!File.Exists(file)) return new();
+            return JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(file)) ?? new();
+        }
+        catch { return new(); }
+    }
+
+    private static void WriteMap(string file, Dictionary<string, string> map)
+    {
+        Directory.CreateDirectory(ClaudeDir);
+        // Llaves ordenadas (como el .sortedKeys de macOS) → diff limpio si el archivo se versiona/sincroniza.
+        var sorted = new SortedDictionary<string, string>(map, StringComparer.Ordinal);
+        WriteAtomic(file, JsonSerializer.Serialize(sorted, JsonOpts));
+    }
+
+    /// (c) Renombra un proyecto. La lista muestra el nombre YA aliaseado, así que la llave canónica
+    /// (la que el fetch usa) es la entrada cuyo VALOR == mostrado; si no hay, el mostrado es el canónico.
+    /// Nombre nuevo vacío (o == canónico) BORRA el alias → revierte. Requiere refetch después.
+    public static void RenameProject(string shown, string newName)
+    {
+        var map = AliasMap(ProjectAliasFile);
+        string canonical = map.FirstOrDefault(kv => kv.Value == shown).Key ?? shown;
+        string v = (newName ?? "").Trim();
+        if (v.Length == 0 || v == canonical) map.Remove(canonical); else map[canonical] = v;
+        WriteMap(ProjectAliasFile, map);
+    }
+
+    /// (d) Renombra una sesión por su id (nombre del .jsonl, estable). Vacío revierte a la etiqueta derivada.
+    public static void RenameSession(string id, string newName)
+    {
+        var map = AliasMap(SessionAliasFile);
+        string v = (newName ?? "").Trim();
+        if (v.Length == 0) map.Remove(id); else map[id] = v;
+        WriteMap(SessionAliasFile, map);
+    }
+
+    /// ¿El proyecto mostrado tiene un alias activo? (es llave o valor del mapa) — para "Restaurar original".
+    public static bool ProjectAliased(string shown)
+    {
+        var m = AliasMap(ProjectAliasFile);
+        return m.ContainsKey(shown) || m.ContainsValue(shown);
+    }
+    /// ¿La sesión tiene un alias activo? (su id es llave del mapa) — para "Restaurar original".
+    public static bool SessionAliased(string id) => AliasMap(SessionAliasFile).ContainsKey(id);
 
     // ---- derived, mirrors QuotaModel.swift ---------------------------------
 
@@ -146,6 +221,32 @@ public sealed class QuotaService
                 Stats = JsonSerializer.Deserialize<Stats>(File.ReadAllText(StatsFile));
         }
         catch { /* stats are best-effort */ }
+
+        // stats-global.json (sync (e)): presente solo si el sync está activo. Ausente -> StatsGlobal null
+        // (el toggle 🖥/☁️ no aparece). Best-effort: roto deja el valor anterior intacto.
+        try
+        {
+            StatsGlobal = File.Exists(StatsGlobalFile)
+                ? JsonSerializer.Deserialize<Stats>(File.ReadAllText(StatsGlobalFile))
+                : null;
+        }
+        catch { }
+
+        // chats.json / sessions.json son best-effort: ausente/roto deja la lista anterior intacta.
+        try
+        {
+            if (File.Exists(ChatsFile) &&
+                JsonSerializer.Deserialize<List<Chat>>(File.ReadAllText(ChatsFile)) is { } c)
+                Chats = c;
+        }
+        catch { }
+        try
+        {
+            if (File.Exists(SessionsFile) &&
+                JsonSerializer.Deserialize<List<Session>>(File.ReadAllText(SessionsFile)) is { } s)
+                Sessions = s;
+        }
+        catch { }
     }
 
     // ---- the actual fetch (off the UI thread) ------------------------------
@@ -166,6 +267,16 @@ public sealed class QuotaService
         // stats.json is local-only, so always refresh it regardless of OAuth.
         WriteAtomic(StatsFile, JsonSerializer.Serialize(stats, JsonOpts));
         Stats = stats;
+
+        // (e) Sync entre máquinas (opt-in): sube el snapshot de ESTA máquina a la carpeta de nube y
+        // fusiona los de todas las de la misma cuenta -> stats-global.json. Fail-open (null si off/falla).
+        // account = uuid preferido, luego email, luego "default" (espeja el jq del fetch mac/linux).
+        string account = !string.IsNullOrEmpty(uuid) ? uuid!
+                       : !string.IsNullOrEmpty(email) ? email! : "default";
+        StatsGlobal = SyncService.Produce(stats, account, now, CacheDir, StatsGlobalFile, JsonOpts);
+
+        // chats.json / sessions.json via los extractores de node (fail-open).
+        await RunExtractorsAsync();
 
         if (usage != null)
         {
@@ -360,6 +471,9 @@ public sealed class QuotaService
         var seenIds = new HashSet<string>();
         int sessions = 0;
         long messages = 0;
+        // Mensajes (user/assistant) por DÍA local — alimenta la suma por rango del Resumen (b1b).
+        // El total all-time (`messages`) queda intacto; los días solo cuentan líneas con timestamp.
+        var dayMsg = new Dictionary<string, long>();
         var hourHist = new int[24];
 
         if (Directory.Exists(ProjectsDir))
@@ -384,11 +498,16 @@ public sealed class QuotaService
                             var root = doc.RootElement;
                             if (root.ValueKind != JsonValueKind.Object) continue;
 
+                            // Timestamp de la línea (si trae), reusado para hora pico y día del mensaje.
+                            DateTimeOffset? lineTs =
+                                root.TryGetProperty("timestamp", out var tsAny) &&
+                                tsAny.ValueKind == JsonValueKind.String
+                                    ? Rel.Parse(tsAny.GetString())
+                                    : null;
+
                             // Peak-hour histogram over any line carrying a
                             // timestamp (matches the fetch script's grep).
-                            if (root.TryGetProperty("timestamp", out var tsAny) &&
-                                tsAny.ValueKind == JsonValueKind.String &&
-                                Rel.Parse(tsAny.GetString()) is DateTimeOffset tsa)
+                            if (lineTs is DateTimeOffset tsa)
                                 hourHist[tsa.ToLocalTime().Hour]++;
 
                             if (!root.TryGetProperty("type", out var typeEl) ||
@@ -396,6 +515,13 @@ public sealed class QuotaService
                             string type = typeEl.GetString()!;
                             if (type is not ("assistant" or "user")) continue;
                             messages++;   // raw line count (not deduped, matches fetch)
+                            // Bucket del mensaje por día LOCAL (solo si la línea trae timestamp), espejo
+                            // del pase awk del fetch mac/linux. El all-time `messages` no se toca.
+                            if (lineTs is DateTimeOffset mts)
+                            {
+                                string mday = mts.ToLocalTime().ToString("yyyy-MM-dd");
+                                dayMsg[mday] = dayMsg.GetValueOrDefault(mday) + 1;
+                            }
 
                             if (type != "assistant") continue;
                             if (!root.TryGetProperty("message", out var msg) ||
@@ -436,7 +562,7 @@ public sealed class QuotaService
             }
         }
 
-        return Aggregate(agg, sessions, messages, hourHist);
+        return Aggregate(agg, sessions, messages, dayMsg, hourHist);
     }
 
     // Slug used by Claude Code for a project folder: the cwd with every
@@ -501,11 +627,11 @@ public sealed class QuotaService
 
     private static Stats Aggregate(
         Dictionary<(string day, string model, string project), (double inTok, double outTok)> agg,
-        int sessions, long messages, int[] hourHist)
+        int sessions, long messages, Dictionary<string, long> dayMsg, int[] hourHist)
     {
         static double Tot((double inTok, double outTok) v) => v.inTok + v.outTok;
 
-        // days[] — grouped by date, with per-model and per-project token segments.
+        // days[] — grouped by date, with per-model and per-project in/out/token segments.
         var days = agg
             .GroupBy(kv => kv.Key.day)
             .OrderBy(g => g.Key, StringComparer.Ordinal)
@@ -520,11 +646,24 @@ public sealed class QuotaService
                     OutTok = outTok,
                     Tokens = inTok + outTok,
                     Cost = null,
+                    Messages = dayMsg.GetValueOrDefault(g.Key),
                     Models = g.GroupBy(x => x.Key.model)
-                        .Select(mg => new DayModel { Model = mg.Key, Tokens = mg.Sum(x => Tot(x.Value)) })
+                        .Select(mg => new DayModel
+                        {
+                            Model = mg.Key,
+                            InTok = mg.Sum(x => x.Value.inTok),
+                            OutTok = mg.Sum(x => x.Value.outTok),
+                            Tokens = mg.Sum(x => Tot(x.Value)),
+                        })
                         .OrderByDescending(m => m.Tokens).ToList(),
                     Projects = g.GroupBy(x => x.Key.project)
-                        .Select(pg => new DayProject { Project = pg.Key, Tokens = pg.Sum(x => Tot(x.Value)) })
+                        .Select(pg => new DayProject
+                        {
+                            Project = pg.Key,
+                            InTok = pg.Sum(x => x.Value.inTok),
+                            OutTok = pg.Sum(x => x.Value.outTok),
+                            Tokens = pg.Sum(x => Tot(x.Value)),
+                        })
                         .OrderByDescending(p => p.Tokens).ToList(),
                 };
             })
@@ -580,6 +719,57 @@ public sealed class QuotaService
                 PeakHour = peak,
             },
         };
+    }
+
+    // ---- 2b. chats.json / sessions.json via node extractors (optional) -----
+    //
+    // Windows QuotaService es C# puro y NO sabe leer el IndexedDB del app de
+    // escritorio ni listar sesiones tan cómodamente como los scripts empaquetados.
+    // La vía consistente con mac/linux: si `node` está en el PATH, corre los
+    // extractores empaquetados junto al exe (<AppDir>\bin\*.js) y escribe la salida
+    // en el cache. Fail-open: sin node / sin el script / si truena → no se genera
+    // el archivo (la pestaña Chats / el dropdown de sesiones quedan vacíos).
+
+    /// <summary>Corre los extractores de node (si están) y refresca las listas en memoria.</summary>
+    private async Task RunExtractorsAsync()
+    {
+        if (!OnPath("node")) return;   // sin node no hay chats/sessions (igual que mac/linux sin node)
+
+        await RunExtractorAsync("chats-extract.js", ChatsFile);
+        await RunExtractorAsync("sessions-extract.js", SessionsFile);
+
+        // Cargar lo recién escrito a memoria (ShotMode no llama Reload tras el fetch).
+        try
+        {
+            if (File.Exists(ChatsFile) &&
+                JsonSerializer.Deserialize<List<Chat>>(File.ReadAllText(ChatsFile)) is { } c)
+                Chats = c;
+        }
+        catch { }
+        try
+        {
+            if (File.Exists(SessionsFile) &&
+                JsonSerializer.Deserialize<List<Session>>(File.ReadAllText(SessionsFile)) is { } s)
+                Sessions = s;
+        }
+        catch { }
+    }
+
+    /// <summary>Corre `node &lt;AppDir&gt;\bin\&lt;script&gt;`; si su stdout es un array JSON, lo escribe
+    /// atómico en <paramref name="outFile"/>. No toca el archivo si falla o no es un array.</summary>
+    private static async Task RunExtractorAsync(string script, string outFile)
+    {
+        try
+        {
+            string path = Path.Combine(AppContext.BaseDirectory, "bin", script);
+            if (!File.Exists(path)) return;
+            string? outp = await RunAsync("node", $"\"{path}\"");
+            if (string.IsNullOrWhiteSpace(outp)) return;
+            using var doc = JsonDocument.Parse(outp);      // valida que sea JSON…
+            if (doc.RootElement.ValueKind != JsonValueKind.Array) return;   // …y un array
+            WriteAtomic(outFile, outp);
+        }
+        catch { /* fail-open: deja el archivo previo (o ninguno) */ }
     }
 
     // ---- 3. ccusage cost enrichment (optional) -----------------------------

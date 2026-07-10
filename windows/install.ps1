@@ -65,6 +65,23 @@ if (Test-Path $brainSrc) {
     Write-Host "==> Aviso: no encontre brain/ en $brainSrc; el boton-curita no tendra instalador." -ForegroundColor Yellow
 }
 
+# Empaqueta los extractores de node (bin/*.js) JUNTO al exe (en <AppDir>\bin) para que el servicio
+# los pueda invocar. Producen chats.json / sessions.json (pestana Chats + "resumir" de Proyectos)
+# leyendo el cache local, igual que en mac/linux. Requisito: 'node' en el PATH (fail-open: sin node
+# no se generan y esas piezas quedan vacias). El servicio los busca en AppContext.BaseDirectory\bin.
+$binSrc = Join-Path $repoRoot 'bin'
+if (Test-Path $binSrc) {
+    $binDst = Join-Path $dest 'bin'
+    New-Item -ItemType Directory -Force -Path $binDst | Out-Null
+    foreach ($js in @('chats-extract.js', 'sessions-extract.js')) {
+        $srcJs = Join-Path $binSrc $js
+        if (Test-Path $srcJs) { Copy-Item $srcJs (Join-Path $binDst $js) -Force }
+    }
+    Write-Host "==> Extractores (chats/sessions) empaquetados en $binDst (requieren node)." -ForegroundColor Green
+} else {
+    Write-Host "==> Aviso: no encontre bin/ en $binSrc; no habra chats.json/sessions.json." -ForegroundColor Yellow
+}
+
 $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
 if ($NoAutostart) {
     Remove-ItemProperty -Path $runKey -Name $appName -ErrorAction SilentlyContinue
@@ -99,6 +116,24 @@ if (-not $NoClaudeCode) {
         Write-Host "==> Instalando Claude Code (CLI) -- es lo que el widget mide (instalador nativo)..." -ForegroundColor Cyan
         try { Invoke-RestMethod https://claude.ai/install.ps1 | Invoke-Expression }
         catch { Write-Host "    No pude instalarlo automaticamente; hazlo a mano: irm https://claude.ai/install.ps1 | iex" -ForegroundColor Yellow }
+    }
+    # Asegurar 'claude' en el PATH de usuario: el instalador nativo deja claude.exe pero su cambio de
+    # PATH no siempre aplica (ni en esta sesion ni de forma persistente confiable). Lo buscamos en los
+    # lugares tipicos y agregamos su bin al PATH de USUARIO (como Git\bin en install-brain.ps1) para
+    # que el usuario pueda hacer 'claude' -> /login y el widget lea el token. (Caso real: Windows de Liora.)
+    if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
+        $roots = @("$env:LOCALAPPDATA", "$env:USERPROFILE\.local", "$env:USERPROFILE\.claude", "$env:APPDATA\npm") | Where-Object { Test-Path $_ }
+        $found = Get-ChildItem $roots -Recurse -Filter "claude.exe" -ErrorAction SilentlyContinue -Depth 4 |
+                 Select-Object -First 1 -ExpandProperty FullName
+        if ($found) {
+            $cdir = Split-Path $found
+            $u = [Environment]::GetEnvironmentVariable('PATH','User'); if (-not $u) { $u = '' }
+            if (($u -split ';') -notcontains $cdir) {
+                [Environment]::SetEnvironmentVariable('PATH', $u.TrimEnd(';') + ';' + $cdir, 'User')
+                $env:PATH = $env:PATH.TrimEnd(';') + ';' + $cdir   # visible ya en esta sesion
+                Write-Host "==> Agregue '$cdir' (claude) al PATH de usuario." -ForegroundColor Green
+            }
+        }
     }
 }
 

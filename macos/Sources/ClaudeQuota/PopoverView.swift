@@ -19,6 +19,20 @@ struct PopoverView: View {
     @State private var healMsg: String? = nil
     /// Autoupdate del widget (winturbo-style): chequeo de versión + botón de actualizar.
     @ObservedObject private var updater = Updater.shared
+    /// Summary del chat bajo el cursor (se muestra en el pie de la pestaña Chats).
+    @State private var hoveredSummary: String? = nil
+    /// Proyecto expandido en la pestaña Proyectos (muestra sus sesiones para resumir).
+    @State private var expandedProject: String? = nil
+    /// Rango de tiempo activo (footer {hoy·7d·30d·∞}) para Resumen/Modelos/Proyectos/Chats.
+    @State private var range: TimeRange = .all
+    /// Rename en curso (c: proyecto vía clic-secundario / d: sesión), o nil. `renameText` es el campo.
+    @State private var renameTarget: RenameTarget? = nil
+    @State private var renameText: String = ""
+    /// (e) Toggle "todas las máquinas": lee stats-global.json (sync) en vez del stats local.
+    @State private var useGlobal = false
+
+    /// Fuente de stats activa según el toggle (e). Si se pidió global pero no hay sync, cae a local.
+    private var activeStats: Stats? { (useGlobal ? model.statsGlobal : model.stats) ?? model.stats }
 
     // Neutral surfaces adapt to light/dark via labelColor; accents are fixed hex.
     private var label: Color { Color(nsColor: .labelColor) }
@@ -37,6 +51,32 @@ struct PopoverView: View {
         // cerebro le falta una pieza (🩹). Throttle 15 min en el chequeo de red.
         .task { await updater.checkIfStale() }
         .onAppear { brainState = BrainInspector.inspect() }
+        .alert(renameTarget?.kind == .session ? "Renombrar sesión" : "Renombrar proyecto",
+               isPresented: Binding(get: { renameTarget != nil },
+                                    set: { if !$0 { renameTarget = nil } }),
+               presenting: renameTarget) { t in
+            TextField(t.current, text: $renameText)
+            Button("Guardar") { applyRename(t) }
+            Button("Restaurar original", role: .destructive) { renameText = ""; applyRename(t) }
+            Button("Cancelar", role: .cancel) { renameTarget = nil }
+        } message: { t in
+            Text(t.kind == .session
+                 ? "Nueva etiqueta para esta sesión. Vacío para restaurar la original."
+                 : "Nuevo nombre para “\(t.current)”. Vacío para restaurar el original.")
+        }
+    }
+
+    private func startRename(_ t: RenameTarget) { renameText = t.current; renameTarget = t }
+
+    /// Escribe el alias y dispara un refetch — el fetch (proyectos) / sessions-extract (sesiones)
+    /// releen los mapas y el widget se recarga con el nombre nuevo.
+    private func applyRename(_ t: RenameTarget) {
+        switch t.kind {
+        case .project: model.renameProject(t.key, to: renameText)
+        case .session: model.renameSession(t.key, to: renameText)
+        }
+        renameTarget = nil
+        onRefresh()
     }
 
     // MARK: - Rail
@@ -47,7 +87,8 @@ struct PopoverView: View {
             railButton(1, "chart.bar.doc.horizontal", "Resumen")
             railButton(2, "chart.bar", "Modelos")
             railButton(3, "folder", "Proyectos")
-            railButton(4, "brain", "Cerebro", badge: updater.updateAvailable, heal: brainIncomplete)
+            if !model.chats.isEmpty { railButton(4, "message", "Chats") }   // solo si hay chats locales
+            railButton(5, "brain", "Cerebro", badge: updater.updateAvailable, heal: brainIncomplete)
             Spacer()
             HStack(spacing: 6) {
                 Button(action: onRefresh) {
@@ -97,6 +138,8 @@ struct PopoverView: View {
             modelosTab
         case 3:
             proyectosTab
+        case 4:
+            chatsTab
         default:
             ScrollView(.vertical, showsIndicators: true) { cerebroTab }
         }
@@ -224,18 +267,28 @@ struct PopoverView: View {
     // ===== Tab 1: Resumen =====
 
     private var resumenTab: some View {
-        let s = model.stats?.summary
+        let s = activeStats?.summary
         let streaks = model.streaks
+        let days = rangedDays()
+        let hasStats = activeStats != nil
+        // Agregados recalculados sobre el rango (a ∞ coinciden con summary).
+        let toks = days.reduce(0.0) { $0 + ($1.tokens ?? 0) }
+        let cost = days.reduce(0.0) { $0 + ($1.cost ?? 0) }
+        let msgs = days.reduce(0.0) { $0 + ($1.messages ?? 0) }
+        let activeDays = days.filter { ($0.tokens ?? 0) > 0 }.count
+        // Sesiones: a ∞ el conteo exacto de summary; en rango, filtrado de sessions.json.
+        let sessions = range == .all ? (s != nil ? Fmt.int(s?.sessions) : "—") : "\(rangedSessionCount())"
+        let fav = rangedModels().first?.name
         let cards: [(String, String)] = [
-            ("Sesiones",        s != nil ? Fmt.int(s?.sessions) : "—"),
-            ("Mensajes",        s != nil ? Fmt.int(s?.messages) : "—"),
-            ("Tokens totales",  s != nil ? Fmt.tok(s?.total_tokens) : "—"),
-            ("Días activos",    s?.active_days.map { "\($0)" } ?? "—"),
+            ("Sesiones",        sessions),
+            ("Mensajes",        hasStats ? Fmt.int(msgs) : "—"),
+            ("Tokens totales",  hasStats ? Fmt.tok(toks) : "—"),
+            ("Días activos",    hasStats ? "\(activeDays)" : "—"),
             ("Racha actual",    "\(streaks.cur)d"),
             ("Racha más larga", "\(streaks.max)d"),
             ("Hora pico",       s != nil ? Fmt.hour(s?.peak_hour) : "—"),
-            ("Modelo favorito", s != nil ? Fmt.prettyModel(s?.favorite_model) : "—"),
-            ("Costo API-equiv", s?.total_cost.map { String(format: "$%.0f", $0) } ?? "—"),
+            ("Modelo favorito", fav != nil ? Fmt.prettyModel(fav) : "—"),
+            ("Costo API-equiv", hasStats ? String(format: "$%.0f", cost) : "—"),
         ]
         return VStack(alignment: .leading, spacing: 12) {
             Text("Resumen").font(.headline)
@@ -250,6 +303,7 @@ struct PopoverView: View {
                 .foregroundStyle(label.opacity(0.6))
             heatmap
             Spacer(minLength: 0)
+            rangeFooter(machineToggle: true)
         }
         .padding(16)
     }
@@ -281,40 +335,29 @@ struct PopoverView: View {
     // ===== Tab 2: Modelos =====
 
     private var modelosTab: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let days = rangedDays()
+        let maxTok = max(1, days.map { $0.tokens ?? 0 }.max() ?? 1)
+        return VStack(alignment: .leading, spacing: 12) {
             Text("Uso por modelo").font(.headline)
-            stackedChart.frame(height: 126)
+            stackedChart(days, maxTok).frame(height: 110)
             // Encabezado + gráfico fijos; solo la lista scrollea (altura acotada al
             // espacio restante) → el popover no crece por más modelos que se acumulen.
             ScrollView(.vertical, showsIndicators: true) {
                 VStack(spacing: 6) {
-                    ForEach(model.stats?.models ?? [], id: \.model) { m in
-                        HStack(spacing: 6) {
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(model.modelColor(m.model))
-                                .frame(width: 10, height: 10)
-                            Text(Fmt.prettyModel(m.model)).fontWeight(.bold)
-                            Spacer()
-                            Text("\(Fmt.tok(m.in_tok)) in · \(Fmt.tok(m.out_tok)) out")
-                                .foregroundStyle(label.opacity(0.7))
-                            Text(String(format: "%.1f%%", m.pct ?? 0))
-                                .fontWeight(.bold)
-                                .foregroundStyle(model.modelColor(m.model))
-                                .frame(minWidth: 44, alignment: .trailing)
-                        }
+                    ForEach(rangedModels()) { m in
+                        usageRow(m, color: model.modelColor(m.name), pretty: true)
                     }
                 }
             }
             .frame(maxHeight: .infinity)
+            rangeFooter(machineToggle: true)
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private var stackedChart: some View {
-        let days = model.stats?.days ?? []
-        let maxTok = model.maxDayTokens
-        return GeometryReader { geo in
+    private func stackedChart(_ days: [StatsDay], _ maxTok: Double) -> some View {
+        GeometryReader { geo in
             let h = geo.size.height
             HStack(alignment: .bottom, spacing: 2) {
                 ForEach(days.indices, id: \.self) { i in
@@ -339,40 +382,114 @@ struct PopoverView: View {
     /// Uso de Claude Code por carpeta de proyecto — un subconjunto de Modelos
     /// (ese tab también cuenta otros CLIs de IA locales que ccusage detecta).
     private var proyectosTab: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let days = rangedDays()
+        let maxTok = max(1, days.map { ($0.projects ?? []).reduce(0.0) { $0 + ($1.tokens ?? 0) } }.max() ?? 1)
+        return VStack(alignment: .leading, spacing: 12) {
             Text("Uso por proyecto").font(.headline)
-            stackedProjectChart.frame(height: 126)
+            stackedProjectChart(days, maxTok).frame(height: 110)
             // Encabezado + gráfico fijos; solo la lista scrollea (altura acotada al
             // espacio restante) → el popover no crece por más proyectos que se acumulen.
             ScrollView(.vertical, showsIndicators: true) {
                 VStack(spacing: 6) {
-                    ForEach(model.stats?.projects ?? [], id: \.project) { p in
-                        HStack(spacing: 6) {
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(model.projectColor(p.project))
-                                .frame(width: 10, height: 10)
-                            Text(p.project ?? "—").fontWeight(.bold).lineLimit(1)
-                            Spacer()
-                            Text("\(Fmt.tok(p.in_tok)) in · \(Fmt.tok(p.out_tok)) out")
-                                .foregroundStyle(label.opacity(0.7))
-                            Text(String(format: "%.1f%%", p.pct ?? 0))
-                                .fontWeight(.bold)
-                                .foregroundStyle(model.projectColor(p.project))
-                                .frame(minWidth: 44, alignment: .trailing)
+                    ForEach(rangedProjects()) { p in
+                        projectRow(p)
+                        if expandedProject == p.name {
+                            sessionsList(for: p.name)
                         }
                     }
                 }
             }
             .frame(maxHeight: .infinity)
+            rangeFooter(machineToggle: true)
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private var stackedProjectChart: some View {
-        let days = model.stats?.days ?? []
-        let maxTok = model.maxDayTokens
-        return GeometryReader { geo in
+    /// Fila de proyecto: swatch + nombre (+ chevron si tiene sesiones) + tokens + %. Tap despliega
+    /// sus sesiones de Claude Code para resumir.
+    @ViewBuilder
+    private func projectRow(_ p: UsageStat) -> some View {
+        let name = p.name
+        let n = model.sessions.filter { $0.project == name }.count
+        Button {
+            expandedProject = (expandedProject == name) ? nil : name
+        } label: {
+            HStack(spacing: 6) {
+                RoundedRectangle(cornerRadius: 2).fill(model.projectColor(name)).frame(width: 10, height: 10)
+                Text(name).fontWeight(.bold).lineLimit(1)
+                if n > 0 {
+                    Image(systemName: expandedProject == name ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9)).foregroundStyle(label.opacity(0.5))
+                }
+                Spacer()
+                Text("\(Fmt.tok(p.inTok)) in · \(Fmt.tok(p.outTok)) out").foregroundStyle(label.opacity(0.7))
+                Text(String(format: "%.1f%%", p.pct)).fontWeight(.bold)
+                    .foregroundStyle(model.projectColor(name)).frame(minWidth: 44, alignment: .trailing)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(n == 0)
+        .contextMenu {
+            Button("Renombrar…") { startRename(RenameTarget(kind: .project, key: name, current: name)) }
+            if model.projectAliased(name) {
+                Button("Restaurar original") {
+                    model.renameProject(name, to: ""); onRefresh()
+                }
+            }
+        }
+    }
+
+    /// Sesiones de un proyecto (al desplegar): cada una resume en su cwd.
+    @ViewBuilder
+    private func sessionsList(for name: String) -> some View {
+        let ss = Array(model.sessions.filter { $0.project == name }.prefix(12))
+        VStack(spacing: 3) {
+            ForEach(ss) { s in sessionRow(s) }
+        }
+        .padding(.leading, 18)
+    }
+
+    @ViewBuilder
+    private func sessionRow(_ s: Session) -> some View {
+        Button { resume(s) } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.uturn.left.circle").font(.system(size: 11)).foregroundStyle(accent)
+                Text(s.label ?? "(sesión)").font(.caption).lineLimit(1)
+                Spacer(minLength: 8)
+                Text(Self.relDate(s.updated_at)).font(.system(size: 10)).foregroundStyle(label.opacity(0.5))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Resumir en \(s.cwd)")
+        .contextMenu {
+            Button("Renombrar…") {
+                startRename(RenameTarget(kind: .session, key: s.id, current: s.label ?? ""))
+            }
+            if model.sessionAliased(s.id) {
+                Button("Restaurar original") { model.renameSession(s.id, to: ""); onRefresh() }
+            }
+        }
+    }
+
+    /// Abre Terminal.app y resume la sesión: `cd <cwd> && claude --resume <id>`.
+    private func resume(_ s: Session) {
+        let cmd = "cd \(shQuote(s.cwd)) && claude --resume \(shQuote(s.id))"
+        let osa = "tell application \"Terminal\"\nactivate\ndo script \"\(appleEscape(cmd))\"\nend tell"
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        proc.arguments = ["-e", osa]
+        try? proc.run()
+    }
+    private func shQuote(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+    private func appleEscape(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
+    private func stackedProjectChart(_ days: [StatsDay], _ maxTok: Double) -> some View {
+        GeometryReader { geo in
             let h = geo.size.height
             HStack(alignment: .bottom, spacing: 2) {
                 ForEach(days.indices, id: \.self) { i in
@@ -392,10 +509,241 @@ struct PopoverView: View {
         }
     }
 
-    // ===== Tab 4: Cerebro =====
+    // ===== Tab 4: Chats =====
+
+    /// Conversaciones recientes del app de escritorio (leídas del cache local por chats-extract.js,
+    /// sin red ni cookies). Click abre el chat en claude.ai; hover muestra el summary.
+    private var chatsTab: some View {
+        let cs = rangedChats()
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Chats").font(.headline)
+            if cs.isEmpty {
+                Text(range == .all
+                     ? "Sin conversaciones locales.\nAbre el app de escritorio de Claude y espera al próximo refresco."
+                     : "Sin conversaciones en este rango.")
+                    .font(.caption).foregroundStyle(label.opacity(0.6))
+                Spacer()
+            } else {
+                VStack(spacing: 4) {                               // reparto por modelo con %
+                    ForEach(chatsByModel(cs)) { chatModelRow($0) }
+                }
+                Divider().overlay(label.opacity(0.12))
+                Text("recientes").font(.caption).foregroundStyle(label.opacity(0.5))
+                ScrollView(.vertical, showsIndicators: true) {     // lista clickeable
+                    VStack(spacing: 6) {
+                        ForEach(cs.prefix(20)) { c in chatRow(c) }
+                    }
+                }
+                .frame(maxHeight: .infinity)
+                // Pie: resumen del chat bajo el cursor (hover CONFIABLE vía onHover; el .help no salía).
+                Divider().overlay(label.opacity(0.12))
+                Text(hoveredSummary ?? "Pasa el cursor sobre un chat para ver su resumen.")
+                    .font(.caption)
+                    .foregroundStyle(label.opacity(hoveredSummary == nil ? 0.4 : 0.75))
+                    .lineLimit(4)
+                    .frame(maxWidth: .infinity, minHeight: 56, alignment: .topLeading)
+            }
+            rangeFooter()
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// Fila del desglose por modelo: swatch + modelo + conteo + %.
+    @ViewBuilder
+    private func chatModelRow(_ r: ChatModelStat) -> some View {
+        HStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 2).fill(model.modelColor(r.model)).frame(width: 10, height: 10)
+            Text(Fmt.prettyModel(r.model)).fontWeight(.bold).lineLimit(1)
+            Spacer()
+            Text("\(r.count)").foregroundStyle(label.opacity(0.7))
+            Text(String(format: "%.0f%%", r.pct)).fontWeight(.bold)
+                .foregroundStyle(model.modelColor(r.model)).frame(minWidth: 44, alignment: .trailing)
+        }
+    }
+
+    /// Una fila de chat (read-only): título + badge de modelo + fecha; hover -> summary (en el pie).
+    @ViewBuilder
+    private func chatRow(_ c: Chat) -> some View {
+        HStack(spacing: 8) {
+            Text(c.title).fontWeight(.medium).lineLimit(1)
+            Spacer(minLength: 8)
+            if let m = c.model { modelBadge(m) }
+            Text(Self.relDate(c.updated_at ?? c.created_at))
+                .font(.caption).foregroundStyle(label.opacity(0.6))
+                .frame(minWidth: 48, alignment: .trailing)
+        }
+        .contentShape(Rectangle())
+        .onHover { hovering in hoveredSummary = hovering ? (c.summary ?? "") : nil }
+    }
+
+    @ViewBuilder
+    private func modelBadge(_ m: String) -> some View {
+        let col = model.modelColor(m)
+        Text(Fmt.prettyModel(m))
+            .font(.caption2).fontWeight(.bold)
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(col.opacity(0.22), in: Capsule())
+            .foregroundStyle(col)
+    }
+
+    // ---- datos derivados de model.chats para la pestaña Chats ----
+
+    /// Reparto por modelo (conteo + % del total), ordenado desc.
+    private func chatsByModel(_ chats: [Chat]) -> [ChatModelStat] {
+        let total = chats.count
+        guard total > 0 else { return [] }
+        var counts: [String: Int] = [:]
+        for c in chats { counts[c.model ?? "?", default: 0] += 1 }
+        return counts.map { ChatModelStat(model: $0.key, count: $0.value,
+                                          pct: Double($0.value) * 100 / Double(total)) }
+            .sorted { $0.count > $1.count }
+    }
+
+    /// Fecha relativa desde el prefijo YYYY-MM-DD de un ISO (granularidad de día, robusto a micros).
+    static func relDate(_ iso: String?) -> String {
+        guard let iso, iso.count >= 10 else { return "" }
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "UTC")
+        guard let d = f.date(from: String(iso.prefix(10))) else { return "" }
+        let days = Calendar.current.dateComponents([.day], from: d, to: Date()).day ?? 0
+        if days <= 0 { return "hoy" }
+        if days == 1 { return "ayer" }
+        if days < 7 { return "hace \(days)d" }
+        if days < 30 { return "hace \(days / 7)sem" }
+        return "hace \(days / 30)mes"
+    }
+
+    // ---- Filtro de rango {hoy·7d·30d·∞} (Resumen/Modelos/Proyectos/Chats) ----
+
+    /// Fecha de corte "yyyy-MM-dd" (hora local) para el rango activo; nil si ∞.
+    private func rangeCutoff() -> String? {
+        guard let back = range.daysBack,
+              let d = Calendar.current.date(byAdding: .day, value: -back, to: Date()) else { return nil }
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = .current
+        return f.string(from: d)
+    }
+
+    /// Días de stats.days[] dentro del rango (todos si ∞). Compara por prefijo de fecha.
+    /// Usa la fuente activa (local o global según el toggle (e)).
+    private func rangedDays() -> [StatsDay] {
+        let all = activeStats?.days ?? []
+        guard let cut = rangeCutoff() else { return all }
+        return all.filter { ($0.date ?? "") >= cut }
+    }
+
+    /// Chats dentro del rango (por updated_at/created_at).
+    private func rangedChats() -> [Chat] {
+        guard let cut = rangeCutoff() else { return model.chats }
+        return model.chats.filter { String(($0.updated_at ?? $0.created_at ?? "").prefix(10)) >= cut }
+    }
+
+    /// Sesiones (sessions.json) dentro del rango, por updated_at.
+    private func rangedSessionCount() -> Int {
+        guard let cut = rangeCutoff() else { return model.sessions.count }
+        return model.sessions.filter { String(($0.updated_at ?? "").prefix(10)) >= cut }.count
+    }
+
+    /// Uso por modelo agregado sobre los días del rango.
+    private func rangedModels() -> [UsageStat] {
+        var acc: [String: (Double, Double)] = [:]
+        for d in rangedDays() {
+            for m in d.models ?? [] {
+                let k = m.model ?? "?"; var v = acc[k] ?? (0, 0)
+                v.0 += m.in_tok ?? 0; v.1 += m.out_tok ?? 0; acc[k] = v
+            }
+        }
+        return usageStats(acc)
+    }
+
+    /// Uso por proyecto agregado sobre los días del rango.
+    private func rangedProjects() -> [UsageStat] {
+        var acc: [String: (Double, Double)] = [:]
+        for d in rangedDays() {
+            for p in d.projects ?? [] {
+                let k = p.project ?? "?"; var v = acc[k] ?? (0, 0)
+                v.0 += p.in_tok ?? 0; v.1 += p.out_tok ?? 0; acc[k] = v
+            }
+        }
+        return usageStats(acc)
+    }
+
+    private func usageStats(_ acc: [String: (Double, Double)]) -> [UsageStat] {
+        let grand = acc.values.reduce(0.0) { $0 + $1.0 + $1.1 }
+        return acc.map {
+            UsageStat(name: $0.key, inTok: $0.value.0, outTok: $0.value.1,
+                      tot: $0.value.0 + $0.value.1,
+                      pct: grand > 0 ? ($0.value.0 + $0.value.1) * 100 / grand : 0)
+        }.sorted { $0.tot > $1.tot }
+    }
+
+    /// Fila de uso (modelo o proyecto): swatch + nombre + in/out + %.
+    @ViewBuilder
+    private func usageRow(_ u: UsageStat, color: Color, pretty: Bool) -> some View {
+        HStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 10, height: 10)
+            Text(pretty ? Fmt.prettyModel(u.name) : u.name).fontWeight(.bold).lineLimit(1)
+            Spacer()
+            Text("\(Fmt.tok(u.inTok)) in · \(Fmt.tok(u.outTok)) out").foregroundStyle(label.opacity(0.7))
+            Text(String(format: "%.1f%%", u.pct)).fontWeight(.bold).foregroundStyle(color)
+                .frame(minWidth: 44, alignment: .trailing)
+        }
+    }
+
+    /// Footer con los 4 botones de rango; el activo va en acento. Si `machineToggle` y hay vista
+    /// sincronizada (e), agrega a la derecha el par 🖥 esta / ☁️ todas.
+    @ViewBuilder
+    private func rangeFooter(machineToggle: Bool = false) -> some View {
+        HStack(spacing: 4) {
+            ForEach(TimeRange.allCases) { r in
+                Button { range = r } label: {
+                    Text(r.label)
+                        .font(.caption2).fontWeight(range == r ? .bold : .regular)
+                        .padding(.horizontal, 9).padding(.vertical, 3)
+                        .background(RoundedRectangle(cornerRadius: 5)
+                            .fill(range == r ? accent.opacity(0.2) : label.opacity(0.06)))
+                        .foregroundStyle(range == r ? accent : label.opacity(0.7))
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer(minLength: 0)
+            if machineToggle, model.statsGlobal != nil {
+                machinePills
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    /// (e) Par de píldoras 🖥 esta máquina / ☁️ todas. Solo aparece si hay stats-global.json.
+    @ViewBuilder
+    private var machinePills: some View {
+        let n = model.statsGlobal?.machines?.count ?? 0
+        HStack(spacing: 4) {
+            machinePill(system: "desktopcomputer", on: !useGlobal) { useGlobal = false }
+            machinePill(system: "cloud", label: n > 1 ? "\(n)" : nil, on: useGlobal) { useGlobal = true }
+        }
+        .help(useGlobal ? "Mostrando el uso combinado de todas tus máquinas (sync)"
+                        : "Mostrando solo esta máquina")
+    }
+
+    @ViewBuilder
+    private func machinePill(system: String, label extra: String? = nil, on: Bool, _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            HStack(spacing: 3) {
+                Image(systemName: system).font(.system(size: 10))
+                if let extra { Text(extra).font(.caption2).fontWeight(.bold) }
+            }
+            .padding(.horizontal, 7).padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: 5).fill(on ? accent.opacity(0.2) : label.opacity(0.06)))
+            .foregroundStyle(on ? accent : label.opacity(0.7))
+        }
+        .buttonStyle(.plain)
+    }
+
+    // ===== Tab 5: Cerebro =====
 
     /// Infografía del cerebro global de Claude Code: los componentes instalados,
-    /// jerarquizados de INVIOLABLE (hooks que deniegan) → SUGERENCIA LEVE (skills opt-in).
+    /// jerarquizados de Hooks Forzosos (los que deniegan) → Skills (opt-in, las invocas tú).
     /// Contenido ESTÁTICO (refleja `brain/`); se mantiene a mano cuando cambian las piezas.
     private var cerebroTab: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -705,8 +1053,8 @@ struct PopoverView: View {
     private var brainTiers: [BrainTier] {
         [
             BrainTier(
-                emoji: "🔒", title: "INVIOLABLE", color: Color(hex: "#dc3545"),
-                subtitle: "hooks que BLOQUEAN (deny) — no negociables",
+                emoji: "🔒", title: "Hooks Forzosos", color: Color(hex: "#cf5a49"),
+                subtitle: "hooks que bloquean (deny) — no negociables",
                 items: [
                     BrainItem("🚧", "git-branch-guard", "push/merge a develop·main → denegado, te redirige a ramita→MR",
                               "PreToolUse · Bash",
@@ -731,7 +1079,7 @@ struct PopoverView: View {
                               "Freno DURO (distinto del gate que pregunta): si el gasto real ya rebasó un techo configurable (sobreuso o ventana 5h), bloquea reclutar más agentes para que un workflow desbocado no siga quemando dinero. Techo por env (LIMITE_GASTO_OVERAGE_PCT / LIMITE_GASTO_5H_PCT)."),
                 ]),
             BrainTier(
-                emoji: "🔔", title: "AUTOMÁTICO", color: accent,
+                emoji: "🔔", title: "Automático", color: accent,
                 subtitle: "hooks que inyectan / recuerdan — no bloquean",
                 items: [
                     BrainItem("🧭", "sesion-inicio", "al abrir/retomar reinyecta rama + norma de git + orden de leer memoria",
@@ -751,7 +1099,7 @@ struct PopoverView: View {
                               "Tras un consentimiento aprobado lo registra para no volver a preguntar (1× por máquina o por workflow, según el nivel de costo). Materializa el 'pregunta una sola vez'."),
                 ]),
             BrainTier(
-                emoji: "📜", title: "NORMAS", color: Color(hex: "#4a90d9"),
+                emoji: "📜", title: "Normas", color: Color(hex: "#4a90d9"),
                 subtitle: "reglas que Claude se autoimpone (CLAUDE.md)",
                 items: [
                     BrainItem("🎯", "Definition of Done", "verde técnico ≠ Done/Listo/Ya Quedó; exige QA o un OK explícito",
@@ -768,7 +1116,7 @@ struct PopoverView: View {
                               "Reclutar agentes cuesta según nivel: gratis (local), incluido (Claude dentro de la ventana 5h) o con costo (overage / API externa / desconocido). La cadencia del permiso depende del nivel."),
                 ]),
             BrainTier(
-                emoji: "💡", title: "SKILLS", color: Color(hex: "#3aa76d"),
+                emoji: "💡", title: "Skills", color: Color(hex: "#3aa76d"),
                 subtitle: "herramientas opt-in — las invocas tú",
                 items: [
                     BrainItem("📦", "cerrar-slice", "build+tests+memoria al día + MR con resumen curado por slice",
@@ -875,6 +1223,34 @@ private struct BrainItem {
         self.emoji = emoji; self.name = name; self.desc = desc
         self.event = event; self.detail = detail
     }
+}
+
+/// Rango de tiempo del footer {hoy·7d·30d·∞}. `.all` = histórico completo.
+private enum TimeRange: CaseIterable, Identifiable {
+    case today, d7, d30, all
+    var id: Int { switch self { case .today: 0; case .d7: 1; case .d30: 2; case .all: 3 } }
+    var label: String { switch self { case .today: "hoy"; case .d7: "7d"; case .d30: "30d"; case .all: "∞" } }
+    /// Días hacia atrás desde hoy (incluyente); nil = sin recorte.
+    var daysBack: Int? { switch self { case .today: 0; case .d7: 6; case .d30: 29; case .all: nil } }
+}
+
+/// Objetivo de un rename por clic-secundario: (c) proyecto o (d) sesión.
+private struct RenameTarget: Identifiable {
+    enum Kind { case project, session }
+    let kind: Kind
+    let key: String        // (c) nombre mostrado del proyecto · (d) id de la sesión
+    let current: String    // texto que se precarga en el campo
+    var id: String { "\(key)" }
+}
+
+/// Fila de uso agregada (modelo o proyecto) recalculada por rango: in/out/total/%.
+private struct UsageStat: Identifiable {
+    let name: String
+    let inTok: Double
+    let outTok: Double
+    let tot: Double
+    let pct: Double
+    var id: String { name }
 }
 
 /// A summary stat card: labelColor 6% bg, label (dim, small) over bold value.

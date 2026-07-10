@@ -43,6 +43,27 @@ public sealed class Stats
     [JsonPropertyName("models")]     public List<StatsModel>? Models { get; set; }
     [JsonPropertyName("projects")]   public List<StatsProject>? Projects { get; set; }
     [JsonPropertyName("summary")]    public StatsSummary? Summary { get; set; }
+    // Solo en stats-global.json (vista "todas las máquinas", sync (e)): qué máquinas aportaron y cuánto.
+    // Ausente en el stats.json local — su presencia es lo que activa el toggle 🖥/☁️ del GUI.
+    [JsonPropertyName("machines")]   public List<MachineStat>? Machines { get; set; }
+}
+
+/// <summary>Una máquina que aportó a la vista sincronizada (stats-global.json). Espeja MachineStat de macOS.</summary>
+public sealed class MachineStat
+{
+    [JsonPropertyName("name")]       public string? Name { get; set; }
+    [JsonPropertyName("updated_at")] public string? UpdatedAt { get; set; }
+    [JsonPropertyName("tokens")]     public double Tokens { get; set; }
+}
+
+/// <summary>Un snapshot &lt;host&gt;.json que cada máquina escribe en la carpeta de nube (sync (e)):
+/// sus stats locales más metadatos de máquina/cuenta. El merge los fusiona a stats-global.json.</summary>
+public sealed class SyncSnapshot
+{
+    [JsonPropertyName("machine")]    public string? Machine { get; set; }
+    [JsonPropertyName("updated_at")] public string? UpdatedAt { get; set; }
+    [JsonPropertyName("account")]    public string? Account { get; set; }
+    [JsonPropertyName("stats")]      public Stats? Stats { get; set; }
 }
 
 public sealed class StatsDay
@@ -52,19 +73,25 @@ public sealed class StatsDay
     [JsonPropertyName("out_tok")] public double OutTok { get; set; }
     [JsonPropertyName("tokens")]  public double Tokens { get; set; }
     [JsonPropertyName("cost")]    public double? Cost { get; set; }
+    // Mensajes (user/assistant) de ESTE día local — alimenta la suma por rango del Resumen (b1b).
+    [JsonPropertyName("messages")] public double Messages { get; set; }
     [JsonPropertyName("models")]  public List<DayModel>? Models { get; set; }
     [JsonPropertyName("projects")] public List<DayProject>? Projects { get; set; }
 }
 
 public sealed class DayModel
 {
-    [JsonPropertyName("model")]  public string? Model { get; set; }
-    [JsonPropertyName("tokens")] public double Tokens { get; set; }
+    [JsonPropertyName("model")]   public string? Model { get; set; }
+    [JsonPropertyName("in_tok")]  public double InTok { get; set; }
+    [JsonPropertyName("out_tok")] public double OutTok { get; set; }
+    [JsonPropertyName("tokens")]  public double Tokens { get; set; }
 }
 
 public sealed class DayProject
 {
     [JsonPropertyName("project")] public string? Project { get; set; }
+    [JsonPropertyName("in_tok")]  public double InTok { get; set; }
+    [JsonPropertyName("out_tok")] public double OutTok { get; set; }
     [JsonPropertyName("tokens")]  public double Tokens { get; set; }
 }
 
@@ -98,7 +125,9 @@ public sealed class StatsSummary
     [JsonPropertyName("favorite_model")] public string? FavoriteModel { get; set; }
     [JsonPropertyName("sessions")]       public double Sessions { get; set; }
     [JsonPropertyName("messages")]       public double Messages { get; set; }
-    [JsonPropertyName("peak_hour")]      public int PeakHour { get; set; }
+    // Nullable: la vista global (stats-global.json) escribe peak_hour: null (no tiene sentido combinar
+    // la hora pico de varias máquinas). El stats.json local sigue escribiendo un entero (o -1 = sin datos).
+    [JsonPropertyName("peak_hour")]      public int? PeakHour { get; set; }
 
     // Internal channel: ccusage bucket costs feed the Límites tab, not stats.json.
     [JsonIgnore] public double? FiveHourCost { get; set; }
@@ -119,4 +148,35 @@ public sealed class OAuthWindow
 {
     [JsonPropertyName("utilization")] public double? Utilization { get; set; }
     [JsonPropertyName("resets_at")]   public string? ResetsAt { get; set; }
+}
+
+// ---------------------------------------------------------------------------
+// chats.json — conversaciones del app de escritorio (extraídas del cache local
+// de IndexedDB por chats-extract.js; sin red). Alimenta la pestaña Chats.
+// ---------------------------------------------------------------------------
+
+/// <summary>Una conversación cacheada por el app de escritorio de Claude.</summary>
+public sealed class Chat
+{
+    [JsonPropertyName("uuid")]       public string? Uuid { get; set; }
+    [JsonPropertyName("title")]      public string? Title { get; set; }
+    [JsonPropertyName("summary")]    public string? Summary { get; set; }
+    [JsonPropertyName("model")]      public string? Model { get; set; }
+    [JsonPropertyName("updated_at")] public string? UpdatedAt { get; set; }
+    [JsonPropertyName("created_at")] public string? CreatedAt { get; set; }
+}
+
+// ---------------------------------------------------------------------------
+// sessions.json — sesiones de Claude Code por proyecto (listadas por
+// sessions-extract.js). Alimenta el desglose "resumir" del tab Proyectos.
+// ---------------------------------------------------------------------------
+
+/// <summary>Una sesión de Claude Code; se resume con `claude --resume &lt;id&gt;` en su cwd.</summary>
+public sealed class Session
+{
+    [JsonPropertyName("id")]         public string? Id { get; set; }         // sessionId (= nombre del .jsonl)
+    [JsonPropertyName("project")]    public string? Project { get; set; }
+    [JsonPropertyName("cwd")]        public string? Cwd { get; set; }
+    [JsonPropertyName("updated_at")] public string? UpdatedAt { get; set; }
+    [JsonPropertyName("label")]      public string? Label { get; set; }
 }

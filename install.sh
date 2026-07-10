@@ -91,6 +91,12 @@ fi
 echo "==> Installing fetch script -> $BIN_DEST"
 install -D -m 0755 "$BIN_SRC" "$BIN_DEST"
 
+# chats-extract.js / sessions-extract.js junto al fetch (el fetch los corre con node -> chats.json / sessions.json).
+CHATS_SRC="$ROOT/bin/chats-extract.js"
+[[ -f "$CHATS_SRC" ]] && install -D -m 0755 "$CHATS_SRC" "$(dirname "$BIN_DEST")/chats-extract.js"
+SESSIONS_SRC="$ROOT/bin/sessions-extract.js"
+[[ -f "$SESSIONS_SRC" ]] && install -D -m 0755 "$SESSIONS_SRC" "$(dirname "$BIN_DEST")/sessions-extract.js"
+
 if [[ ! -f "$LIMITS_DEFAULT" ]]; then
   echo "==> Seeding default limits at $LIMITS_DEFAULT"
   install -d "$(dirname "$LIMITS_DEFAULT")"
@@ -112,6 +118,12 @@ FIVE_HOUR_CAP_USD=45
 WEEKLY_CAP_USD=4800
 WARN_PCT=60
 CRIT_PCT=85
+
+# (e) Sync entre máquinas (opt-in): comparte un snapshot de uso vía una carpeta que tu nube ya
+# replica, y el widget muestra un toggle "esta máquina / todas". "auto" autodetecta Google Drive
+# (en Linux no hay cliente oficial: mejor pon la ruta explícita del mount de rclone/insync); o una
+# ruta. Ausente/vacío = off (100% local, no sube nada).
+# SYNC_DIR=auto
 EOF
 fi
 
@@ -178,7 +190,7 @@ The Claude-Code brain is installed globally (hooks + delegation-cost governance 
   ~/.claude). See README.md; re-run any time (idempotent). Skip it with --no-brain.
 
 Next steps:
-  - Right-click your Plasma panel -> Add or Manage Widgets -> search "Claude Code Quota"
+  - Right-click your Plasma panel -> Add or Manage Widgets -> search "Claude Brain Widget"
   - Drag it onto the panel (or into the system tray slot).
   - Hover for the breakdown; tune caps in: $LIMITS_DEFAULT
 

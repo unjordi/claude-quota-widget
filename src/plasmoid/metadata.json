@@ -15,7 +15,7 @@
         "Icon": "speedometer",
         "Id": "io.github.unjordi.claude-quota-widget",
         "License": "MIT",
-        "Name": "Claude Code Quota",
+        "Name": "Claude Brain Widget",
         "Version": "0.1.0",
         "Website": "https://github.com/unjordi/claude-quota-widget"
     },

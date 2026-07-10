@@ -1,4 +1,4 @@
-# Claude Quota — Windows tray app
+# Claude Brain Widget — Windows tray app
 
 A native **WinForms tray widget** (.NET 10) that puts your Claude Code
 subscription usage in the Windows notification area. It's the Windows port of
@@ -16,7 +16,22 @@ and renders the same three-tab breakdown.
   - **Modelos** — stacked per-day token chart + a per-model table with in/out
     tokens and %.
   - **Proyectos** — same, grouped by project folder (`~/.claude/projects/<slug>`);
-    the slug is mapped back to a readable name via `~/.claude.json`.
+    the slug is mapped back to a readable name via `~/.claude.json`. A project with
+    local Claude Code sessions is **expandable** (chevron): click a session to
+    resume it in a new terminal (`claude --resume <id>` in its cwd — Windows
+    Terminal if present, else `cmd.exe`). **Right-click a project or session row →
+    Renombrar…** opens a small dialog to set a custom label (leave it empty to
+    restore the original); a *Restaurar original* entry shows when an alias is
+    active. Renames persist to `~/.claude/proyectos-alias.json` /
+    `sesiones-alias.json` (honoring `CLAUDE_CONFIG_DIR`) and trigger a refetch so the
+    list reloads with the new name — the same maps the macOS/Plasma ports read.
+  - **Chats** — recent Claude **desktop-app** conversations (read-only): a per-model
+    breakdown with %, a list of recents (title + model badge + relative date), and a
+    footer showing the summary of the chat under the cursor. **Only shown when local
+    chats exist.**
+  - **Resumen / Modelos / Proyectos / Chats** each carry a **{hoy · 7d · 30d · ∞}**
+    range footer (default ∞); it recomputes tokens, models, projects, the summary
+    cards and the chat list over the chosen window (the heatmap stays all-time).
 - **Right-click → menu:** Actualizar ahora · Iniciar con Windows (toggle) · Salir.
 
 ## Why a rewrite (not a port of the fetch script)
@@ -53,11 +68,23 @@ OAuth polling well under any abuse threshold.
 | **Tokens** by day & model, days/heatmap | local transcripts, parsed in C# | nothing |
 | **Sessions / messages / peak hour** | local transcripts, parsed in C# | nothing |
 | API-equivalent **$ cost** | [ccusage](https://github.com/ryoppippi/ccusage) (`ccusage` or `npx ccusage@latest`) | Node.js on `PATH` |
+| **Chats** tab + Proyectos **resume** list | bundled `bin\*.js` extractors run via `node` | Node.js on `PATH` |
 
-Without Node/ccusage, everything works **except** the `$` figures (they show `—`).
-The percentages are exact and come straight from Anthropic; the tokens are parsed
-from the same JSONL transcripts ccusage would read, so the Resumen/Modelos tabs
-are fully populated on any machine — Node just adds the cost overlay.
+Without Node/ccusage, everything works **except** the `$` figures (they show `—`),
+the **Chats** tab, and the Proyectos **resume** list (all three need Node). The
+percentages are exact and come straight from Anthropic; the tokens are parsed from
+the same JSONL transcripts ccusage would read, so the Resumen/Modelos tabs are
+fully populated on any machine — Node just adds the cost overlay and the two
+extractors.
+
+**Chats / sessions extraction.** `chats.json` and `sessions.json` are produced the
+same way as Linux/macOS: `install.ps1` copies the bundled `bin\chats-extract.js`
+and `bin\sessions-extract.js` next to the exe (`…\Programs\ClaudeQuota\bin`), and
+each fetch runs them with `node` (fail-open: no Node / no script / an error just
+leaves the file absent, so the Chats tab hides and the resume list stays empty).
+`chats-extract.js` reads the desktop app's local IndexedDB (no network);
+`sessions-extract.js` lists `~/.claude/projects/<slug>/*.jsonl`. They write into
+`%LOCALAPPDATA%\claude-quota` alongside `state.json`/`stats.json`.
 
 The `$` values are **API-equivalent** cost (what pay-per-token would have cost),
 labeled "(API equiv local)" — a "how much is my subscription saving me?" signal,
@@ -125,6 +152,39 @@ If the active account ever differs from the pinned one, the footer turns red wit
 All three platforms share this guard (Linux/macOS read the same pin from
 `~/.config/claude-quota/account`, overridable via `$CLAUDE_QUOTA_ACCOUNT`).
 
+## Sync between machines (opt-in)
+
+Roll up your Claude usage across every computer you use into one **combined view**.
+It is **opt-in** — nothing is uploaded unless you point the widget at a cloud folder
+your machines already share (Google Drive, etc.). Turn it on by setting the sync
+folder in **one** of two ways (the env var wins):
+
+- Env var `CLAUDE_QUOTA_SYNC_DIR`, or
+- a plain-text file `%LOCALAPPDATA%\claude-quota\sync-dir` (same config style as the
+  account pin).
+
+The value is either an **explicit path** to the shared folder, or the literal
+`auto` to autodetect Google Drive on Windows. `auto` probes, in order:
+`%USERPROFILE%\My Drive`, `%USERPROFILE%\Google Drive`, `%USERPROFILE%\Mi unidad`,
+`G:\My Drive`, `G:\Mi unidad`, `G:\` — and uses the first that exists, under a
+`claude-brain-sync` subfolder. An explicit path is used **verbatim** (no subfolder
+appended), so several machines must point at the *same* folder. Empty/unset = off.
+
+How it works (mirrors the mac/linux `claude-quota-fetch` bash+jq exactly, so the
+files are interchangeable across platforms):
+
+1. After each fetch, this machine writes its own snapshot `<hostname>.json` =
+   `{ machine, updated_at, account, stats }` into the sync folder (atomic write).
+2. It reads every `*.json` there, keeps only those whose `account` matches this
+   machine's (uuid, else email, else `default`), and merges them by day/model/
+   project into `%LOCALAPPDATA%\claude-quota\stats-global.json`.
+
+The combined view drives a toggle in the footer of **Resumen / Modelos / Proyectos**:
+**🖥 this machine** vs **☁️ all** (the ☁️ pill shows the machine count when >1). The
+toggle appears **only** when `stats-global.json` exists. Chats and per-project
+sessions always stay local. Every step is **fail-open**: no cloud folder, a locked
+file, or a broken snapshot just leaves the last good state and hides the toggle.
+
 ## Uninstall
 
 ```powershell
@@ -143,15 +203,16 @@ dotnet run                           # run from source (framework-dependent)
 dotnet run -- --shot ..\..\..\shots  # render the 3 popup tabs + tray icons to PNG
 ```
 
-The `--shot <dir>` hook fetches once and renders each popup tab and the tray icon
-(at 16/24/32 px) to PNGs — the headless way to eyeball the UI without clicking the
-tray. Source layout:
+The `--shot <dir>` hook fetches once and renders every popup tab (Límites, Resumen,
+Modelos, Proyectos, Chats, Cerebro) and the tray icon (at 16/24/32 px) to PNGs —
+the headless way to eyeball the UI without clicking the tray. Source layout:
 
 | File | Role |
 |---|---|
 | `Program.cs` | entry point, tray host, 10 s poll timer, autostart, popup positioning |
 | `QuotaService.cs` | the fetch pipeline (OAuth + transcript parse + ccusage), cache I/O |
-| `Models.cs` | `state.json` / `stats.json` / OAuth DTOs |
+| `SyncService.cs` | (e) cross-machine sync: writes `<host>.json`, merges → `stats-global.json` |
+| `Models.cs` | `state.json` / `stats.json` / `stats-global.json` / OAuth DTOs |
 | `Format.cs` | pctColor, `Fmt.*`, `Rel.*`, prettyModel, palette — ports of main.qml |
 | `StatsCompute.cs` | streaks, heatmap cells, model colors |
 | `TrayIconRenderer.cs` | the two-row tray bitmap → `Icon` |

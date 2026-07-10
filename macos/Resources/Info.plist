@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>Claude Quota</string>
+	<string>Claude Brain Widget</string>
 	<key>CFBundleDisplayName</key>
-	<string>Claude Quota</string>
+	<string>Claude Brain Widget</string>
 	<key>CFBundleIdentifier</key>
 	<string>io.github.unjordi.claude-quota</string>
 	<key>CFBundleExecutable</key>

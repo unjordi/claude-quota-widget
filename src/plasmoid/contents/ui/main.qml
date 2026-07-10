@@ -1,6 +1,7 @@
 import QtCore
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Controls as QQC2
 import org.kde.plasma.plasmoid
 import org.kde.plasma.plasma5support as P5Support
 import org.kde.plasma.core as PlasmaCore
@@ -15,11 +16,52 @@ PlasmoidItem {
     property string snapshotError: ""
     // ---------- Data: stats locales de ccusage (stats.json) ----------
     property var stats: null
+    // ---------- Data: vista sincronizada entre máquinas (stats-global.json) — feature (e) ----------
+    // Producida por el bloque "(e) Sync" del fetch (fusión de los snapshots de cada máquina vía la
+    // carpeta de nube). null si el sync no está activo / no existe el archivo (fail-open: el toggle
+    // "todas las máquinas" no se ofrece). Espeja QuotaModel.statsGlobal del PopoverView.swift.
+    property var statsGlobal: null
+    // (e) Toggle "todas las máquinas": cuando está activo y hay stats-global.json, los recomputes de
+    // rango (rDays y lo derivado) leen de la vista combinada en vez del stats local. Espeja @State useGlobal.
+    property bool useGlobal: false
+    // Fuente de stats ACTIVA según el toggle (e). Si se pidió global pero no hay sync, cae a local.
+    // Espeja `activeStats` del PopoverView.swift. rSessionCount/chats se quedan SIEMPRE locales.
+    readonly property var activeStats: (useGlobal && statsGlobal) ? statsGlobal : stats
+    // ¿Hay vista sincronizada con datos? (gobierna si se ofrece el par de píldoras 🖥/☁️).
+    readonly property bool hasGlobal: statsGlobal && statsGlobal.machines && statsGlobal.machines.length > 0
+    // Cuántas máquinas aportaron a la vista combinada (para el conteo en la píldora ☁️).
+    readonly property int globalMachineCount: hasGlobal ? statsGlobal.machines.length : 0
+    // ---------- Data: chats del app de escritorio (chats.json) y sesiones de Claude Code
+    // (sessions.json), ambos producidos por el fetch (chats-extract.js / sessions-extract.js). null
+    // = aún no leído / no existe (fail-open: la pestaña Chats se oculta, el dropdown de sesiones sale vacío).
+    property var chats: null
+    property var sessions: null
+
+    // ---------- Alias de renombrado (clic-secundario) ----------
+    // Copias EN MEMORIA de los mapas que el data layer lee: proyectos-alias.json (lo lee el fetch)
+    // y sesiones-alias.json (lo lee sessions-extract.js). Se releen en cada reload() (cat, fail-open a
+    // {}). El widget los ESCRIBE al renombrar; escribir + refetch = el nombre nuevo se propaga. La
+    // semántica espeja QuotaModel.swift (renameProject/renameSession/aliasMap). Base = CLAUDE_CONFIG_DIR
+    // o ~/.claude, resuelta por el shell al leer/escribir (aliasDir).
+    property var projAliasMap: ({})
+    property var sessAliasMap: ({})
+    // Expresión de shell para la base de los mapas (idéntica a claude-quota-fetch / sessions-extract.js).
+    readonly property string aliasDir: "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+
+    // ---------- Filtro de rango {hoy·7d·30d·∞} (Resumen/Modelos/Proyectos/Chats) ----------
+    // rangeIdx: 0=hoy (daysBack 0), 1=7d (6), 2=30d (29), 3=∞ (sin recorte). Default ∞ (todo el histórico).
+    // Espeja el enum TimeRange de PopoverView.swift. A ∞ todo coincide con lo que ya se mostraba.
+    property int rangeIdx: 3
+    readonly property var rangeLabels: ["hoy", "7d", "30d", "∞"]
+    // Resumen del chat bajo el cursor (pie de la pestaña Chats).
+    property string hoveredChatSummary: ""
+    // Proyecto expandido en la pestaña Proyectos (muestra sus sesiones para resumir).
+    property string expandedProject: ""
 
     property int currentTab: 0
-    // Al abrir/volver a la pestaña Cerebro (idx 3) re-lee el estado real de ~/.claude (doc = realidad)
+    // Al abrir/volver a la pestaña Cerebro (idx 5) re-lee el estado real de ~/.claude (doc = realidad)
     // y chequea si hay versión nueva del widget (throttle 15 min dentro de checkUpdate).
-    onCurrentTabChanged: if (currentTab === 3) { scanBrain(); checkUpdate() }
+    onCurrentTabChanged: if (currentTab === 5) { scanBrain(); checkUpdate() }
 
     readonly property string cacheDir: {
         const raw = "" + StandardPaths.writableLocation(StandardPaths.GenericCacheLocation)
@@ -32,10 +74,35 @@ PlasmoidItem {
         engine: "executable"
         connectedSources: []
         onNewData: function(source, data) {
-            if (source.indexOf("stats.json") !== -1) {
+            if (source.indexOf("stats-global.json") !== -1) {
+                // (e) Sync: presente solo si el sync está activo. Fail-open: ausente/roto -> se queda
+                // null -> el toggle "todas las máquinas" no se ofrece. (Se chequea ANTES que stats.json.)
+                if (data["exit code"] === 0 && data.stdout) {
+                    try { root.statsGlobal = JSON.parse(data.stdout) } catch (e) {}
+                }
+            } else if (source.indexOf("stats.json") !== -1) {
                 if (data["exit code"] === 0 && data.stdout) {
                     try { root.stats = JSON.parse(data.stdout) } catch (e) {}
                 }
+            } else if (source.indexOf("chats.json") !== -1) {
+                // Fail-open: sin chats.json (rc!=0 / sin app de escritorio) -> se queda null (pestaña oculta).
+                if (data["exit code"] === 0 && data.stdout) {
+                    try { root.chats = JSON.parse(data.stdout) } catch (e) {}
+                }
+            } else if (source.indexOf("sessions.json") !== -1) {
+                // Fail-open: sin sessions.json -> se queda null (el dropdown de sesiones sale vacío).
+                if (data["exit code"] === 0 && data.stdout) {
+                    try { root.sessions = JSON.parse(data.stdout) } catch (e) {}
+                }
+            } else if (source.indexOf("proyectos-alias.json") !== -1) {
+                // Fail-open: sin archivo / JSON roto -> mapa vacío (no hay alias activo).
+                var pm = {}
+                if (data["exit code"] === 0 && data.stdout) { try { pm = JSON.parse(data.stdout) || {} } catch (e) { pm = {} } }
+                root.projAliasMap = pm
+            } else if (source.indexOf("sesiones-alias.json") !== -1) {
+                var sm = {}
+                if (data["exit code"] === 0 && data.stdout) { try { sm = JSON.parse(data.stdout) || {} } catch (e) { sm = {} } }
+                root.sessAliasMap = sm
             } else {
                 if (data["exit code"] === 0 && data.stdout) {
                     try { root.snapshot = JSON.parse(data.stdout); root.snapshotError = "" }
@@ -53,6 +120,26 @@ PlasmoidItem {
         engine: "executable"
         connectedSources: []
         onNewData: function(source, data) { disconnectSource(source); reload() }
+    }
+
+    // Escritura de los mapas de alias (proyectos-alias.json / sesiones-alias.json). Reusa el engine
+    // "executable" (igual que catSource lee con `cat`). Al TERMINAR la escritura dispara forceRefresh()
+    // — así el refetch relee el archivo YA escrito (evita la carrera write-vs-refetch). Espeja el
+    // `writeMap` + `onRefresh()` de PopoverView.swift.
+    P5Support.DataSource {
+        id: writeAliasSource
+        engine: "executable"
+        connectedSources: []
+        onNewData: function(source, data) { disconnectSource(source); root.forceRefresh() }
+    }
+
+    // Lanzador de terminal para "resumir" una sesión de Claude Code (pestaña Proyectos). Corre el
+    // comando en la primera terminal disponible; fire-and-forget (disconnect al terminar).
+    P5Support.DataSource {
+        id: resumeSource
+        engine: "executable"
+        connectedSources: []
+        onNewData: function(source, data) { disconnectSource(source) }
     }
 
     // Lectura del estado real del cerebro (brain-scan.sh scan → JSON). Reusa el engine "executable"
@@ -159,9 +246,75 @@ PlasmoidItem {
     function reload() {
         catSource.connectSource("cat " + cacheDir + "/state.json")
         catSource.connectSource("cat " + cacheDir + "/stats.json")
+        // (e) Sync: fail-open (2>/dev/null) — ausente si el sync no está activo -> statsGlobal null.
+        catSource.connectSource("cat " + cacheDir + "/stats-global.json 2>/dev/null")
+        catSource.connectSource("cat " + cacheDir + "/chats.json")
+        catSource.connectSource("cat " + cacheDir + "/sessions.json")
+        // Mapas de alias (fail-open): para la lógica de "canónico" y "Restaurar original".
+        catSource.connectSource("cat \"" + aliasDir + "/proyectos-alias.json\" 2>/dev/null")
+        catSource.connectSource("cat \"" + aliasDir + "/sesiones-alias.json\" 2>/dev/null")
     }
     function forceRefresh() {
         refreshRunner.connectSource("systemctl --user start claude-quota.service")
+    }
+
+    // ---------- Renombrado por clic-secundario (espeja QuotaModel.swift) ----------
+    // Serializa un mapa {clave:valor} con LLAVES ORDENADAS + pretty (2 espacios) → diff limpio si el
+    // archivo se versiona/sincroniza. (JSON.stringify con array-replacer respeta el orden del array.)
+    function serializeAliasMap(map) {
+        var keys = Object.keys(map).sort()
+        return JSON.stringify(map, keys, 2)
+    }
+    // Escribe el mapa en <aliasDir>/<file> y, al terminar, refetch. Contenido single-quoted y escapado
+    // ('->'\'') para blindar cualquier carácter; `printf '%s'` NO interpreta % ni \ del argumento.
+    function writeAliasMap(file, map) {
+        var json = serializeAliasMap(map)
+        var esc = json.replace(/'/g, "'\\''")
+        var cmd = "mkdir -p \"" + aliasDir + "\" && printf '%s' '" + esc + "' > \"" + aliasDir + "/" + file + "\""
+        writeAliasSource.connectSource(cmd)
+    }
+    // (c) Proyecto: la lista muestra el nombre YA aliaseado. La llave canónica = la entrada cuyo VALOR
+    // == mostrado; si no hay, el mostrado ES el canónico. Nuevo vacío o == canónico → BORRA (revierte).
+    function renameProject(shown, newName) {
+        var map = {}; for (var k in projAliasMap) map[k] = projAliasMap[k]
+        var canonical = shown
+        for (var kk in map) if (map[kk] === shown) { canonical = kk; break }
+        var v = ("" + newName).trim()
+        if (v === "" || v === canonical) delete map[canonical]
+        else map[canonical] = v
+        projAliasMap = map
+        writeAliasMap("proyectos-alias.json", map)
+    }
+    // (d) Sesión: llave = id (estable). Vacío → borra (revierte a la etiqueta derivada del transcript).
+    function renameSession(id, newName) {
+        var map = {}; for (var k in sessAliasMap) map[k] = sessAliasMap[k]
+        var v = ("" + newName).trim()
+        if (v === "") delete map[id]
+        else map[id] = v
+        sessAliasMap = map
+        writeAliasMap("sesiones-alias.json", map)
+    }
+    // ¿El proyecto mostrado tiene alias activo? (es llave O valor del mapa) — para "Restaurar original".
+    function projectAliased(shown) {
+        if (projAliasMap[shown] !== undefined) return true
+        for (var k in projAliasMap) if (projAliasMap[k] === shown) return true
+        return false
+    }
+    function sessionAliased(id) { return sessAliasMap[id] !== undefined && sessAliasMap[id] !== null }
+
+    // Estado del diálogo de renombrado (compartido por proyecto y sesión).
+    property string renameKind: ""   // "project" | "session"
+    property string renameKey: ""    // (c) nombre mostrado del proyecto · (d) id de la sesión
+    function startRename(kind, key, current) {
+        renameKind = kind; renameKey = key
+        renameField.text = current
+        renameDialog.open()
+        renameField.selectAll(); renameField.forceActiveFocus()
+    }
+    function applyRenameFromDialog() {
+        if (renameKind === "project") renameProject(renameKey, renameField.text)
+        else if (renameKind === "session") renameSession(renameKey, renameField.text)
+        renameDialog.close()
     }
 
     // epoch ms del último forceRefresh disparado por un reset ya pasado (guard anti-bucle).
@@ -239,6 +392,13 @@ PlasmoidItem {
             if (stats.models[i].model === name) return modelPalette[i % modelPalette.length]
         return modelPalette[0]
     }
+    // Color por proyecto — mismo esquema que modelColorFor (índice en la lista → paleta).
+    function projectColorFor(name) {
+        if (!stats || !stats.projects) return modelPalette[0]
+        for (var i = 0; i < stats.projects.length; i++)
+            if (stats.projects[i].project === name) return modelPalette[i % modelPalette.length]
+        return modelPalette[0]
+    }
     function prettyModel(id) {
         if (!id) return "—"
         var parts = id.replace(/^claude-/, "").split("-")
@@ -288,6 +448,192 @@ PlasmoidItem {
         return m
     }
 
+    // La gráfica de PROYECTOS se normaliza con SU propio máximo (suma de proyectos por día), no con
+    // maxDayTokens: los tokens por-modelo (con caché) y por-proyecto (in+out crudos) se cuentan
+    // distinto, así que un día puede sumar más en proyectos que el max por-modelo -> desbordaría.
+    readonly property real maxDayProjectTokens: {
+        if (!stats || !stats.days || !stats.days.length) return 1
+        var m = 1
+        for (var i = 0; i < stats.days.length; i++) {
+            var ps = stats.days[i].projects, s = 0
+            if (ps) for (var j = 0; j < ps.length; j++) s += ps[j].tokens
+            m = Math.max(m, s)
+        }
+        return m
+    }
+
+    // ---------- Recompute por rango {hoy·7d·30d·∞} ----------
+    // Espeja rangeCutoff/rangedDays/rangedModels/rangedProjects/rangedChats/rangedSessionCount del
+    // PopoverView.swift. Cada readonly-property lee root.rangeIdx (+ stats/chats/sessions), así que se
+    // recalcula sola al cambiar el rango; las gráficas y tablas se enganchan a estas.
+
+    // Fecha de corte local "yyyy-MM-dd" = hoy − daysBack; "" si ∞ (sin recorte).
+    function rangeCutoff() {
+        var back = [0, 6, 29, -1][rangeIdx]
+        if (back < 0) return ""
+        var d = new Date(); d.setDate(d.getDate() - back)
+        return dayKey(d)
+    }
+
+    // Días de days[] dentro del rango (todos si ∞). Compara por prefijo de fecha (string).
+    // Lee de la fuente ACTIVA (local o combinada según el toggle (e)); todo lo que deriva de rDays
+    // —rModels/rProjects/rTokens/rMessages/rCost/rActiveDays/rMaxDay*— hereda esa fuente sin más cambios.
+    // (rSessionCount y rChats se quedan LOCALES a propósito.)
+    readonly property var rDays: {
+        var src = activeStats
+        if (!src || !src.days) return []
+        var cut = rangeCutoff()
+        if (cut === "") return src.days
+        var out = []
+        for (var i = 0; i < src.days.length; i++)
+            if ((src.days[i].date || "") >= cut) out.push(src.days[i])
+        return out
+    }
+
+    // Agrega in_tok/out_tok por clave (model/project) sobre los días del rango → filas
+    // {<nameKey>, in_tok, out_tok, tot, pct} ordenadas desc por total.
+    function aggBy(days, listKey, nameKey) {
+        var acc = {}, order = []
+        for (var i = 0; i < days.length; i++) {
+            var list = days[i][listKey]
+            if (!list) continue
+            for (var j = 0; j < list.length; j++) {
+                var k = list[j][nameKey] || "?"
+                if (!(k in acc)) { acc[k] = { inTok: 0, outTok: 0 }; order.push(k) }
+                acc[k].inTok += list[j].in_tok || 0
+                acc[k].outTok += list[j].out_tok || 0
+            }
+        }
+        var grand = 0
+        for (var m in acc) grand += acc[m].inTok + acc[m].outTok
+        var rows = []
+        for (var n = 0; n < order.length; n++) {
+            var kk = order[n], tot = acc[kk].inTok + acc[kk].outTok
+            var row = { in_tok: acc[kk].inTok, out_tok: acc[kk].outTok, tot: tot,
+                        pct: grand > 0 ? tot * 100 / grand : 0 }
+            row[nameKey] = kk
+            rows.push(row)
+        }
+        rows.sort(function(a, b) { return b.tot - a.tot })
+        return rows
+    }
+    readonly property var rModels:   aggBy(rDays, "models", "model")
+    readonly property var rProjects: aggBy(rDays, "projects", "project")
+
+    // Máximos por-día del rango (para reescalar las gráficas apiladas): total-por-día (modelos) y
+    // suma-de-proyectos-por-día (proyectos), igual que maxDayTokens / maxDayProjectTokens all-time.
+    readonly property real rMaxDayTokens: {
+        var m = 1
+        for (var i = 0; i < rDays.length; i++) m = Math.max(m, rDays[i].tokens || 0)
+        return m
+    }
+    readonly property real rMaxDayProjectTokens: {
+        var m = 1
+        for (var i = 0; i < rDays.length; i++) {
+            var ps = rDays[i].projects, s = 0
+            if (ps) for (var j = 0; j < ps.length; j++) s += ps[j].tokens || 0
+            m = Math.max(m, s)
+        }
+        return m
+    }
+
+    // Agregados del Resumen recalculados sobre los días del rango (a ∞ = summary all-time).
+    readonly property real rTokens:   { var s = 0; for (var i = 0; i < rDays.length; i++) s += rDays[i].tokens   || 0; return s }
+    readonly property real rMessages: { var s = 0; for (var i = 0; i < rDays.length; i++) s += rDays[i].messages || 0; return s }
+    readonly property real rCost:     { var s = 0; for (var i = 0; i < rDays.length; i++) s += rDays[i].cost     || 0; return s }
+    readonly property int  rActiveDays: { var n = 0; for (var i = 0; i < rDays.length; i++) if ((rDays[i].tokens || 0) > 0) n++; return n }
+
+    // Chats dentro del rango (por updated_at, fallback created_at). Sesiones: conteo dentro del rango.
+    readonly property var rChats: {
+        if (!chats) return []
+        var cut = rangeCutoff()
+        if (cut === "") return chats
+        var out = []
+        for (var i = 0; i < chats.length; i++) {
+            var d = ("" + (chats[i].updated_at || chats[i].created_at || "")).substring(0, 10)
+            if (d >= cut) out.push(chats[i])
+        }
+        return out
+    }
+    readonly property int rSessionCount: {
+        if (!sessions) return 0
+        var cut = rangeCutoff()
+        if (cut === "") return sessions.length
+        var n = 0
+        for (var i = 0; i < sessions.length; i++)
+            if (("" + (sessions[i].updated_at || "")).substring(0, 10) >= cut) n++
+        return n
+    }
+
+    // Desglose de chats por modelo (conteo + % del total), ordenado desc. Espeja chatsByModel del Swift.
+    function chatsByModel(cs) {
+        var total = cs.length
+        if (total === 0) return []
+        var counts = {}, order = []
+        for (var i = 0; i < cs.length; i++) {
+            var k = cs[i].model || "?"
+            if (!(k in counts)) { counts[k] = 0; order.push(k) }
+            counts[k]++
+        }
+        var rows = []
+        for (var n = 0; n < order.length; n++)
+            rows.push({ model: order[n], count: counts[order[n]], pct: counts[order[n]] * 100 / total })
+        rows.sort(function(a, b) { return b.count - a.count })
+        return rows
+    }
+
+    // Sesiones de un proyecto (sessions.json ya viene ordenado por updated_at desc): las más recientes,
+    // máx 12; y su conteo (para saber si la fila es expandible). Espeja sessionsList/projectRow del Swift.
+    function sessionsForProject(name) {
+        if (!sessions) return []
+        var out = []
+        for (var i = 0; i < sessions.length && out.length < 12; i++)
+            if (sessions[i].project === name) out.push(sessions[i])
+        return out
+    }
+    function sessionCountForProject(name) {
+        if (!sessions) return 0
+        var n = 0
+        for (var i = 0; i < sessions.length; i++) if (sessions[i].project === name) n++
+        return n
+    }
+
+    // Fecha relativa (granularidad de día) desde el prefijo YYYY-MM-DD de un ISO. Espeja relDate del Swift.
+    function relDate(iso) {
+        if (!iso || ("" + iso).length < 10) return ""
+        var d = Date.parse(("" + iso).substring(0, 10) + "T00:00:00Z")
+        if (isNaN(d)) return ""
+        var days = Math.floor((Date.now() - d) / 86400000)
+        if (days <= 0) return "hoy"
+        if (days === 1) return "ayer"
+        if (days < 7)  return "hace " + days + "d"
+        if (days < 30) return "hace " + Math.floor(days / 7) + "sem"
+        return "hace " + Math.floor(days / 30) + "mes"
+    }
+
+    // Alpha sobre un color en string (#RRGGBB de la paleta) → color con transparencia (badges de modelo).
+    function withAlpha(colStr, a) {
+        var c = Qt.color(colStr)
+        return Qt.rgba(c.r, c.g, c.b, a)
+    }
+
+    // Escapado POSIX de un token para pasarlo entre comillas simples a la shell (cwd/id de sesión).
+    function shq(s) { return "'" + ("" + s).replace(/'/g, "'\\''") + "'" }
+
+    // "Resumir" una sesión: abre una terminal en su cwd y corre `claude --resume <id>`. En Linux no hay
+    // un lanzador único como el osascript de macOS, así que se intenta en cascada: konsole (KDE) →
+    // x-terminal-emulator (default de Debian/Ubuntu) → gnome-terminal → xterm. `; exec bash` deja la
+    // terminal abierta al terminar. cwd/id van entre comillas simples (shq) para no romper con espacios.
+    function resumeSession(cwd, id) {
+        var inner = "cd " + shq(cwd) + " && claude --resume " + shq(id) + "; exec bash"
+        var arg = shq(inner)   // vuelve a escapar: inner ya trae comillas simples
+        var cmd = "konsole -e bash -lc " + arg
+                + " || x-terminal-emulator -e bash -lc " + arg
+                + " || gnome-terminal -- bash -lc " + arg
+                + " || xterm -e bash -lc " + arg
+        resumeSource.connectSource(cmd)
+    }
+
     // ---------- Pestaña Cerebro: ESTRUCTURA curada + ESTADO real ----------
     // La ESTRUCTURA (qué piezas hay, su explicación, su evento y detalle) es curada y espeja el
     // BrainItem de PopoverView.swift; el ESTADO de instalación de cada pieza se LEE de la realidad
@@ -295,8 +641,8 @@ PlasmoidItem {
     // De más duro (arriba) a más leve (abajo).
     readonly property var brainTiers: [
         {
-            emoji: "🔒", title: "INVIOLABLE", color: "#dc3545",
-            subtitle: "hooks que BLOQUEAN (deny) — no negociables",
+            emoji: "🔒", title: "Hooks Forzosos", color: "#cf5a49",
+            subtitle: "hooks que bloquean (deny) — no negociables",
             items: [
                 { emoji: "🚧", name: "git-branch-guard",       desc: "push/merge a develop·main → denegado, te redirige a ramita→MR",
                   event: "PreToolUse · Bash",
@@ -322,7 +668,7 @@ PlasmoidItem {
             ]
         },
         {
-            emoji: "🔔", title: "AUTOMÁTICO", color: "#e8884a",
+            emoji: "🔔", title: "Automático", color: "#e8884a",
             subtitle: "hooks que inyectan / recuerdan — no bloquean",
             items: [
                 { emoji: "🧭", name: "sesion-inicio",             desc: "al abrir/retomar reinyecta rama + norma de git + orden de leer memoria",
@@ -343,7 +689,7 @@ PlasmoidItem {
             ]
         },
         {
-            emoji: "📜", title: "NORMAS", color: "#4a90d9",
+            emoji: "📜", title: "Normas", color: "#4a90d9",
             subtitle: "reglas que Claude se autoimpone (CLAUDE.md)",
             items: [
                 { emoji: "🎯", name: "Definition of Done",    desc: "verde técnico ≠ Done/Listo/Ya Quedó; exige QA o un OK explícito",
@@ -361,7 +707,7 @@ PlasmoidItem {
             ]
         },
         {
-            emoji: "💡", title: "SKILLS", color: "#3aa76d",
+            emoji: "💡", title: "Skills", color: "#3aa76d",
             subtitle: "herramientas opt-in — las invocas tú",
             items: [
                 { emoji: "📦", name: "cerrar-slice", desc: "build+tests+memoria al día + MR con resumen curado por slice",
@@ -598,6 +944,42 @@ PlasmoidItem {
         Layout.preferredHeight: Kirigami.Units.gridUnit * 17
         spacing: 0
 
+        // Diálogo de renombrado (compartido por proyecto y sesión). Se abre desde el menú de
+        // clic-secundario vía root.startRename(...). Vacío → "Restaurar original" (borra el alias).
+        Kirigami.PromptDialog {
+            id: renameDialog
+            title: root.renameKind === "session" ? "Renombrar sesión" : "Renombrar proyecto"
+            subtitle: root.renameKind === "session"
+                ? "Nueva etiqueta para esta sesión. Vacío para restaurar la original."
+                : "Nuevo nombre para este proyecto. Vacío para restaurar el original."
+            standardButtons: QQC2.Dialog.NoButton
+            customFooterActions: [
+                Kirigami.Action {
+                    text: "Guardar"
+                    icon.name: "dialog-ok-apply"
+                    onTriggered: root.applyRenameFromDialog()
+                },
+                Kirigami.Action {
+                    text: "Restaurar original"
+                    icon.name: "edit-undo"
+                    visible: root.renameKind === "session"
+                        ? root.sessionAliased(root.renameKey)
+                        : root.projectAliased(root.renameKey)
+                    onTriggered: { renameField.text = ""; root.applyRenameFromDialog() }
+                },
+                Kirigami.Action {
+                    text: "Cancelar"
+                    icon.name: "dialog-cancel"
+                    onTriggered: renameDialog.close()
+                }
+            ]
+            PC3.TextField {
+                id: renameField
+                Layout.fillWidth: true
+                onAccepted: root.applyRenameFromDialog()
+            }
+        }
+
         // riel vertical de pestañas
         ColumnLayout {
             Layout.fillHeight: true
@@ -607,8 +989,12 @@ PlasmoidItem {
             TabRailButton { idx: 0; icon: "speedometer";        label: "Límites" }
             TabRailButton { idx: 1; icon: "view-statistics";    label: "Resumen" }
             TabRailButton { idx: 2; icon: "office-chart-bar";   label: "Modelos" }
+            TabRailButton { idx: 3; icon: "folder";             label: "Proyectos" }
+            // Chats: solo si hay conversaciones locales (espeja `if !model.chats.isEmpty` del riel macOS).
+            // Sin ícono de chat fiable en Breeze → emoji 💬 como glifo, igual que 🧠 para Cerebro.
+            TabRailButton { idx: 4; emoji: "💬";                label: "Chats"; visible: root.chats && root.chats.length > 0 }
             // Sin ícono "cerebro" nativo bueno en Breeze → emoji 🧠 como glifo del riel.
-            TabRailButton { idx: 3; emoji: "🧠";                label: "Cerebro" }
+            TabRailButton { idx: 5; emoji: "🧠";                label: "Cerebro" }
             Item { Layout.fillHeight: true }
             PC3.ToolButton {
                 icon.name: "view-refresh"; flat: true
@@ -684,15 +1070,18 @@ PlasmoidItem {
                 Kirigami.Heading { level: 3; text: "Resumen"; Layout.fillWidth: true }
                 GridLayout {
                     Layout.fillWidth: true; columns: 3; rowSpacing: Kirigami.Units.smallSpacing; columnSpacing: Kirigami.Units.smallSpacing
-                    StatCard { label: "Sesiones";        value: root.stats ? root.fmtInt(root.stats.summary.sessions) : "—" }
-                    StatCard { label: "Mensajes";        value: root.stats ? root.fmtInt(root.stats.summary.messages) : "—" }
-                    StatCard { label: "Tokens totales";  value: root.stats ? root.fmtTok(root.stats.summary.total_tokens) : "—" }
-                    StatCard { label: "Días activos";    value: root.stats ? "" + root.stats.summary.active_days : "—" }
+                    // Recalculadas sobre los días del rango (a ∞ coinciden con summary). Sesiones a ∞ =
+                    // summary.sessions (conteo exacto); en rango = sessions.json con updated_at en rango.
+                    // Racha/Hora pico se quedan all-time. Espeja resumenTab de PopoverView.swift.
+                    StatCard { label: "Sesiones";        value: root.stats ? (root.rangeIdx === 3 ? root.fmtInt(root.stats.summary.sessions) : ("" + root.rSessionCount)) : "—" }
+                    StatCard { label: "Mensajes";        value: root.stats ? root.fmtInt(root.rMessages) : "—" }
+                    StatCard { label: "Tokens totales";  value: root.stats ? root.fmtTok(root.rTokens) : "—" }
+                    StatCard { label: "Días activos";    value: root.stats ? "" + root.rActiveDays : "—" }
                     StatCard { label: "Racha actual";    value: root.currentStreak + "d" }
                     StatCard { label: "Racha más larga"; value: root.longestStreak + "d" }
                     StatCard { label: "Hora pico";       value: root.stats ? root.fmtHour(root.stats.summary.peak_hour) : "—" }
-                    StatCard { label: "Modelo favorito"; value: root.stats ? root.prettyModel(root.stats.summary.favorite_model) : "—" }
-                    StatCard { label: "Costo API-equiv"; value: root.stats ? "$" + root.stats.summary.total_cost.toFixed(0) : "—" }
+                    StatCard { label: "Modelo favorito"; value: root.stats ? (root.rModels.length ? root.prettyModel(root.rModels[0].model) : "—") : "—" }
+                    StatCard { label: "Costo API-equiv"; value: root.stats ? "$" + root.rCost.toFixed(0) : "—" }
                 }
                 PC3.Label { text: "Actividad diaria (local)"; opacity: 0.6; font.pointSize: Kirigami.Theme.smallFont.pointSize }
                 // heatmap tipo GitHub
@@ -714,6 +1103,8 @@ PlasmoidItem {
                         }
                     }
                 }
+                // El heatmap se queda all-time (histórico completo); el footer solo recorta las tarjetas.
+                RangeFooter { machineToggle: true }
             }
 
             // ===== Tab 2: Modelos =====
@@ -727,7 +1118,7 @@ PlasmoidItem {
                     RowLayout {
                         anchors.fill: parent; spacing: 2
                         Repeater {
-                            model: root.stats ? root.stats.days : []
+                            model: root.rDays
                             delegate: Item {
                                 Layout.fillWidth: true; Layout.fillHeight: true
                                 property var day: modelData
@@ -738,7 +1129,7 @@ PlasmoidItem {
                                         model: day.models
                                         delegate: Rectangle {
                                             Layout.fillWidth: true
-                                            Layout.preferredHeight: chartArea.height * (modelData.tokens / root.maxDayTokens)
+                                            Layout.preferredHeight: chartArea.height * (modelData.tokens / root.rMaxDayTokens)
                                             color: root.modelColorFor(modelData.model)
                                         }
                                     }
@@ -758,7 +1149,7 @@ PlasmoidItem {
                         width: modelsScroll.availableWidth
                         spacing: Kirigami.Units.smallSpacing
                         Repeater {
-                            model: root.stats ? root.stats.models : []
+                            model: root.rModels
                             delegate: RowLayout {
                                 Layout.fillWidth: true; spacing: Kirigami.Units.smallSpacing
                                 Rectangle { width: 10; height: 10; radius: 2; color: root.modelColorFor(modelData.model) }
@@ -777,9 +1168,299 @@ PlasmoidItem {
                         }
                     }
                 }
+                RangeFooter { machineToggle: true }
             }
 
-            // ===== Tab 3: Cerebro (VIVO) =====
+            // ===== Tab 3: Proyectos =====
+            // Uso de Claude Code por carpeta de proyecto (subconjunto de Modelos). Espeja el
+            // proyectosTab del Swift / PaintProyectos de Windows: gráfica apilada por día + lista.
+            ColumnLayout {
+                spacing: Kirigami.Units.largeSpacing
+                Kirigami.Heading { level: 3; text: "Uso por proyecto"; Layout.fillWidth: true }
+                // gráfico de barras apiladas por día (mismo eje que Modelos: normalizado por maxDayTokens)
+                Item {
+                    id: projChartArea
+                    Layout.fillWidth: true; Layout.preferredHeight: Kirigami.Units.gridUnit * 7
+                    RowLayout {
+                        anchors.fill: parent; spacing: 2
+                        Repeater {
+                            model: root.rDays
+                            delegate: Item {
+                                Layout.fillWidth: true; Layout.fillHeight: true
+                                property var day: modelData
+                                ColumnLayout {
+                                    anchors.bottom: parent.bottom; anchors.left: parent.left; anchors.right: parent.right
+                                    spacing: 0
+                                    Repeater {
+                                        model: day.projects
+                                        delegate: Rectangle {
+                                            Layout.fillWidth: true
+                                            Layout.preferredHeight: projChartArea.height * (modelData.tokens / root.rMaxDayProjectTokens)
+                                            color: root.projectColorFor(modelData.project)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // tabla de proyectos — scrolleable (muchos proyectos → scroll interno, popup estable)
+                PC3.ScrollView {
+                    id: projScroll
+                    Layout.fillWidth: true; Layout.fillHeight: true
+                    contentWidth: availableWidth   // sin scroll horizontal
+                    clip: true
+                    ColumnLayout {
+                        width: projScroll.availableWidth
+                        spacing: Kirigami.Units.smallSpacing
+                        Repeater {
+                            model: root.rProjects
+                            // Fila de proyecto: swatch + nombre (+ chevron si tiene sesiones) + in/out + %.
+                            // Si tiene sesiones de Claude Code, es expandible → lista sus sesiones (máx 12);
+                            // click en una lanza una terminal con `claude --resume`. Espeja projectRow/sessionsList.
+                            delegate: ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+                                readonly property string projName: modelData.project ? modelData.project : "—"
+                                readonly property int nSess: root.sessionCountForProject(projName)
+                                readonly property bool expanded: root.expandedProject === projName
+
+                                MouseArea {
+                                    Layout.fillWidth: true
+                                    implicitHeight: prow.implicitHeight
+                                    hoverEnabled: true
+                                    acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                    cursorShape: nSess > 0 ? Qt.PointingHandCursor : Qt.ArrowCursor
+                                    onClicked: function(mouse) {
+                                        if (mouse.button === Qt.RightButton) projMenu.popup()
+                                        else if (nSess > 0) root.expandedProject = expanded ? "" : projName
+                                    }
+                                    // Clic-secundario → renombrar el proyecto (y restaurar si tiene alias).
+                                    QQC2.Menu {
+                                        id: projMenu
+                                        QQC2.MenuItem {
+                                            text: "Renombrar…"
+                                            onTriggered: root.startRename("project", projName, projName)
+                                        }
+                                        QQC2.MenuItem {
+                                            text: "Restaurar original"
+                                            visible: root.projectAliased(projName)
+                                            height: visible ? implicitHeight : 0
+                                            onTriggered: root.renameProject(projName, "")
+                                        }
+                                    }
+                                    RowLayout {
+                                        id: prow
+                                        anchors.left: parent.left; anchors.right: parent.right
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        spacing: Kirigami.Units.smallSpacing
+                                        Rectangle { width: 10; height: 10; radius: 2; color: root.projectColorFor(modelData.project) }
+                                        PC3.Label {
+                                            text: projName; font.bold: true
+                                            elide: Text.ElideRight; Layout.maximumWidth: Kirigami.Units.gridUnit * 8
+                                        }
+                                        PC3.Label {
+                                            visible: nSess > 0
+                                            text: expanded ? "▾" : "▸"; opacity: 0.5
+                                            font.pointSize: Kirigami.Theme.smallFont.pointSize
+                                        }
+                                        Item { Layout.fillWidth: true }
+                                        PC3.Label {
+                                            opacity: 0.7
+                                            text: root.fmtTok(modelData.in_tok) + " in · " + root.fmtTok(modelData.out_tok) + " out"
+                                        }
+                                        PC3.Label {
+                                            text: modelData.pct.toFixed(1) + "%"; font.bold: true
+                                            color: root.projectColorFor(modelData.project)
+                                            Layout.minimumWidth: Kirigami.Units.gridUnit * 2.5; horizontalAlignment: Text.AlignRight
+                                        }
+                                    }
+                                }
+                                // Sesiones del proyecto (al desplegar): cada una resume en su cwd.
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    Layout.leftMargin: Kirigami.Units.gridUnit
+                                    visible: expanded
+                                    spacing: 2
+                                    Repeater {
+                                        model: expanded ? root.sessionsForProject(projName) : []
+                                        delegate: MouseArea {
+                                            Layout.fillWidth: true
+                                            implicitHeight: srow.implicitHeight
+                                            hoverEnabled: true
+                                            acceptedButtons: Qt.LeftButton | Qt.RightButton
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: function(mouse) {
+                                                if (mouse.button === Qt.RightButton) sessMenu.popup()
+                                                else root.resumeSession(modelData.cwd, modelData.id)
+                                            }
+                                            PC3.ToolTip.text: "Resumir en " + modelData.cwd
+                                            PC3.ToolTip.visible: containsMouse
+                                            PC3.ToolTip.delay: 500
+                                            // Clic-secundario → renombrar la sesión (llave = id estable).
+                                            QQC2.Menu {
+                                                id: sessMenu
+                                                QQC2.MenuItem {
+                                                    text: "Renombrar…"
+                                                    onTriggered: root.startRename("session", modelData.id, modelData.label ? modelData.label : "")
+                                                }
+                                                QQC2.MenuItem {
+                                                    text: "Restaurar original"
+                                                    visible: root.sessionAliased(modelData.id)
+                                                    height: visible ? implicitHeight : 0
+                                                    onTriggered: root.renameSession(modelData.id, "")
+                                                }
+                                            }
+                                            RowLayout {
+                                                id: srow
+                                                anchors.left: parent.left; anchors.right: parent.right
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                spacing: Kirigami.Units.smallSpacing
+                                                PC3.Label { text: "↺"; color: "#e8884a" }
+                                                PC3.Label {
+                                                    text: modelData.label ? modelData.label : "(sesión)"
+                                                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                                                    elide: Text.ElideRight; Layout.fillWidth: true
+                                                }
+                                                PC3.Label {
+                                                    text: root.relDate(modelData.updated_at)
+                                                    opacity: 0.5; font.pointSize: Kirigami.Theme.smallFont.pointSize * 0.9
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                RangeFooter { machineToggle: true }
+            }
+
+            // ===== Tab 4: Chats =====
+            // Conversaciones recientes del app de escritorio (chats.json, leído sin red ni cookies).
+            // READ-ONLY (sin abrir el chat: no hay deep-link fiable). Desglose por modelo + lista de
+            // recientes + pie con el resumen del chat bajo el cursor. Espeja chatsTab de PopoverView.swift.
+            // El riel solo muestra esta pestaña si hay chats (ver TabRailButton idx 4).
+            ColumnLayout {
+                spacing: Kirigami.Units.largeSpacing
+                Kirigami.Heading { level: 3; text: "Chats"; Layout.fillWidth: true }
+
+                PC3.Label {
+                    visible: root.rChats.length === 0
+                    Layout.fillWidth: true; opacity: 0.6; wrapMode: Text.WordWrap
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    text: root.rangeIdx === 3
+                          ? "Sin conversaciones locales.\nAbre el app de escritorio de Claude y espera al próximo refresco."
+                          : "Sin conversaciones en este rango."
+                }
+
+                // Desglose por modelo (swatch + modelo + conteo + %).
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    visible: root.rChats.length > 0
+                    spacing: Kirigami.Units.smallSpacing
+                    Repeater {
+                        model: root.chatsByModel(root.rChats)
+                        delegate: RowLayout {
+                            Layout.fillWidth: true; spacing: Kirigami.Units.smallSpacing
+                            Rectangle { width: 10; height: 10; radius: 2; color: root.modelColorFor(modelData.model) }
+                            PC3.Label { text: root.prettyModel(modelData.model); font.bold: true }
+                            Item { Layout.fillWidth: true }
+                            PC3.Label { opacity: 0.7; text: "" + modelData.count }
+                            PC3.Label {
+                                text: modelData.pct.toFixed(0) + "%"; font.bold: true
+                                color: root.modelColorFor(modelData.model)
+                                Layout.minimumWidth: Kirigami.Units.gridUnit * 2.5; horizontalAlignment: Text.AlignRight
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    visible: root.rChats.length > 0
+                    Layout.fillWidth: true; Layout.preferredHeight: 1
+                    color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.12)
+                }
+                PC3.Label {
+                    visible: root.rChats.length > 0
+                    text: "recientes"; opacity: 0.5; font.pointSize: Kirigami.Theme.smallFont.pointSize
+                }
+
+                // Lista de recientes (título + badge de modelo + fecha relativa). Hover → resumen en el pie.
+                PC3.ScrollView {
+                    id: chatsScroll
+                    visible: root.rChats.length > 0
+                    Layout.fillWidth: true; Layout.fillHeight: true
+                    contentWidth: availableWidth   // sin scroll horizontal
+                    clip: true
+                    ColumnLayout {
+                        width: chatsScroll.availableWidth
+                        spacing: Kirigami.Units.smallSpacing
+                        Repeater {
+                            model: root.rChats.slice(0, 20)
+                            delegate: MouseArea {
+                                Layout.fillWidth: true
+                                implicitHeight: crow.implicitHeight
+                                hoverEnabled: true
+                                onEntered: root.hoveredChatSummary = modelData.summary ? modelData.summary : ""
+                                onExited: root.hoveredChatSummary = ""
+                                RowLayout {
+                                    id: crow
+                                    anchors.left: parent.left; anchors.right: parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    spacing: Kirigami.Units.smallSpacing
+                                    PC3.Label {
+                                        text: modelData.title ? modelData.title : "(sin título)"
+                                        elide: Text.ElideRight; Layout.fillWidth: true
+                                    }
+                                    Rectangle {   // badge de modelo (cápsula tenue en el color del modelo)
+                                        visible: !!modelData.model
+                                        radius: height / 2
+                                        implicitHeight: badgeLbl.implicitHeight + 2
+                                        implicitWidth: badgeLbl.implicitWidth + Kirigami.Units.smallSpacing * 2
+                                        color: root.withAlpha(root.modelColorFor(modelData.model), 0.22)
+                                        PC3.Label {
+                                            id: badgeLbl
+                                            anchors.centerIn: parent
+                                            text: root.prettyModel(modelData.model)
+                                            color: root.modelColorFor(modelData.model)
+                                            font.bold: true; font.pointSize: Kirigami.Theme.smallFont.pointSize * 0.9
+                                        }
+                                    }
+                                    PC3.Label {
+                                        text: root.relDate(modelData.updated_at ? modelData.updated_at : modelData.created_at)
+                                        opacity: 0.6; font.pointSize: Kirigami.Theme.smallFont.pointSize
+                                        Layout.minimumWidth: Kirigami.Units.gridUnit * 3; horizontalAlignment: Text.AlignRight
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Pie: resumen del chat bajo el cursor (hover).
+                Rectangle {
+                    visible: root.rChats.length > 0
+                    Layout.fillWidth: true; Layout.preferredHeight: 1
+                    color: Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.12)
+                }
+                PC3.Label {
+                    visible: root.rChats.length > 0
+                    Layout.fillWidth: true; Layout.minimumHeight: Kirigami.Units.gridUnit * 3
+                    wrapMode: Text.WordWrap; maximumLineCount: 4; elide: Text.ElideRight
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    opacity: root.hoveredChatSummary === "" ? 0.4 : 0.75
+                    text: root.hoveredChatSummary === "" ? "Pasa el cursor sobre un chat para ver su resumen." : root.hoveredChatSummary
+                }
+
+                // Cuando la lista está vacía, empuja el footer al fondo (la ScrollView invisible no llena).
+                Item { Layout.fillHeight: true; visible: root.rChats.length === 0 }
+
+                RangeFooter {}
+            }
+
+            // ===== Tab 5: Cerebro (VIVO) =====
             // Infografía del cerebro global de Claude Code: la ESTRUCTURA es curada (refleja `brain/`),
             // pero el ESTADO de cada pieza se LEE de la realidad (~/.claude vía brain-scan.sh) y se pinta
             // con un punto de estado por hoja + un recuadro de salud arriba. Cada hoja es clickeable
@@ -949,6 +1630,83 @@ PlasmoidItem {
             Item { Layout.fillWidth: true }
         }
         MouseArea { id: mouse; anchors.fill: parent; hoverEnabled: true; onClicked: root.currentTab = idx }
+    }
+
+    // Footer con las 4 píldoras de rango {hoy·7d·30d·∞} al PIE de Resumen/Modelos/Proyectos/Chats.
+    // La activa va en acento (#e8884a @20% de fondo); las demás tenues. Espeja rangeFooter del Swift.
+    // Si `machineToggle` y hay vista sincronizada (e), agrega a la derecha el par 🖥 esta / ☁️ todas.
+    component RangeFooter: RowLayout {
+        // Muestra el par de píldoras 🖥/☁️ a la derecha (solo Resumen/Modelos/Proyectos, NO Chats).
+        property bool machineToggle: false
+        Layout.fillWidth: true
+        Layout.topMargin: 2
+        spacing: Kirigami.Units.smallSpacing
+        Repeater {
+            model: root.rangeLabels
+            delegate: Rectangle {
+                readonly property bool active: root.rangeIdx === index
+                radius: Kirigami.Units.smallSpacing
+                implicitHeight: pillLbl.implicitHeight + Kirigami.Units.smallSpacing
+                implicitWidth: pillLbl.implicitWidth + Kirigami.Units.largeSpacing
+                color: active ? Qt.rgba(0.91, 0.53, 0.29, 0.20)   // #e8884a @ 20%
+                              : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.06)
+                PC3.Label {
+                    id: pillLbl
+                    anchors.centerIn: parent
+                    text: modelData
+                    font.bold: active
+                    color: active ? "#e8884a" : Kirigami.Theme.textColor
+                    opacity: active ? 1.0 : 0.7
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                }
+                MouseArea {
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.rangeIdx = index
+                }
+            }
+        }
+        Item { Layout.fillWidth: true }
+        // (e) Par 🖥 esta máquina / ☁️ todas. Solo si se pidió el toggle Y hay stats-global.json con
+        // datos. Mismo estilo que las píldoras de rango (activa en acento @20%). Espeja `machinePills`.
+        RowLayout {
+            spacing: Kirigami.Units.smallSpacing
+            visible: machineToggle && root.hasGlobal
+            Repeater {
+                // 0 = 🖥 esta máquina (useGlobal=false); 1 = ☁️ todas (useGlobal=true, con conteo si >1).
+                model: 2
+                delegate: Rectangle {
+                    readonly property bool global: index === 1
+                    readonly property bool on: root.useGlobal === global
+                    radius: Kirigami.Units.smallSpacing
+                    implicitHeight: mpLbl.implicitHeight + Kirigami.Units.smallSpacing
+                    implicitWidth: mpLbl.implicitWidth + Kirigami.Units.largeSpacing
+                    color: on ? Qt.rgba(0.91, 0.53, 0.29, 0.20)   // #e8884a @ 20%
+                              : Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.06)
+                    PC3.Label {
+                        id: mpLbl
+                        anchors.centerIn: parent
+                        text: global ? ("☁️" + (root.globalMachineCount > 1 ? " " + root.globalMachineCount : ""))
+                                     : "🖥"
+                        font.bold: on
+                        color: on ? "#e8884a" : Kirigami.Theme.textColor
+                        opacity: on ? 1.0 : 0.7
+                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    }
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.useGlobal = global
+                        PC3.ToolTip.text: root.useGlobal ? "Mostrando el uso combinado de todas tus máquinas (sync)"
+                                                         : "Mostrando solo esta máquina"
+                        PC3.ToolTip.visible: containsMouse
+                        PC3.ToolTip.delay: 500
+                    }
+                }
+            }
+        }
     }
 
     // Recuadro de SALUD del cerebro global, de cara al usuario BINARIO (espeja brainHealth del Swift):

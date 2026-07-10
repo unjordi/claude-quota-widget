@@ -76,6 +76,12 @@ echo "==> Installing fetch script -> $FETCH_DEST"
 install -d "$(dirname "$FETCH_DEST")"
 install -m 0755 "$FETCH_SRC" "$FETCH_DEST"
 
+# chats-extract.js / sessions-extract.js junto al fetch (el fetch los corre con node -> chats.json / sessions.json).
+CHATS_SRC="$ROOT/../bin/chats-extract.js"
+[[ -f "$CHATS_SRC" ]] && install -m 0755 "$CHATS_SRC" "$(dirname "$FETCH_DEST")/chats-extract.js"
+SESSIONS_SRC="$ROOT/../bin/sessions-extract.js"
+[[ -f "$SESSIONS_SRC" ]] && install -m 0755 "$SESSIONS_SRC" "$(dirname "$FETCH_DEST")/sessions-extract.js"
+
 if [[ ! -f "$LIMITS_DEFAULT" ]]; then
   echo "==> Seeding default limits at $LIMITS_DEFAULT"
   install -d "$(dirname "$LIMITS_DEFAULT")"
@@ -98,6 +104,11 @@ FIVE_HOUR_CAP_USD=45
 WEEKLY_CAP_USD=4800
 WARN_PCT=60
 CRIT_PCT=85
+
+# (e) Sync entre máquinas (opt-in): comparte un snapshot de uso vía una carpeta que tu nube ya
+# replica, y el widget muestra un toggle "esta máquina / todas". "auto" autodetecta Google Drive;
+# o pon una ruta explícita. Ausente/vacío = off (100% local, no sube nada).
+# SYNC_DIR=auto
 EOF
 fi
 
@@ -141,7 +152,7 @@ The Claude-Code brain is installed globally (hooks + delegation-cost governance 
 Next steps:
   - Look for the colored % pill in your menu bar (top-right). Click it for the breakdown.
   - Tune caps in: $LIMITS_DEFAULT
-  - To launch at login: System Settings -> General -> Login Items -> add "Claude Quota".
+  - To launch at login: System Settings -> General -> Login Items -> add "Claude Brain Widget".
 
 Debug:
   launchctl print gui/$(id -u)/$LABEL | grep -E 'state|last exit'

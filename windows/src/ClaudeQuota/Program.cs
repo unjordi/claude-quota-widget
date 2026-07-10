@@ -17,8 +17,8 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
-        // Dev/verify hook: `--shot <dir>` fetches once, renders the three popup
-        // tabs to PNGs in <dir>, and exits. Lets the UI be checked headlessly.
+        // Dev/verify hook: `--shot <dir>` fetches once, renders every popup tab
+        // to PNGs in <dir>, and exits. Lets the UI be checked headlessly.
         var shot = args.FirstOrDefault(a => a.StartsWith("--shot"));
         if (shot != null)
         {
@@ -46,7 +46,7 @@ internal static class Program
         popup.Location = new Point(0, 0);
         popup.Show();
         Application.DoEvents();
-        string[] names = { "limites", "resumen", "modelos", "proyectos", "cerebro" };
+        string[] names = { "limites", "resumen", "modelos", "proyectos", "chats", "cerebro" };
         for (int t = 0; t < names.Length; t++)
         {
             popup.SelectTab(t);
@@ -98,7 +98,7 @@ internal static class Program
             _tray = new NotifyIcon
             {
                 Visible = true,
-                Text = "Claude Quota",
+                Text = "Claude Brain Widget",
                 ContextMenuStrip = BuildMenu(),
             };
             _tray.MouseClick += OnTrayClick;

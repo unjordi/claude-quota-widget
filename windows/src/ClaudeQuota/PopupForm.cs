@@ -9,9 +9,11 @@ namespace ClaudeQuota;
 /// <summary>
 /// The click-to-open breakdown, a borderless transient form. Mirrors the
 /// plasmoid's fullRepresentation and the mac popover: a vertical tab rail on the
-/// left (Límites / Resumen / Modelos / Proyectos / Cerebro), a 1px separator, and
-/// the tab content on the right. Everything is owner-drawn with GDI+ so it stays a
-/// single control tree and honors the FelixDes look (orange accent, red past 90%).
+/// left (Límites / Resumen / Modelos / Proyectos / Chats / Cerebro — Chats hidden
+/// when there are no local chats), a 1px separator, and the tab content on the
+/// right. Resumen/Modelos/Proyectos/Chats carry a {hoy·7d·30d·∞} range footer.
+/// Everything is owner-drawn with GDI+ so it stays a single control tree and
+/// honors the FelixDes look (orange accent, red past 90%).
 /// </summary>
 public sealed class PopupForm : Form
 {
@@ -19,6 +21,41 @@ public sealed class PopupForm : Form
     private readonly Action _onRefresh;
     private int _tab;
     private int _hoverRail = -1;
+
+    // Filtro de rango {hoy·7d·30d·∞} (footer de Resumen/Modelos/Proyectos/Chats). 0=hoy,1=7d,2=30d,3=∞.
+    // Default ∞ (histórico completo); persiste al cambiar de pestaña (como el @State de macOS).
+    private int _range = 3;
+    // Zonas clicables de las 4 píldoras del footer del último paint (coords de pantalla; los tabs
+    // con footer no scrollean, así que el hit-test usa e.Location directo).
+    private readonly List<(int idx, Rectangle rect)> _rangeHits = new();
+
+    // (e) Toggle 🖥 esta máquina / ☁️ todas (footer de Resumen/Modelos/Proyectos). Solo aparece si
+    // existe stats-global.json (sync activo). _useGlobal enruta las 3 pestañas a la fuente activa
+    // (global vs local), como `activeStats` de macOS. Chats/sesiones se quedan locales.
+    private bool _useGlobal = false;
+    private readonly List<(bool global, Rectangle rect)> _machineHits = new();
+
+    // Fuente de stats activa para Resumen/Modelos/Proyectos: global si el toggle está en ☁️ y hay vista
+    // fusionada, si no la local. Espeja `activeStats` de PopoverView.swift.
+    private Stats? ActiveStats => (_useGlobal && _svc.StatsGlobal != null) ? _svc.StatsGlobal : _svc.Stats;
+
+    // ── Pestaña Proyectos: sesiones expandibles (resumir) ──
+    // Proyecto expandido (muestra sus sesiones), o null. Zonas clicables de filas de proyecto y de
+    // sesión del último PaintProyectos.
+    private string? _expandedProject;
+    private readonly List<(string name, Rectangle rect)> _projectHits = new();
+    private readonly List<(Session s, Rectangle rect)> _sessionHits = new();
+    // Zonas de clic-SECUNDARIO de renombrar (proyectos): a diferencia de `_projectHits` (solo filas con
+    // sesiones, que toggle-an al clic izquierdo), cubre TODA fila de proyecto para el menú "Renombrar…".
+    private readonly List<(string name, Rectangle rect)> _projectRenameHits = new();
+    // True mientras un diálogo modal (renombrar) está arriba: suprime el auto-Hide de OnDeactivate para
+    // que el popup no desaparezca bajo el diálogo (los ContextMenuStrip no desactivan el form, sí ShowDialog).
+    private bool _modalOpen;
+
+    // ── Pestaña Chats: hover → resumen en el pie ──
+    // Resumen del chat bajo el cursor (o null). Zonas de hover de las filas de chat del último PaintChats.
+    private string? _hoveredChatSummary;
+    private readonly List<(Rectangle rect, string summary)> _chatHits = new();
 
     // Scroll vertical SOLO de la pestaña Cerebro (owner-draw): desplazamiento
     // actual y altura total dibujada en el último paint (para acotar el scroll).
@@ -59,7 +96,23 @@ public sealed class PopupForm : Form
     private readonly Panel _rail = new();
     private readonly Panel _content = new();
 
-    private static readonly string[] TabNames = { "Límites", "Resumen", "Modelos", "Proyectos", "Cerebro" };
+    // Índices LÓGICOS de pestaña (fijos): 0 Límites · 1 Resumen · 2 Modelos · 3 Proyectos ·
+    // 4 Chats · 5 Cerebro. Chats se OCULTA del riel si no hay chats locales (como macOS #77), pero
+    // el índice 4 sigue reservado para él y Cerebro es siempre 5 (así no se recablean los `_tab==`).
+    private static readonly string[] TabNames = { "Límites", "Resumen", "Modelos", "Proyectos", "Chats", "Cerebro" };
+    private const int TabChats = 4, TabCerebro = 5;
+
+    /// ¿Hay conversaciones locales? (decide si el botón Chats aparece en el riel).
+    private bool HasChats => _svc.Chats.Count > 0;
+
+    /// Índices lógicos de pestaña en el ORDEN del riel; omite Chats si no hay chats.
+    private int[] RailTabs()
+    {
+        var list = new List<int> { 0, 1, 2, 3 };
+        if (HasChats) list.Add(TabChats);
+        list.Add(TabCerebro);
+        return list.ToArray();
+    }
 
     public PopupForm(QuotaService svc, Action onRefresh)
     {
@@ -91,6 +144,7 @@ public sealed class PopupForm : Form
         _content.BackColor = _bg;
         _content.Paint += ContentPaint;
         _content.MouseDown += ContentMouseDown;
+        _content.MouseMove += ContentMouseMove;
 
         // 1px separator between rail and content.
         var sep = new Panel { Dock = DockStyle.Left, Width = 1, BackColor = Blend(_bg, _fg, 0.12) };
@@ -113,7 +167,7 @@ public sealed class PopupForm : Form
     protected override void OnDeactivate(EventArgs e)
     {
         base.OnDeactivate(e);
-        if (!ShotMode) Hide();
+        if (!ShotMode && !_modalOpen) Hide();
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
@@ -137,10 +191,12 @@ public sealed class PopupForm : Form
     {
         _tab = t;
         _cerebroScroll = 0;
+        _expandedProject = null;      // colapsa sesiones al cambiar de pestaña
+        _hoveredChatSummary = null;   // limpia el hover de Chats
         // Al mostrar la pestaña Cerebro, re-lee el estado REAL de ~/.claude (doc=realidad) y dispara
         // el chequeo de autoupdate (throttled 1×/15min, fail-open). Espeja `.task { checkIfStale() }`
         // de la vista macOS: al resolver (si cambió), re-pinta el popup para mostrar/ocultar el banner.
-        if (t == 4)
+        if (t == TabCerebro)
         {
             _brainState = BrainInspector.Inspect();
             _expandedKey = null;
@@ -160,7 +216,7 @@ public sealed class PopupForm : Form
     protected override void OnMouseWheel(MouseEventArgs e)
     {
         base.OnMouseWheel(e);
-        if (_tab != 4) return;
+        if (_tab != TabCerebro) return;
         int max = Math.Max(0, _cerebroContentH - _content.Height);
         if (max <= 0) return;
         int step = (e.Delta / 120) * Sc(48);
@@ -187,10 +243,12 @@ public sealed class PopupForm : Form
         using var font = Px(12.5f, FontStyle.Regular);
         using var fontB = Px(12.5f, FontStyle.Bold);
 
-        for (int i = 0; i < TabNames.Length; i++)
+        var tabs = RailTabs();
+        for (int pos = 0; pos < tabs.Length; pos++)
         {
-            var r = RailBtnRect(i);
-            bool active = _tab == i;
+            int idx = tabs[pos];
+            var r = RailBtnRect(pos);
+            bool active = _tab == idx;
             if (active)
             {
                 // Píldora acento ~16% (como macOS) + barra-indicador acento a la izquierda.
@@ -200,7 +258,7 @@ public sealed class PopupForm : Form
                 using (var ib = new SolidBrush(_accent))
                     FillRounded(g, ib, new Rectangle(r.X + Sc(2), r.Y + (r.Height - barH) / 2, Sc(3), barH), Sc(1.5f));
             }
-            else if (_hoverRail == i)
+            else if (_hoverRail == idx)
             {
                 using (var b = new SolidBrush(Blend(_bg, _fg, 0.06)))
                     FillRounded(g, b, r, Sc(8));
@@ -209,7 +267,7 @@ public sealed class PopupForm : Form
             var col = active ? _accent : Blend(_bg, _fg, 0.82);
             using var brush = new SolidBrush(col);
             var sf = new StringFormat { LineAlignment = StringAlignment.Center, Alignment = StringAlignment.Near };
-            g.DrawString(TabNames[i], active ? fontB : font, brush,
+            g.DrawString(TabNames[idx], active ? fontB : font, brush,
                 new RectangleF(r.X + Sc(14), r.Y, r.Width - Sc(16), r.Height), sf);
         }
 
@@ -232,8 +290,9 @@ public sealed class PopupForm : Form
 
     private void RailMouseDown(object? sender, MouseEventArgs e)
     {
-        for (int i = 0; i < TabNames.Length; i++)
-            if (RailBtnRect(i).Contains(e.Location)) { SelectTab(i); return; }
+        var tabs = RailTabs();
+        for (int pos = 0; pos < tabs.Length; pos++)
+            if (RailBtnRect(pos).Contains(e.Location)) { SelectTab(tabs[pos]); return; }
         var (refreshR, quitR) = BottomButtons();
         if (refreshR.Contains(e.Location)) { _onRefresh(); return; }
         if (quitR.Contains(e.Location)) { Application.Exit(); }
@@ -243,8 +302,9 @@ public sealed class PopupForm : Form
     {
         int was = _hoverRail;
         _hoverRail = -1;
-        for (int i = 0; i < TabNames.Length; i++)
-            if (RailBtnRect(i).Contains(e.Location)) { _hoverRail = i; break; }
+        var tabs = RailTabs();
+        for (int pos = 0; pos < tabs.Length; pos++)
+            if (RailBtnRect(pos).Contains(e.Location)) { _hoverRail = tabs[pos]; break; }
         if (was != _hoverRail) _rail.Invalidate();
     }
 
@@ -262,6 +322,7 @@ public sealed class PopupForm : Form
             case 1: PaintResumen(g, pad); break;
             case 2: PaintModelos(g, pad); break;
             case 3: PaintProyectos(g, pad); break;
+            case 4: PaintChats(g, pad); break;
             default:
                 // Cerebro: contenido alto y scrolleable → se dibuja bajo un
                 // desplazamiento; lo que queda fuera del panel lo recorta el clip.
@@ -356,21 +417,34 @@ public sealed class PopupForm : Form
 
     private void PaintResumen(Graphics g, int pad)
     {
-        var s = _svc.Stats?.Summary;
-        var streaks = StatsCompute.Streaks(_svc.Stats);
+        var s = ActiveStats?.Summary;
+        bool hasStats = ActiveStats != null;
+        var streaks = StatsCompute.Streaks(_svc.Stats);   // rachas all-time (siempre local, como macOS)
+        // Agregados recalculados sobre el rango (a ∞ coinciden con summary), de la fuente activa (local/global).
+        var days = StatsCompute.RangedDays(ActiveStats, _range);
+        double toks = days.Sum(d => d.Tokens);
+        double cost = days.Sum(d => d.Cost ?? 0);
+        double msgs = days.Sum(d => d.Messages);
+        int activeDays = days.Count(d => d.Tokens > 0);
+        // Sesiones: a ∞ el conteo exacto de summary; en rango, filtrado de sessions.json por updated_at.
+        string sessions = _range == 3
+            ? (s != null ? Fmt.Int(s.Sessions) : "—")
+            : RangedSessionCount().ToString();
+        string fav = Fmt.PrettyModel(StatsCompute.RangedModels(days).FirstOrDefault()?.Name);
+
         int y = SectionTitle(g, pad, pad, "Resumen");
 
         (string, string)[] cards =
         {
-            ("Sesiones",        s != null ? Fmt.Int(s.Sessions) : "—"),
-            ("Mensajes",        s != null ? Fmt.Int(s.Messages) : "—"),
-            ("Tokens totales",  s != null ? Fmt.Tok(s.TotalTokens) : "—"),
-            ("Días activos",    s != null ? s.ActiveDays.ToString() : "—"),
+            ("Sesiones",        sessions),
+            ("Mensajes",        hasStats ? Fmt.Int(msgs) : "—"),
+            ("Tokens totales",  hasStats ? Fmt.Tok(toks) : "—"),
+            ("Días activos",    hasStats ? activeDays.ToString() : "—"),
             ("Racha actual",    $"{streaks.cur}d"),
             ("Racha más larga", $"{streaks.max}d"),
             ("Hora pico",       s != null ? Fmt.Hour(s.PeakHour) : "—"),
-            ("Modelo favorito", s != null ? Fmt.PrettyModel(s.FavoriteModel) : "—"),
-            ("Costo API-equiv", s?.TotalCost is double tc ? "$" + ((long)Math.Round(tc)) : "—"),
+            ("Modelo favorito", StatsCompute.RangedModels(days).Count > 0 ? fav : "—"),
+            ("Costo API-equiv", hasStats ? "$" + ((long)Math.Round(cost)) : "—"),
         };
 
         int cols = 3, gapc = Sc(6);
@@ -389,8 +463,97 @@ public sealed class PopupForm : Form
             g.DrawString("Actividad diaria (local)", cFont, cBrush, pad, y);
         y += Sc(18);
 
-        Heatmap(g, pad, y);
+        Heatmap(g, pad, y);   // heatmap SIEMPRE local + all-time (como macOS)
+        PaintRangeFooter(g, pad, machineToggle: true);
     }
+
+    /// Sesiones (sessions.json) dentro del rango, por updated_at (espeja rangedSessionCount de macOS).
+    private int RangedSessionCount()
+    {
+        var cut = StatsCompute.RangeCutoff(_range);
+        if (cut == null) return _svc.Sessions.Count;
+        return _svc.Sessions.Count(s =>
+        {
+            var u = s.UpdatedAt ?? "";
+            return u.Length >= 10 && string.CompareOrdinal(u[..10], cut) >= 0;
+        });
+    }
+
+    // ----- Footer de rango {hoy·7d·30d·∞} (Resumen/Modelos/Proyectos/Chats) -----
+
+    private static readonly string[] RangeLabels = { "hoy", "7d", "30d", "∞" };
+
+    /// Dibuja las 4 píldoras al PIE del contenido; la activa en acento (espeja `rangeFooter` de macOS).
+    /// Registra sus zonas clicables en `_rangeHits`. Devuelve la Y superior del footer (para acotar listas).
+    /// Si <paramref name="machineToggle"/> y hay vista global (stats-global.json), agrega a la derecha el
+    /// par 🖥 esta máquina / ☁️ todas (sync (e)) y registra sus zonas en `_machineHits`.
+    private int PaintRangeFooter(Graphics g, int pad, bool machineToggle = false)
+    {
+        _rangeHits.Clear();
+        _machineHits.Clear();
+        int pillH = Sc(20), gap = Sc(4);
+        int py = _content.Height - Sc(8) - pillH;
+        int x = pad;
+        using var f = Px(9.5f, FontStyle.Regular);
+        using var fB = Px(9.5f, FontStyle.Bold);
+        var center = Center();
+        for (int i = 0; i < RangeLabels.Length; i++)
+        {
+            bool active = _range == i;
+            var font = active ? fB : f;
+            string lbl = RangeLabels[i];
+            int w = (int)Math.Ceiling(g.MeasureString(lbl, font).Width) + Sc(18);
+            var r = new Rectangle(x, py, w, pillH);
+            using (var bg = new SolidBrush(active ? Color.FromArgb(51, _accent) : Blend(_bg, _fg, 0.06)))
+                FillRounded(g, bg, r, Sc(5));
+            using (var tb = new SolidBrush(active ? _accent : Blend(_bg, _fg, 0.7)))
+                g.DrawString(lbl, font, tb, r, center);
+            _rangeHits.Add((i, r));
+            x += w + gap;
+        }
+
+        // (e) Par 🖥/☁️ a la derecha del footer — solo si el sync está activo (existe stats-global.json).
+        if (machineToggle && _svc.StatsGlobal != null)
+            PaintMachineToggle(g, pad, py, pillH);
+
+        return py;
+    }
+
+    /// Dibuja las píldoras 🖥 esta máquina / ☁️ todas, alineadas a la derecha del footer. La activa va en
+    /// acento (espeja `machinePills` de macOS). ☁️ muestra el número de máquinas si son >1.
+    private void PaintMachineToggle(Graphics g, int pad, int py, int pillH)
+    {
+        int n = _svc.StatsGlobal?.Machines?.Count ?? 0;
+        int gap = Sc(4);
+        using var glyphFont = PxFont("Segoe UI Emoji", 10f, FontStyle.Regular);
+        using var fB = Px(9.5f, FontStyle.Bold);
+        var center = Center();
+
+        string cloudLbl = n > 1 ? "☁ " + n : "☁";
+        int wThis = (int)Math.Ceiling(g.MeasureString("🖥", glyphFont).Width) + Sc(14);
+        int wCloud = (int)Math.Ceiling(g.MeasureString(cloudLbl, glyphFont).Width) + Sc(14);
+
+        int right = _content.Width - pad;
+        int xThis = right - wCloud - gap - wThis;
+        int xCloud = right - wCloud;
+
+        DrawTogglePill(g, new Rectangle(xThis, py, wThis, pillH), "🖥", glyphFont, center, on: !_useGlobal);
+        DrawTogglePill(g, new Rectangle(xCloud, py, wCloud, pillH), cloudLbl, glyphFont, center, on: _useGlobal);
+
+        _machineHits.Add((false, new Rectangle(xThis, py, wThis, pillH)));   // 🖥 -> esta máquina
+        _machineHits.Add((true, new Rectangle(xCloud, py, wCloud, pillH)));  // ☁️ -> todas
+    }
+
+    private void DrawTogglePill(Graphics g, Rectangle r, string lbl, Font font, StringFormat center, bool on)
+    {
+        using (var bg = new SolidBrush(on ? Color.FromArgb(51, _accent) : Blend(_bg, _fg, 0.06)))
+            FillRounded(g, bg, r, Sc(5));
+        using (var tb = new SolidBrush(on ? _accent : Blend(_bg, _fg, 0.7)))
+            g.DrawString(lbl, font, tb, r, center);
+    }
+
+    /// Y superior donde empieza el footer de rango — límite inferior para las listas scrolleables.
+    private int RangeFooterTop() => _content.Height - Sc(8) - Sc(20) - Sc(6);
 
     private void StatCard(Graphics g, Rectangle r, string label, string value)
     {
@@ -442,22 +605,25 @@ public sealed class PopupForm : Form
     {
         int y = SectionTitle(g, pad, pad, "Uso por modelo");
 
+        var days = StatsCompute.RangedDays(ActiveStats, _range);
+        double maxTok = StatsCompute.MaxDayTokens(days);
         int chartH = Sc(110);
-        ChartPanel(g, new Rectangle(pad, y, _content.Width - pad * 2, chartH), StackedChart);
+        ChartPanel(g, new Rectangle(pad, y, _content.Width - pad * 2, chartH),
+            (gg, area) => StackedChart(gg, area, days, maxTok));
         y += chartH + Sc(14);
 
-        var models = _svc.Stats?.Models ?? new List<StatsModel>();
+        int listBottom = RangeFooterTop();
         using var nameFont = Px(11.5f, FontStyle.Bold);
         using var subFont = Px(10.5f, FontStyle.Regular);
         int rowH = Sc(22);
-        foreach (var m in models)
+        foreach (var m in StatsCompute.RangedModels(days))
         {
-            if (y + rowH > _content.Height - pad) break;
-            var col = StatsCompute.ModelColor(_svc.Stats, m.Model);
+            if (y + rowH > listBottom) break;
+            var col = StatsCompute.ModelColor(_svc.Stats, m.Name);
             using (var sw = new SolidBrush(col))
                 FillRounded(g, sw, new Rectangle(pad, y + Sc(4), Sc(10), Sc(10)), Sc(2));
             using (var nb = new SolidBrush(_fg))
-                g.DrawString(Fmt.PrettyModel(m.Model), nameFont, nb, pad + Sc(16), y);
+                g.DrawString(Fmt.PrettyModel(m.Name), nameFont, nb, pad + Sc(16), y);
 
             string sub = $"{Fmt.Tok(m.InTok)} in · {Fmt.Tok(m.OutTok)} out";
             string pctT = m.Pct.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "%";
@@ -475,6 +641,7 @@ public sealed class PopupForm : Form
             }
             y += rowH;
         }
+        PaintRangeFooter(g, pad, machineToggle: true);
     }
 
     /// Frame a stacked chart inside a subtle rounded card (labelColor ~4%) with an
@@ -487,11 +654,9 @@ public sealed class PopupForm : Form
         draw(g, new Rectangle(outer.X + ins, outer.Y + ins, outer.Width - ins * 2, outer.Height - ins * 2));
     }
 
-    private void StackedChart(Graphics g, Rectangle area)
+    private void StackedChart(Graphics g, Rectangle area, List<StatsDay> days, double maxTok)
     {
-        var days = _svc.Stats?.Days ?? new List<StatsDay>();
         if (days.Count == 0) return;
-        double maxTok = StatsCompute.MaxDayTokens(_svc.Stats);
         int gap = Sc(2);
         float barW = Math.Max(1f, (area.Width - gap * (days.Count - 1f)) / days.Count);
         for (int i = 0; i < days.Count; i++)
@@ -515,25 +680,49 @@ public sealed class PopupForm : Form
     {
         int y = SectionTitle(g, pad, pad, "Uso por proyecto");
 
+        var days = StatsCompute.RangedDays(ActiveStats, _range);
+        double maxTok = StatsCompute.MaxDayProjectTokens(days);
         int chartH = Sc(110);
-        ChartPanel(g, new Rectangle(pad, y, _content.Width - pad * 2, chartH), StackedProjectChart);
+        ChartPanel(g, new Rectangle(pad, y, _content.Width - pad * 2, chartH),
+            (gg, area) => StackedProjectChart(gg, area, days, maxTok));
         y += chartH + Sc(14);
 
-        var projects = _svc.Stats?.Projects ?? new List<StatsProject>();
+        _projectHits.Clear();
+        _sessionHits.Clear();
+        _projectRenameHits.Clear();
+        int listBottom = RangeFooterTop();
+        int right = _content.Width - pad;
         using var nameFont = Px(11.5f, FontStyle.Bold);
         using var subFont = Px(10.5f, FontStyle.Regular);
         int rowH = Sc(22);
-        foreach (var p in projects)
+        foreach (var p in StatsCompute.RangedProjects(days))
         {
-            if (y + rowH > _content.Height - pad) break;
-            var col = StatsCompute.ProjectColor(_svc.Stats, p.Project);
+            if (y + rowH > listBottom) break;
+            string name = p.Name;
+            // Toda fila de proyecto es renombrable por clic-secundario (tenga sesiones o no).
+            _projectRenameHits.Add((name, new Rectangle(pad, y, right - pad, rowH)));
+            int n = _svc.Sessions.Count(s => s.Project == name);
+            var col = StatsCompute.ProjectColor(_svc.Stats, name);
             using (var sw = new SolidBrush(col))
                 FillRounded(g, sw, new Rectangle(pad, y + Sc(4), Sc(10), Sc(10)), Sc(2));
+
+            // Nombre (recortado a un ancho acotado) + chevron ▸/▾ si el proyecto tiene sesiones.
+            float nameMaxW = _content.Width - pad * 2 - Sc(180);
             using (var nb = new SolidBrush(_fg))
             {
                 var nf = new StringFormat { Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap };
-                g.DrawString(p.Project ?? "—", nameFont, nb,
-                    new RectangleF(pad + Sc(16), y, _content.Width - pad * 2 - Sc(180), rowH), nf);
+                g.DrawString(name, nameFont, nb,
+                    new RectangleF(pad + Sc(16), y, nameMaxW, rowH), nf);
+            }
+            if (n > 0)
+            {
+                float nameW = Math.Min(nameMaxW, g.MeasureString(name, nameFont).Width);
+                using var chf = Px(9f, FontStyle.Bold);
+                using var chb = new SolidBrush(Blend(_bg, _fg, 0.5));
+                g.DrawString(_expandedProject == name ? "▾" : "▸", chf, chb,
+                    pad + Sc(16) + nameW + Sc(3), y + Sc(3));
+                // Toda la fila es clicable (toggle de expansión). Solo si tiene sesiones (macOS lo deshabilita si n==0).
+                _projectHits.Add((name, new Rectangle(pad, y, right - pad, rowH)));
             }
 
             string sub = $"{Fmt.Tok(p.InTok)} in · {Fmt.Tok(p.OutTok)} out";
@@ -551,14 +740,49 @@ public sealed class PopupForm : Form
                     new RectangleF(pad, y, _content.Width - pad * 2 - Sc(52), rowH), sf);
             }
             y += rowH;
+
+            // Sesiones del proyecto expandido (máx 12): cada una resume en su cwd al hacer clic.
+            if (_expandedProject == name && n > 0)
+                y = PaintSessions(g, pad, right, y, name, listBottom);
         }
+        PaintRangeFooter(g, pad, machineToggle: true);
     }
 
-    private void StackedProjectChart(Graphics g, Rectangle area)
+    /// Lista de sesiones de un proyecto (indentada): flecha + etiqueta + fecha relativa. Cada fila
+    /// se registra en `_sessionHits`; al clic lanza una terminal con `claude --resume <id>` en su cwd.
+    private int PaintSessions(Graphics g, int pad, int right, int y, string project, int listBottom)
     {
-        var days = _svc.Stats?.Days ?? new List<StatsDay>();
+        int rowH = Sc(19), indent = Sc(18);
+        var ss = _svc.Sessions.Where(s => s.Project == project).Take(12).ToList();
+        using var lblFont = Px(9.5f, FontStyle.Regular);
+        using var dateFont = Px(8.5f, FontStyle.Regular);
+        foreach (var s in ss)
+        {
+            if (y + rowH > listBottom) break;
+            using (var ab = new SolidBrush(_accent))
+            using (var af = PxFont("Segoe UI Symbol", 9.5f, FontStyle.Regular))
+                g.DrawString("⟲", af, ab, pad + indent, y);   // ⟲ resumir
+            using (var lb = new SolidBrush(Blend(_bg, _fg, 0.85)))
+            {
+                var lf = new StringFormat { Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap };
+                g.DrawString(s.Label ?? "(sesión)", lblFont, lb,
+                    new RectangleF(pad + indent + Sc(16), y, right - pad - indent - Sc(70), rowH), lf);
+            }
+            using (var db = new SolidBrush(Blend(_bg, _fg, 0.5)))
+            {
+                var df = new StringFormat { Alignment = StringAlignment.Far };
+                g.DrawString(Fmt.RelDate(s.UpdatedAt), dateFont, db,
+                    new RectangleF(pad, y + Sc(1), right - pad, rowH), df);
+            }
+            _sessionHits.Add((s, new Rectangle(pad + indent, y, right - pad - indent, rowH)));
+            y += rowH;
+        }
+        return y + Sc(2);
+    }
+
+    private void StackedProjectChart(Graphics g, Rectangle area, List<StatsDay> days, double maxTok)
+    {
         if (days.Count == 0) return;
-        double maxTok = StatsCompute.MaxDayTokens(_svc.Stats);
         int gap = Sc(2);
         float barW = Math.Max(1f, (area.Width - gap * (days.Count - 1f)) / days.Count);
         for (int i = 0; i < days.Count; i++)
@@ -576,7 +800,162 @@ public sealed class PopupForm : Form
         }
     }
 
-    // ----- Tab 4: Cerebro (VIVO) -----
+    // ----- Tab 4: Chats -----
+    //
+    // Conversaciones recientes del app de escritorio (chats.json, producido por chats-extract.js
+    // sin red). READ-ONLY: desglose por modelo con %, lista de recientes (título + badge de modelo +
+    // fecha relativa) y un pie con el resumen del chat bajo el cursor (hover). Espejo de `chatsTab`
+    // de macOS; la pestaña solo aparece si hay chats (ver RailTabs / HasChats).
+
+    private void PaintChats(Graphics g, int pad)
+    {
+        _chatHits.Clear();
+        int y = SectionTitle(g, pad, pad, "Chats");
+        int right = _content.Width - pad;
+        var chats = RangedChats();
+
+        if (chats.Count == 0)
+        {
+            string msg = _range == 3
+                ? "Sin conversaciones locales.\nAbre el app de escritorio de Claude y espera al próximo refresco."
+                : "Sin conversaciones en este rango.";
+            using (var mf = Px(10f, FontStyle.Regular))
+            using (var mb = new SolidBrush(Blend(_bg, _fg, 0.6)))
+                g.DrawString(msg, mf, mb, new RectangleF(pad, y, right - pad, Sc(60)));
+            PaintRangeFooter(g, pad);
+            return;
+        }
+
+        // Desglose por modelo: swatch + modelo + conteo + %.
+        using (var nameFont = Px(11f, FontStyle.Bold))
+        using (var cntFont = Px(10.5f, FontStyle.Regular))
+        {
+            int mrowH = Sc(20);
+            foreach (var r in ChatsByModel(chats))
+            {
+                var col = StatsCompute.ModelColor(_svc.Stats, r.model);
+                using (var sw = new SolidBrush(col))
+                    FillRounded(g, sw, new Rectangle(pad, y + Sc(4), Sc(10), Sc(10)), Sc(2));
+                using (var nb = new SolidBrush(_fg))
+                    g.DrawString(Fmt.PrettyModel(r.model), nameFont, nb, pad + Sc(16), y);
+                string pctT = r.pct.ToString("0", System.Globalization.CultureInfo.InvariantCulture) + "%";
+                using (var pb = new SolidBrush(col))
+                {
+                    var pf = new StringFormat { Alignment = StringAlignment.Far };
+                    g.DrawString(pctT, nameFont, pb, new RectangleF(pad, y, right - pad, mrowH), pf);
+                }
+                using (var cb = new SolidBrush(Blend(_bg, _fg, 0.7)))
+                {
+                    var cf = new StringFormat { Alignment = StringAlignment.Far };
+                    g.DrawString(r.count.ToString(), cntFont, cb,
+                        new RectangleF(pad, y, right - pad - Sc(48), mrowH), cf);
+                }
+                y += mrowH;
+            }
+        }
+
+        // Separador + rótulo "recientes".
+        y += Sc(4);
+        using (var sep = new SolidBrush(Blend(_bg, _fg, 0.12)))
+            g.FillRectangle(sep, pad, y, right - pad, 1);
+        y += Sc(6);
+        using (var cf = Px(9.5f, FontStyle.Regular))
+        using (var cb = new SolidBrush(Blend(_bg, _fg, 0.5)))
+            g.DrawString("recientes", cf, cb, pad, y);
+        y += Sc(16);
+
+        // Pie de resumen (hover) reservado justo encima de las píldoras; la lista se acota a él.
+        int summaryH = Sc(52);
+        int summaryTop = RangeFooterTop() - summaryH - Sc(6);
+
+        int rowH = Sc(20);
+        using (var titleFont = Px(10.5f, FontStyle.Regular))
+        using (var dateFont = Px(9f, FontStyle.Regular))
+        {
+            foreach (var c in chats.Take(20))
+            {
+                if (y + rowH > summaryTop) break;
+                string rel = Fmt.RelDate(c.UpdatedAt ?? c.CreatedAt);
+                int dateW = Sc(48);
+                // Badge de modelo a la izquierda de la fecha (si hay modelo).
+                int badgeRight = right - dateW - Sc(4);
+                int titleRight = badgeRight;
+                if (!string.IsNullOrEmpty(c.Model))
+                    titleRight = ModelBadgeLeft(g, badgeRight, y, c.Model!) - Sc(6);
+                using (var tb = new SolidBrush(Blend(_bg, _fg, 0.92)))
+                {
+                    var tf = new StringFormat { Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap, LineAlignment = StringAlignment.Center };
+                    g.DrawString(c.Title ?? "(sin título)", titleFont, tb,
+                        new RectangleF(pad, y, Math.Max(Sc(40), titleRight - pad), rowH), tf);
+                }
+                using (var db = new SolidBrush(Blend(_bg, _fg, 0.6)))
+                {
+                    var df = new StringFormat { Alignment = StringAlignment.Far, LineAlignment = StringAlignment.Center };
+                    g.DrawString(rel, dateFont, db, new RectangleF(pad, y, right - pad, rowH), df);
+                }
+                _chatHits.Add((new Rectangle(pad, y, right - pad, rowH), c.Summary ?? ""));
+                y += rowH;
+            }
+        }
+
+        // Separador + pie con el resumen del chat bajo el cursor (o placeholder tenue).
+        using (var sep = new SolidBrush(Blend(_bg, _fg, 0.12)))
+            g.FillRectangle(sep, pad, summaryTop, right - pad, 1);
+        bool has = !string.IsNullOrEmpty(_hoveredChatSummary);
+        string summary = has ? _hoveredChatSummary! : "Pasa el cursor sobre un chat para ver su resumen.";
+        using (var sf = Px(9.5f, FontStyle.Regular))
+        using (var sb = new SolidBrush(Blend(_bg, _fg, has ? 0.75 : 0.4)))
+            g.DrawString(summary, sf, sb, new RectangleF(pad, summaryTop + Sc(5), right - pad, summaryH));
+
+        PaintRangeFooter(g, pad);
+    }
+
+    /// Dibuja un badge-capsula de modelo cuyo borde DERECHO queda en `rightEdge`; devuelve su X izquierda.
+    private int ModelBadgeLeft(Graphics g, int rightEdge, int rowY, string model)
+    {
+        var col = StatsCompute.ModelColor(_svc.Stats, model);
+        string txt = Fmt.PrettyModel(model);
+        using var bf = Px(8.5f, FontStyle.Bold);
+        int tw = (int)Math.Ceiling(g.MeasureString(txt, bf).Width);
+        int padX = Sc(6), h = Sc(15);
+        int w = tw + padX * 2;
+        int x = rightEdge - w;
+        int by = rowY + (Sc(20) - h) / 2;
+        using (var bg = new SolidBrush(Color.FromArgb(56, col)))   // ~22% alpha (como macOS)
+            FillRounded(g, bg, new Rectangle(x, by, w, h), h / 2f);
+        using (var tb = new SolidBrush(col))
+            g.DrawString(txt, bf, tb, x + padX, by + Sc(1));
+        return x;
+    }
+
+    /// Chats dentro del rango (por updated_at, fallback created_at) — espeja rangedChats de macOS.
+    private List<Chat> RangedChats()
+    {
+        var cut = StatsCompute.RangeCutoff(_range);
+        if (cut == null) return _svc.Chats;
+        return _svc.Chats.Where(c =>
+        {
+            var iso = c.UpdatedAt ?? c.CreatedAt ?? "";
+            return iso.Length >= 10 && string.CompareOrdinal(iso[..10], cut) >= 0;
+        }).ToList();
+    }
+
+    /// Reparto de chats por modelo (conteo + % del total), ordenado desc — espeja chatsByModel de macOS.
+    private static List<(string model, int count, double pct)> ChatsByModel(List<Chat> chats)
+    {
+        int total = chats.Count;
+        if (total == 0) return new();
+        var counts = new Dictionary<string, int>();
+        foreach (var c in chats)
+        {
+            string k = c.Model ?? "?";
+            counts[k] = counts.GetValueOrDefault(k) + 1;
+        }
+        return counts.Select(kv => (kv.Key, kv.Value, kv.Value * 100.0 / total))
+            .OrderByDescending(t => t.Value).ToList();
+    }
+
+    // ----- Tab 5: Cerebro (VIVO) -----
     //
     // Infografía del cerebro global de Claude Code, réplica de la pestaña macOS
     // (PopoverView.swift, `cerebroTab`). La ESTRUCTURA (qué piezas hay y su explicación)
@@ -1022,11 +1401,60 @@ public sealed class PopupForm : Form
 
     // ── Interactividad + self-healing ──
 
-    /// Clic en la pestaña Cerebro: convierte la Y a coords lógicas (suma el scroll) y prueba
-    /// primero el botón-curita, luego cada hoja. Toggle de la hoja tocada (una sola abierta).
+    /// Clic en el contenido, ruteado por pestaña. Resumen/Modelos/Proyectos/Chats: primero las
+    /// píldoras del footer de rango; Proyectos además lanza/expande sesiones; Cerebro (scrolleable):
+    /// botón-curita/banner y hojas. Las pestañas con footer NO scrollean → e.Location directo.
     private void ContentMouseDown(object? sender, MouseEventArgs e)
     {
-        if (_tab != 4) return;
+        // Clic-SECUNDARIO en Proyectos: menú contextual de renombrar sobre la fila de sesión (prioridad)
+        // o de proyecto. En cualquier otra pestaña el clic derecho no hace nada (no cae al clic izquierdo).
+        if (e.Button == MouseButtons.Right)
+        {
+            if (_tab == 3)
+            {
+                foreach (var (s, rect) in _sessionHits)
+                    if (rect.Contains(e.Location)) { ShowSessionMenu(s, e.Location); return; }
+                foreach (var (name, rect) in _projectRenameHits)
+                    if (rect.Contains(e.Location)) { ShowProjectMenu(name, e.Location); return; }
+            }
+            return;
+        }
+        if (e.Button != MouseButtons.Left) return;
+
+        // Footer de rango (tabs 1..4).
+        if (_tab is 1 or 2 or 3 or TabChats)
+            foreach (var (idx, rect) in _rangeHits)
+                if (rect.Contains(e.Location))
+                {
+                    if (_range != idx) { _range = idx; _content.Invalidate(); }
+                    return;
+                }
+
+        // (e) Toggle 🖥/☁️ del footer (solo Resumen/Modelos/Proyectos, y solo si el sync está activo).
+        if (_tab is 1 or 2 or 3)
+            foreach (var (global, rect) in _machineHits)
+                if (rect.Contains(e.Location))
+                {
+                    if (_useGlobal != global) { _useGlobal = global; _content.Invalidate(); }
+                    return;
+                }
+
+        // Proyectos: sesión (lanzar terminal) tiene prioridad sobre la fila de proyecto (toggle).
+        if (_tab == 3)
+        {
+            foreach (var (s, rect) in _sessionHits)
+                if (rect.Contains(e.Location)) { ResumeSession(s); return; }
+            foreach (var (name, rect) in _projectHits)
+                if (rect.Contains(e.Location))
+                {
+                    _expandedProject = _expandedProject == name ? null : name;
+                    _content.Invalidate();
+                    return;
+                }
+            return;
+        }
+
+        if (_tab != TabCerebro) return;
         int ly = e.Y + _cerebroScroll;   // el paint aplica TranslateTransform(0, -_cerebroScroll)
         if (!_updateHit.IsEmpty && _updateHit.Contains(e.X, ly)) { StartUpdate(); return; }
         if (!_healing && !_healHit.IsEmpty && _healHit.Contains(e.X, ly)) { StartHeal(); return; }
@@ -1037,6 +1465,113 @@ public sealed class PopupForm : Form
                 _content.Invalidate();
                 return;
             }
+    }
+
+    /// Hover en la pestaña Chats: la fila bajo el cursor pone su resumen en el pie (o lo limpia).
+    private void ContentMouseMove(object? sender, MouseEventArgs e)
+    {
+        if (_tab != TabChats) return;
+        string? found = null;
+        foreach (var (rect, summary) in _chatHits)
+            if (rect.Contains(e.Location)) { found = summary; break; }
+        if (found != _hoveredChatSummary) { _hoveredChatSummary = found; _content.Invalidate(); }
+    }
+
+    /// Lanza una terminal que resume la sesión en su cwd: `claude --resume <id>`. Usa Windows Terminal
+    /// (`wt.exe -d <cwd> cmd /k …`) si existe; si no, `cmd.exe /k …` con WorkingDirectory=cwd. El id se
+    /// valida (solo [A-Za-z0-9._-]) para que no pueda inyectar; el cwd va como argumento/working dir.
+    private static void ResumeSession(Session s)
+    {
+        string id = s.Id ?? "";
+        string cwd = s.Cwd ?? "";
+        if (!System.Text.RegularExpressions.Regex.IsMatch(id, @"^[A-Za-z0-9._\-]+$")) return;
+        string cmd = $"claude --resume {id}";
+
+        // 1) Windows Terminal, si está disponible.
+        try
+        {
+            var wt = new ProcessStartInfo { FileName = "wt.exe", UseShellExecute = true };
+            wt.ArgumentList.Add("-d"); wt.ArgumentList.Add(cwd.Length > 0 ? cwd : ".");
+            wt.ArgumentList.Add("cmd"); wt.ArgumentList.Add("/k"); wt.ArgumentList.Add(cmd);
+            if (Process.Start(wt) != null) return;
+        }
+        catch { /* wt no está → cae a cmd */ }
+
+        // 2) Fallback: cmd.exe con WorkingDirectory = cwd (si existe).
+        try
+        {
+            var c = new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                UseShellExecute = true,
+                WorkingDirectory = Directory.Exists(cwd) ? cwd
+                    : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            };
+            c.ArgumentList.Add("/k"); c.ArgumentList.Add(cmd);
+            Process.Start(c);
+        }
+        catch { /* no se pudo abrir terminal */ }
+    }
+
+    // ── (c/d) Renombrar por clic-secundario (proyectos / sesiones) ──
+    // Espeja el .contextMenu de PopoverView.swift: "Renombrar…" siempre + "Restaurar original" solo si
+    // hay alias. Escribe el mapa (QuotaService) y dispara `_onRefresh` (RunFetch), que reejecuta el
+    // fetch/servicio y recarga el UI con el nombre nuevo.
+
+    /// Menú del clic derecho sobre una fila de proyecto. `name` = nombre mostrado (ya aliaseado).
+    private void ShowProjectMenu(string name, Point loc)
+    {
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("Renombrar…", null, (_, _) => PromptRenameProject(name));
+        if (QuotaService.ProjectAliased(name))
+            menu.Items.Add("Restaurar original", null, (_, _) => { QuotaService.RenameProject(name, ""); _onRefresh(); });
+        ShowMenu(menu, loc);
+    }
+
+    /// Menú del clic derecho sobre una fila de sesión. La llave es su id (estable).
+    private void ShowSessionMenu(Session s, Point loc)
+    {
+        string id = s.Id ?? "";
+        if (id.Length == 0) return;
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("Renombrar…", null, (_, _) => PromptRenameSession(s));
+        if (QuotaService.SessionAliased(id))
+            menu.Items.Add("Restaurar original", null, (_, _) => { QuotaService.RenameSession(id, ""); _onRefresh(); });
+        ShowMenu(menu, loc);
+    }
+
+    private void ShowMenu(ContextMenuStrip menu, Point loc)
+    {
+        menu.Closed += (_, _) => menu.Dispose();
+        menu.Show(_content, loc);
+    }
+
+    private void PromptRenameProject(string name)
+    {
+        string? v = PromptRename("Renombrar proyecto",
+            $"Nuevo nombre para “{name}”. Vacío para restaurar el original.", name);
+        if (v == null) return;   // cancelado → sin cambios
+        QuotaService.RenameProject(name, v);
+        _onRefresh();
+    }
+
+    private void PromptRenameSession(Session s)
+    {
+        string id = s.Id ?? "";
+        if (id.Length == 0) return;
+        string? v = PromptRename("Renombrar sesión",
+            "Nueva etiqueta para esta sesión. Vacío para restaurar la original.", s.Label ?? "");
+        if (v == null) return;
+        QuotaService.RenameSession(id, v);
+        _onRefresh();
+    }
+
+    /// Abre el diálogo modal de renombrar, suprimiendo el auto-Hide del popup mientras está arriba.
+    private string? PromptRename(string title, string prompt, string current)
+    {
+        _modalOpen = true;
+        try { return RenameDialog.Show(this, title, prompt, current); }
+        finally { _modalOpen = false; }
     }
 
     /// Botón-curita: corre el instalador del cerebro EMPAQUETADO junto al exe
@@ -1118,7 +1653,7 @@ public sealed class PopupForm : Form
     /// del array `brainTiers` de la GUI macOS (event/detail copiados literales, en español).
     private BrainTier[] BrainTiers =>
     [
-        new("🔒", "INVIOLABLE", Fmt.Hex("#dc3545"), "hooks que BLOQUEAN (deny) — no negociables",
+        new("🔒", "Hooks Forzosos", Fmt.Hex("#cf5a49"), "hooks que bloquean (deny) — no negociables",
         [
             new("🚧", "git-branch-guard", "push/merge a develop·main → denegado, te redirige a ramita→MR",
                 "PreToolUse · Bash",
@@ -1142,7 +1677,7 @@ public sealed class PopupForm : Form
                 "PreToolUse · Task",
                 "Freno DURO (distinto del gate que pregunta): si el gasto real ya rebasó un techo configurable (sobreuso o ventana 5h), bloquea reclutar más agentes para que un workflow desbocado no siga quemando dinero. Techo por env (LIMITE_GASTO_OVERAGE_PCT / LIMITE_GASTO_5H_PCT)."),
         ]),
-        new("🔔", "AUTOMÁTICO", _accent, "hooks que inyectan / recuerdan — no bloquean",
+        new("🔔", "Automático", _accent, "hooks que inyectan / recuerdan — no bloquean",
         [
             new("🧭", "sesion-inicio", "al abrir/retomar reinyecta rama + norma de git + orden de leer memoria",
                 "SessionStart",
@@ -1160,7 +1695,7 @@ public sealed class PopupForm : Form
                 "PostToolUse · Task",
                 "Tras un consentimiento aprobado lo registra para no volver a preguntar (1× por máquina o por workflow, según el nivel de costo). Materializa el 'pregunta una sola vez'."),
         ]),
-        new("📜", "NORMAS", Fmt.Hex("#4a90d9"), "reglas que Claude se autoimpone (CLAUDE.md)",
+        new("📜", "Normas", Fmt.Hex("#4a90d9"), "reglas que Claude se autoimpone (CLAUDE.md)",
         [
             new("🎯", "Definition of Done", "verde técnico ≠ Done/Listo/Ya Quedó; exige QA o un OK explícito",
                 "CLAUDE.md · norma",
@@ -1175,7 +1710,7 @@ public sealed class PopupForm : Form
                 "CLAUDE.md · norma",
                 "Reclutar agentes cuesta según nivel: gratis (local), incluido (Claude dentro de la ventana 5h) o con costo (overage / API externa / desconocido). La cadencia del permiso depende del nivel."),
         ]),
-        new("💡", "SKILLS", Fmt.Hex("#3aa76d"), "herramientas opt-in — las invocas tú",
+        new("💡", "Skills", Fmt.Hex("#3aa76d"), "herramientas opt-in — las invocas tú",
         [
             new("📦", "cerrar-slice", "build+tests+memoria al día + MR con resumen curado por slice",
                 "skill · opt-in",
