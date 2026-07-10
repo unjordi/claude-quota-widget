@@ -52,19 +52,25 @@ public sealed class StatsDay
     [JsonPropertyName("out_tok")] public double OutTok { get; set; }
     [JsonPropertyName("tokens")]  public double Tokens { get; set; }
     [JsonPropertyName("cost")]    public double? Cost { get; set; }
+    // Mensajes (user/assistant) de ESTE día local — alimenta la suma por rango del Resumen (b1b).
+    [JsonPropertyName("messages")] public double Messages { get; set; }
     [JsonPropertyName("models")]  public List<DayModel>? Models { get; set; }
     [JsonPropertyName("projects")] public List<DayProject>? Projects { get; set; }
 }
 
 public sealed class DayModel
 {
-    [JsonPropertyName("model")]  public string? Model { get; set; }
-    [JsonPropertyName("tokens")] public double Tokens { get; set; }
+    [JsonPropertyName("model")]   public string? Model { get; set; }
+    [JsonPropertyName("in_tok")]  public double InTok { get; set; }
+    [JsonPropertyName("out_tok")] public double OutTok { get; set; }
+    [JsonPropertyName("tokens")]  public double Tokens { get; set; }
 }
 
 public sealed class DayProject
 {
     [JsonPropertyName("project")] public string? Project { get; set; }
+    [JsonPropertyName("in_tok")]  public double InTok { get; set; }
+    [JsonPropertyName("out_tok")] public double OutTok { get; set; }
     [JsonPropertyName("tokens")]  public double Tokens { get; set; }
 }
 
@@ -119,4 +125,35 @@ public sealed class OAuthWindow
 {
     [JsonPropertyName("utilization")] public double? Utilization { get; set; }
     [JsonPropertyName("resets_at")]   public string? ResetsAt { get; set; }
+}
+
+// ---------------------------------------------------------------------------
+// chats.json — conversaciones del app de escritorio (extraídas del cache local
+// de IndexedDB por chats-extract.js; sin red). Alimenta la pestaña Chats.
+// ---------------------------------------------------------------------------
+
+/// <summary>Una conversación cacheada por el app de escritorio de Claude.</summary>
+public sealed class Chat
+{
+    [JsonPropertyName("uuid")]       public string? Uuid { get; set; }
+    [JsonPropertyName("title")]      public string? Title { get; set; }
+    [JsonPropertyName("summary")]    public string? Summary { get; set; }
+    [JsonPropertyName("model")]      public string? Model { get; set; }
+    [JsonPropertyName("updated_at")] public string? UpdatedAt { get; set; }
+    [JsonPropertyName("created_at")] public string? CreatedAt { get; set; }
+}
+
+// ---------------------------------------------------------------------------
+// sessions.json — sesiones de Claude Code por proyecto (listadas por
+// sessions-extract.js). Alimenta el desglose "resumir" del tab Proyectos.
+// ---------------------------------------------------------------------------
+
+/// <summary>Una sesión de Claude Code; se resume con `claude --resume &lt;id&gt;` en su cwd.</summary>
+public sealed class Session
+{
+    [JsonPropertyName("id")]         public string? Id { get; set; }         // sessionId (= nombre del .jsonl)
+    [JsonPropertyName("project")]    public string? Project { get; set; }
+    [JsonPropertyName("cwd")]        public string? Cwd { get; set; }
+    [JsonPropertyName("updated_at")] public string? UpdatedAt { get; set; }
+    [JsonPropertyName("label")]      public string? Label { get; set; }
 }
