@@ -45,7 +45,8 @@ public sealed class QuotaService
     /// If present and the active account differs, the UI warns of a mismatch.
     public static string AccountPinFile => Path.Combine(CacheDir, "account");
     /// Config dir: CLAUDE_CONFIG_DIR if set (Claude Code honors it), else ~/.claude.
-    private static string ClaudeDir
+    /// Público: es la base donde el widget ESCRIBE los mapas de alias (proyectos/sesiones).
+    public static string ClaudeDir
     {
         get
         {
@@ -75,6 +76,65 @@ public sealed class QuotaService
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never,
         WriteIndented = true,
     };
+
+    // ---- (c/d) alias de proyectos/sesiones (renombrar por clic-secundario) ----
+    // Espeja QuotaModel.swift (renameProject/renameSession/aliasMap/writeMap/projectAliased/
+    // sessionAliased). Los mapas { "<clave>": "<valor>" } viven en la base de Claude (ClaudeDir).
+    // El fetch (proyectos) y sessions-extract vía QuotaService (sesiones) los RELEEN: tras escribir
+    // hay que disparar un refetch para que la lista muestre el nombre nuevo.
+    /// ~/.claude/proyectos-alias.json — { "<nombre canónico>": "<alias>" }.
+    public static string ProjectAliasFile => Path.Combine(ClaudeDir, "proyectos-alias.json");
+    /// ~/.claude/sesiones-alias.json — { "<id de sesión>": "<etiqueta>" }.
+    public static string SessionAliasFile => Path.Combine(ClaudeDir, "sesiones-alias.json");
+
+    private static Dictionary<string, string> AliasMap(string file)
+    {
+        // Fail-open: ausente/ilegible → mapa vacío (nunca rompe el rename por un JSON torcido).
+        try
+        {
+            if (!File.Exists(file)) return new();
+            return JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(file)) ?? new();
+        }
+        catch { return new(); }
+    }
+
+    private static void WriteMap(string file, Dictionary<string, string> map)
+    {
+        Directory.CreateDirectory(ClaudeDir);
+        // Llaves ordenadas (como el .sortedKeys de macOS) → diff limpio si el archivo se versiona/sincroniza.
+        var sorted = new SortedDictionary<string, string>(map, StringComparer.Ordinal);
+        WriteAtomic(file, JsonSerializer.Serialize(sorted, JsonOpts));
+    }
+
+    /// (c) Renombra un proyecto. La lista muestra el nombre YA aliaseado, así que la llave canónica
+    /// (la que el fetch usa) es la entrada cuyo VALOR == mostrado; si no hay, el mostrado es el canónico.
+    /// Nombre nuevo vacío (o == canónico) BORRA el alias → revierte. Requiere refetch después.
+    public static void RenameProject(string shown, string newName)
+    {
+        var map = AliasMap(ProjectAliasFile);
+        string canonical = map.FirstOrDefault(kv => kv.Value == shown).Key ?? shown;
+        string v = (newName ?? "").Trim();
+        if (v.Length == 0 || v == canonical) map.Remove(canonical); else map[canonical] = v;
+        WriteMap(ProjectAliasFile, map);
+    }
+
+    /// (d) Renombra una sesión por su id (nombre del .jsonl, estable). Vacío revierte a la etiqueta derivada.
+    public static void RenameSession(string id, string newName)
+    {
+        var map = AliasMap(SessionAliasFile);
+        string v = (newName ?? "").Trim();
+        if (v.Length == 0) map.Remove(id); else map[id] = v;
+        WriteMap(SessionAliasFile, map);
+    }
+
+    /// ¿El proyecto mostrado tiene un alias activo? (es llave o valor del mapa) — para "Restaurar original".
+    public static bool ProjectAliased(string shown)
+    {
+        var m = AliasMap(ProjectAliasFile);
+        return m.ContainsKey(shown) || m.ContainsValue(shown);
+    }
+    /// ¿La sesión tiene un alias activo? (su id es llave del mapa) — para "Restaurar original".
+    public static bool SessionAliased(string id) => AliasMap(SessionAliasFile).ContainsKey(id);
 
     // ---- derived, mirrors QuotaModel.swift ---------------------------------
 

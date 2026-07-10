@@ -35,6 +35,12 @@ public sealed class PopupForm : Form
     private string? _expandedProject;
     private readonly List<(string name, Rectangle rect)> _projectHits = new();
     private readonly List<(Session s, Rectangle rect)> _sessionHits = new();
+    // Zonas de clic-SECUNDARIO de renombrar (proyectos): a diferencia de `_projectHits` (solo filas con
+    // sesiones, que toggle-an al clic izquierdo), cubre TODA fila de proyecto para el menú "Renombrar…".
+    private readonly List<(string name, Rectangle rect)> _projectRenameHits = new();
+    // True mientras un diálogo modal (renombrar) está arriba: suprime el auto-Hide de OnDeactivate para
+    // que el popup no desaparezca bajo el diálogo (los ContextMenuStrip no desactivan el form, sí ShowDialog).
+    private bool _modalOpen;
 
     // ── Pestaña Chats: hover → resumen en el pie ──
     // Resumen del chat bajo el cursor (o null). Zonas de hover de las filas de chat del último PaintChats.
@@ -151,7 +157,7 @@ public sealed class PopupForm : Form
     protected override void OnDeactivate(EventArgs e)
     {
         base.OnDeactivate(e);
-        if (!ShotMode) Hide();
+        if (!ShotMode && !_modalOpen) Hide();
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
@@ -632,6 +638,7 @@ public sealed class PopupForm : Form
 
         _projectHits.Clear();
         _sessionHits.Clear();
+        _projectRenameHits.Clear();
         int listBottom = RangeFooterTop();
         int right = _content.Width - pad;
         using var nameFont = Px(11.5f, FontStyle.Bold);
@@ -641,6 +648,8 @@ public sealed class PopupForm : Form
         {
             if (y + rowH > listBottom) break;
             string name = p.Name;
+            // Toda fila de proyecto es renombrable por clic-secundario (tenga sesiones o no).
+            _projectRenameHits.Add((name, new Rectangle(pad, y, right - pad, rowH)));
             int n = _svc.Sessions.Count(s => s.Project == name);
             var col = StatsCompute.ProjectColor(_svc.Stats, name);
             using (var sw = new SolidBrush(col))
@@ -1346,6 +1355,21 @@ public sealed class PopupForm : Form
     /// botón-curita/banner y hojas. Las pestañas con footer NO scrollean → e.Location directo.
     private void ContentMouseDown(object? sender, MouseEventArgs e)
     {
+        // Clic-SECUNDARIO en Proyectos: menú contextual de renombrar sobre la fila de sesión (prioridad)
+        // o de proyecto. En cualquier otra pestaña el clic derecho no hace nada (no cae al clic izquierdo).
+        if (e.Button == MouseButtons.Right)
+        {
+            if (_tab == 3)
+            {
+                foreach (var (s, rect) in _sessionHits)
+                    if (rect.Contains(e.Location)) { ShowSessionMenu(s, e.Location); return; }
+                foreach (var (name, rect) in _projectRenameHits)
+                    if (rect.Contains(e.Location)) { ShowProjectMenu(name, e.Location); return; }
+            }
+            return;
+        }
+        if (e.Button != MouseButtons.Left) return;
+
         // Footer de rango (tabs 1..4).
         if (_tab is 1 or 2 or 3 or TabChats)
             foreach (var (idx, rect) in _rangeHits)
@@ -1427,6 +1451,67 @@ public sealed class PopupForm : Form
             Process.Start(c);
         }
         catch { /* no se pudo abrir terminal */ }
+    }
+
+    // ── (c/d) Renombrar por clic-secundario (proyectos / sesiones) ──
+    // Espeja el .contextMenu de PopoverView.swift: "Renombrar…" siempre + "Restaurar original" solo si
+    // hay alias. Escribe el mapa (QuotaService) y dispara `_onRefresh` (RunFetch), que reejecuta el
+    // fetch/servicio y recarga el UI con el nombre nuevo.
+
+    /// Menú del clic derecho sobre una fila de proyecto. `name` = nombre mostrado (ya aliaseado).
+    private void ShowProjectMenu(string name, Point loc)
+    {
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("Renombrar…", null, (_, _) => PromptRenameProject(name));
+        if (QuotaService.ProjectAliased(name))
+            menu.Items.Add("Restaurar original", null, (_, _) => { QuotaService.RenameProject(name, ""); _onRefresh(); });
+        ShowMenu(menu, loc);
+    }
+
+    /// Menú del clic derecho sobre una fila de sesión. La llave es su id (estable).
+    private void ShowSessionMenu(Session s, Point loc)
+    {
+        string id = s.Id ?? "";
+        if (id.Length == 0) return;
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("Renombrar…", null, (_, _) => PromptRenameSession(s));
+        if (QuotaService.SessionAliased(id))
+            menu.Items.Add("Restaurar original", null, (_, _) => { QuotaService.RenameSession(id, ""); _onRefresh(); });
+        ShowMenu(menu, loc);
+    }
+
+    private void ShowMenu(ContextMenuStrip menu, Point loc)
+    {
+        menu.Closed += (_, _) => menu.Dispose();
+        menu.Show(_content, loc);
+    }
+
+    private void PromptRenameProject(string name)
+    {
+        string? v = PromptRename("Renombrar proyecto",
+            $"Nuevo nombre para “{name}”. Vacío para restaurar el original.", name);
+        if (v == null) return;   // cancelado → sin cambios
+        QuotaService.RenameProject(name, v);
+        _onRefresh();
+    }
+
+    private void PromptRenameSession(Session s)
+    {
+        string id = s.Id ?? "";
+        if (id.Length == 0) return;
+        string? v = PromptRename("Renombrar sesión",
+            "Nueva etiqueta para esta sesión. Vacío para restaurar la original.", s.Label ?? "");
+        if (v == null) return;
+        QuotaService.RenameSession(id, v);
+        _onRefresh();
+    }
+
+    /// Abre el diálogo modal de renombrar, suprimiendo el auto-Hide del popup mientras está arriba.
+    private string? PromptRename(string title, string prompt, string current)
+    {
+        _modalOpen = true;
+        try { return RenameDialog.Show(this, title, prompt, current); }
+        finally { _modalOpen = false; }
     }
 
     /// Botón-curita: corre el instalador del cerebro EMPAQUETADO junto al exe

@@ -19,7 +19,12 @@ and renders the same three-tab breakdown.
     the slug is mapped back to a readable name via `~/.claude.json`. A project with
     local Claude Code sessions is **expandable** (chevron): click a session to
     resume it in a new terminal (`claude --resume <id>` in its cwd — Windows
-    Terminal if present, else `cmd.exe`).
+    Terminal if present, else `cmd.exe`). **Right-click a project or session row →
+    Renombrar…** opens a small dialog to set a custom label (leave it empty to
+    restore the original); a *Restaurar original* entry shows when an alias is
+    active. Renames persist to `~/.claude/proyectos-alias.json` /
+    `sesiones-alias.json` (honoring `CLAUDE_CONFIG_DIR`) and trigger a refetch so the
+    list reloads with the new name — the same maps the macOS/Plasma ports read.
   - **Chats** — recent Claude **desktop-app** conversations (read-only): a per-model
     breakdown with %, a list of recents (title + model badge + relative date), and a
     footer showing the summary of the chat under the cursor. **Only shown when local
