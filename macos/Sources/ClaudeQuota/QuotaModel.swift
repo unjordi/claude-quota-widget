@@ -64,6 +64,15 @@ struct Stats: Codable {
     let models: [StatsModel]?
     let projects: [StatsProject]?
     let summary: StatsSummary?
+    /// Solo en stats-global.json (vista "todas las máquinas"): qué máquinas aportaron y cuánto.
+    let machines: [MachineStat]?
+}
+
+/// Una máquina que aportó a la vista sincronizada (stats-global.json).
+struct MachineStat: Codable {
+    let name: String?
+    let updated_at: String?
+    let tokens: Double?
 }
 
 struct StatsDay: Codable {
@@ -166,6 +175,8 @@ struct Session: Codable, Identifiable {
 final class QuotaModel: ObservableObject {
     @Published var snapshot: Snapshot?
     @Published var stats: Stats?
+    /// Vista sincronizada entre máquinas (stats-global.json). nil si el sync (e) no está activo.
+    @Published var statsGlobal: Stats?
     @Published var chats: [Chat] = []
     @Published var sessions: [Session] = []
     @Published var loadError: String?
@@ -179,6 +190,11 @@ final class QuotaModel: ObservableObject {
     static var statsURL: URL {
         let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         return cache.appendingPathComponent("claude-quota/stats.json")
+    }
+    /// ~/Library/Caches/claude-quota/stats-global.json — vista fusionada de todas las máquinas (sync (e)).
+    static var statsGlobalURL: URL {
+        let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        return cache.appendingPathComponent("claude-quota/stats-global.json")
     }
     /// ~/Library/Caches/claude-quota/chats.json — conversaciones del app de escritorio (fuente local).
     static var chatsURL: URL {
@@ -253,6 +269,10 @@ final class QuotaModel: ObservableObject {
            let s = try? JSONDecoder().decode(Stats.self, from: data) {
             stats = s
         }
+        // stats-global.json (sync (e)): presente solo si el sync está activo. Ausente -> statsGlobal nil
+        // -> el toggle "todas" no se ofrece.
+        statsGlobal = (try? Data(contentsOf: Self.statsGlobalURL))
+            .flatMap { try? JSONDecoder().decode(Stats.self, from: $0) }
         // chats.json es best-effort: ausente/roto deja `chats` intacto (pestaña vacía).
         if let data = try? Data(contentsOf: Self.chatsURL),
            let c = try? JSONDecoder().decode([Chat].self, from: data) {

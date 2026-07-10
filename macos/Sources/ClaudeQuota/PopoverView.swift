@@ -28,6 +28,11 @@ struct PopoverView: View {
     /// Rename en curso (c: proyecto vía clic-secundario / d: sesión), o nil. `renameText` es el campo.
     @State private var renameTarget: RenameTarget? = nil
     @State private var renameText: String = ""
+    /// (e) Toggle "todas las máquinas": lee stats-global.json (sync) en vez del stats local.
+    @State private var useGlobal = false
+
+    /// Fuente de stats activa según el toggle (e). Si se pidió global pero no hay sync, cae a local.
+    private var activeStats: Stats? { (useGlobal ? model.statsGlobal : model.stats) ?? model.stats }
 
     // Neutral surfaces adapt to light/dark via labelColor; accents are fixed hex.
     private var label: Color { Color(nsColor: .labelColor) }
@@ -262,10 +267,10 @@ struct PopoverView: View {
     // ===== Tab 1: Resumen =====
 
     private var resumenTab: some View {
-        let s = model.stats?.summary
+        let s = activeStats?.summary
         let streaks = model.streaks
         let days = rangedDays()
-        let hasStats = model.stats != nil
+        let hasStats = activeStats != nil
         // Agregados recalculados sobre el rango (a ∞ coinciden con summary).
         let toks = days.reduce(0.0) { $0 + ($1.tokens ?? 0) }
         let cost = days.reduce(0.0) { $0 + ($1.cost ?? 0) }
@@ -298,7 +303,7 @@ struct PopoverView: View {
                 .foregroundStyle(label.opacity(0.6))
             heatmap
             Spacer(minLength: 0)
-            rangeFooter
+            rangeFooter(machineToggle: true)
         }
         .padding(16)
     }
@@ -345,7 +350,7 @@ struct PopoverView: View {
                 }
             }
             .frame(maxHeight: .infinity)
-            rangeFooter
+            rangeFooter(machineToggle: true)
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -395,7 +400,7 @@ struct PopoverView: View {
                 }
             }
             .frame(maxHeight: .infinity)
-            rangeFooter
+            rangeFooter(machineToggle: true)
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -538,7 +543,7 @@ struct PopoverView: View {
                     .lineLimit(4)
                     .frame(maxWidth: .infinity, minHeight: 56, alignment: .topLeading)
             }
-            rangeFooter
+            rangeFooter()
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -620,8 +625,9 @@ struct PopoverView: View {
     }
 
     /// Días de stats.days[] dentro del rango (todos si ∞). Compara por prefijo de fecha.
+    /// Usa la fuente activa (local o global según el toggle (e)).
     private func rangedDays() -> [StatsDay] {
-        let all = model.stats?.days ?? []
+        let all = activeStats?.days ?? []
         guard let cut = rangeCutoff() else { return all }
         return all.filter { ($0.date ?? "") >= cut }
     }
@@ -684,9 +690,10 @@ struct PopoverView: View {
         }
     }
 
-    /// Footer con los 4 botones de rango; el activo va en acento.
+    /// Footer con los 4 botones de rango; el activo va en acento. Si `machineToggle` y hay vista
+    /// sincronizada (e), agrega a la derecha el par 🖥 esta / ☁️ todas.
     @ViewBuilder
-    private var rangeFooter: some View {
+    private func rangeFooter(machineToggle: Bool = false) -> some View {
         HStack(spacing: 4) {
             ForEach(TimeRange.allCases) { r in
                 Button { range = r } label: {
@@ -700,8 +707,37 @@ struct PopoverView: View {
                 .buttonStyle(.plain)
             }
             Spacer(minLength: 0)
+            if machineToggle, model.statsGlobal != nil {
+                machinePills
+            }
         }
         .padding(.top, 2)
+    }
+
+    /// (e) Par de píldoras 🖥 esta máquina / ☁️ todas. Solo aparece si hay stats-global.json.
+    @ViewBuilder
+    private var machinePills: some View {
+        let n = model.statsGlobal?.machines?.count ?? 0
+        HStack(spacing: 4) {
+            machinePill(system: "desktopcomputer", on: !useGlobal) { useGlobal = false }
+            machinePill(system: "cloud", label: n > 1 ? "\(n)" : nil, on: useGlobal) { useGlobal = true }
+        }
+        .help(useGlobal ? "Mostrando el uso combinado de todas tus máquinas (sync)"
+                        : "Mostrando solo esta máquina")
+    }
+
+    @ViewBuilder
+    private func machinePill(system: String, label extra: String? = nil, on: Bool, _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            HStack(spacing: 3) {
+                Image(systemName: system).font(.system(size: 10))
+                if let extra { Text(extra).font(.caption2).fontWeight(.bold) }
+            }
+            .padding(.horizontal, 7).padding(.vertical, 3)
+            .background(RoundedRectangle(cornerRadius: 5).fill(on ? accent.opacity(0.2) : label.opacity(0.06)))
+            .foregroundStyle(on ? accent : label.opacity(0.7))
+        }
+        .buttonStyle(.plain)
     }
 
     // ===== Tab 5: Cerebro =====
