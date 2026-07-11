@@ -502,12 +502,22 @@ resolve_sync_dir() {
 }
 SYNC_DIR_RESOLVED="$(resolve_sync_dir || true)"
 if [[ -n "${SYNC_DIR_RESOLVED:-}" && -f "$CACHE_DIR/stats.json" ]] && mkdir -p "$SYNC_DIR_RESOLVED" 2>/dev/null; then
-  HOST="$(hostname -s 2>/dev/null || hostname || echo host)"
+  # machine-id ESTABLE: el snapshot se nombra por este id, NO por el hostname (evita que una máquina
+  # que cambia de nombre genere varios snapshots y el merge multiplique). En Linux systemd existe
+  # /etc/machine-id (muy estable); si no, se genera un uuid y se persiste. El nombre bonito va aparte.
+  MID_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/claude-quota/machine-id"
+  MACHINE_ID="$(cat "$MID_FILE" 2>/dev/null || true)"
+  if [[ -z "$MACHINE_ID" ]]; then
+    MACHINE_ID="$(cat /etc/machine-id 2>/dev/null || uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]' || true)"
+    [[ -z "$MACHINE_ID" ]] && MACHINE_ID="$(hostname -s 2>/dev/null || echo host)"
+    mkdir -p "$(dirname "$MID_FILE")" 2>/dev/null && printf '%s\n' "$MACHINE_ID" > "$MID_FILE" 2>/dev/null || true
+  fi
+  MACHINE_NAME="$(hostnamectl --static 2>/dev/null || hostname 2>/dev/null || echo "$MACHINE_ID")"
   ACCT="$(jq -r '.account_uuid // .account_email // "default"' "$STATE_FILE" 2>/dev/null || echo default)"
-  SNAP_TMP="$SYNC_DIR_RESOLVED/.$HOST.json.tmp"
-  if jq --arg host "$HOST" --arg ts "$NOW_ISO" --arg acct "$ACCT" \
-        '{machine:$host, updated_at:$ts, account:$acct, stats:.}' "$CACHE_DIR/stats.json" > "$SNAP_TMP" 2>/dev/null; then
-    mv "$SNAP_TMP" "$SYNC_DIR_RESOLVED/$HOST.json"
+  SNAP_TMP="$SYNC_DIR_RESOLVED/.$MACHINE_ID.json.tmp"
+  if jq --arg id "$MACHINE_ID" --arg name "$MACHINE_NAME" --arg ts "$NOW_ISO" --arg acct "$ACCT" \
+        '{machine_id:$id, machine:$name, updated_at:$ts, account:$acct, stats:.}' "$CACHE_DIR/stats.json" > "$SNAP_TMP" 2>/dev/null; then
+    mv "$SNAP_TMP" "$SYNC_DIR_RESOLVED/$MACHINE_ID.json"
   else
     rm -f "$SNAP_TMP"
   fi
