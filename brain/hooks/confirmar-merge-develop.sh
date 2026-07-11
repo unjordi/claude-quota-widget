@@ -45,7 +45,7 @@ fi
 recent=""
 tpath=$(printf '%s' "$input" | jq -r '.transcript_path // empty' 2>/dev/null)
 if [ -n "$tpath" ] && [ -f "$tpath" ]; then
-  recent=$(tail -n 140 "$tpath" 2>/dev/null | jq -rs '
+  recent=$(tail -n 400 "$tpath" 2>/dev/null | jq -rs '
     [.[] | select((.message.role // .type)=="user")
          | (.message.content // [.message] )
          | (if type=="array" then (map(if type=="string" then . else (.text // "") end) | join(" ")) else (. // "") end)]
