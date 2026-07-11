@@ -30,18 +30,21 @@ public static class SyncService
 
             Directory.CreateDirectory(syncDir);
 
-            // snapshot propio = stats.json + metadatos de máquina/cuenta (escritura atómica).
-            string host = SafeHost();
+            // snapshot propio: nombrado por un machine-id ESTABLE (no por el hostname, que puede cambiar
+            // -> una misma maquina generaria varios snapshots y el merge multiplicaria). El nombre bonito
+            // (Environment.MachineName) viaja como dato aparte para la lista "Maquinas".
+            string machineId = MachineId(cacheDir);
             var snapshot = new SyncSnapshot
             {
-                Machine = host,
+                MachineId = machineId,
+                Machine = SafeHost(),
                 UpdatedAt = nowIso,
                 Account = account,
                 Stats = localStats,
             };
             try
             {
-                WriteAtomic(Path.Combine(syncDir, host + ".json"),
+                WriteAtomic(Path.Combine(syncDir, machineId + ".json"),
                             JsonSerializer.Serialize(snapshot, jsonOpts));
             }
             catch { /* fail-open: no se pudo subir el snapshot; seguimos e intentamos fusionar */ }
@@ -214,7 +217,7 @@ public static class SyncService
 
     // ---- utilidades --------------------------------------------------------
 
-    /// Nombre corto de la máquina (espeja `hostname -s`). Environment.MachineName es el NetBIOS name.
+    /// Nombre bonito de la máquina (para mostrar). Environment.MachineName es el NetBIOS name.
     private static string SafeHost()
     {
         try
@@ -223,6 +226,33 @@ public static class SyncService
             return string.IsNullOrWhiteSpace(h) ? "host" : h;
         }
         catch { return "host"; }
+    }
+
+    /// Machine-id ESTABLE (nombra el snapshot). Se persiste en cacheDir\machine-id la 1a vez; se siembra
+    /// del MachineGuid del registro (muy estable) o de un Guid nuevo. Sobrevive a cambios de hostname.
+    private static string MachineId(string cacheDir)
+    {
+        string file = Path.Combine(cacheDir, "machine-id");
+        try
+        {
+            if (File.Exists(file))
+            {
+                string existing = File.ReadAllText(file).Trim();
+                if (!string.IsNullOrEmpty(existing)) return existing;
+            }
+        }
+        catch { }
+        string id = "";
+        try
+        {
+            id = Microsoft.Win32.Registry.GetValue(
+                @"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Cryptography", "MachineGuid", null) as string ?? "";
+        }
+        catch { }
+        if (string.IsNullOrWhiteSpace(id)) id = Guid.NewGuid().ToString();
+        id = id.Trim().ToLowerInvariant();
+        try { Directory.CreateDirectory(cacheDir); File.WriteAllText(file, id); } catch { }
+        return id;
     }
 
     private static void WriteAtomic(string path, string content)

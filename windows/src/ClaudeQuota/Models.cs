@@ -60,7 +60,8 @@ public sealed class MachineStat
 /// sus stats locales más metadatos de máquina/cuenta. El merge los fusiona a stats-global.json.</summary>
 public sealed class SyncSnapshot
 {
-    [JsonPropertyName("machine")]    public string? Machine { get; set; }
+    [JsonPropertyName("machine_id")] public string? MachineId { get; set; }   // id estable (nombra el archivo)
+    [JsonPropertyName("machine")]    public string? Machine { get; set; }     // nombre bonito (para mostrar)
     [JsonPropertyName("updated_at")] public string? UpdatedAt { get; set; }
     [JsonPropertyName("account")]    public string? Account { get; set; }
     [JsonPropertyName("stats")]      public Stats? Stats { get; set; }
