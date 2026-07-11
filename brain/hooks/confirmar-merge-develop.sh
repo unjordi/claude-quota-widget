@@ -2,17 +2,19 @@
 # confirmar-merge-develop.sh — PreToolUse/Bash: EXIGE confirmación EXPRESA de unjordi antes de
 # INTEGRAR a develop/main por MR. Hace cumplir, en el punto exacto del merge, la definición de LISTO.
 #
-# Modelo "MINI-DEVELOP" (acordado con unjordi):
-#   - Las ramitas de feature se mergean LIBREMENTE (con `git merge` LOCAL) a una rama de INTEGRACIÓN
-#     de larga vida (`integracion/<sprint>` o `epic/<tema>`): ahí Claude trabaja horas/días, rompe y
-#     arregla a gusto, reconstruye el stack, sin fricción y sin pedir permiso a cada paso.
-#   - El ÚNICO cruce que pasa por este candado es integrar a develop/main vía MR
-#     (`glab mr merge|accept` / `gh pr merge`, incluido armar `--auto-merge`): BLOQUEA salvo que en el
-#     contexto reciente haya una MARCA de confirmación/autorización expresa de unjordi para ESTE cierre.
+# Modelo "MINI-DEVELOP-por-dev" (acordado con unjordi):
+#   - Cada dev trabaja en su rama personal de integración `Develop<Usuario>` (DevelopUnjordi,
+#     DevelopAliazCIA, chunito…): sus ramitas de feature se mergean AHÍ de forma CONTINUA y sin
+#     drama — este candado NO las intercepta. Igual las ramas `epic/*`, `integracion/*` y demás.
+#   - El ÚNICO cruce que pasa por este candado es integrar al `develop` COMPARTIDO (o promover a
+#     `main`) vía MR (`glab mr merge|accept` / `gh pr merge`, incluido armar `--auto-merge`):
+#     BLOQUEA salvo que en el contexto reciente haya una MARCA de confirmación/autorización expresa
+#     de unjordi para ESE cierre.
 #
-# `git merge` LOCAL a cualquier rama NO se intercepta (por eso iterar en la rama de integración es
-# libre). Complementa a git-branch-guard (bloquea push directo a develop/main) y merge-squash-guard
-# (exige --squash). Fail-open sin jq.
+# ALCANCE: SOLO repos COMPARTIDOS (marca `.claude/repo-compartido`, viaja por git). En repos
+# personales/solo (sin la marca) NO gatea nada → cero fricción ahí; ese caso lo cuidan git-branch-guard
+# (no push directo a develop/main) + merge-squash-guard. `git merge` LOCAL a cualquier rama tampoco se
+# intercepta. Complementa a git-branch-guard y merge-squash-guard (exige --squash a develop). Fail-open sin jq.
 set -u
 input=$(cat 2>/dev/null || true)
 command -v jq >/dev/null 2>&1 || exit 0
@@ -24,6 +26,10 @@ MERGE_RE='(glab[[:space:]]+mr[[:space:]]+(merge|accept)|gh[[:space:]]+pr[[:space
 printf '%s' "$cmd" | grep -qE "$MERGE_RE" || exit 0
 # Escapes: ayuda/inspección, no una integración real.
 printf '%s' "$cmd" | grep -qE '(^|[[:space:]])(--help|-h|list|view|--dry-run|status)([[:space:]]|$)' && exit 0
+
+# ALCANCE: solo repos COMPARTIDOS. Sin la marca `.claude/repo-compartido` (que viaja por git en los
+# repos de equipo), este candado no aplica → repos personales/solo mergean a su develop sin pedir OK.
+[ -f "${CLAUDE_PROJECT_DIR:-.}/.claude/repo-compartido" ] || exit 0
 
 # DESTINO del merge: main = RELEASE (autorización SUPER explícita); develop/otro = confirmación normal.
 # FAIL-SAFE: si no podemos determinar el destino, se trata como develop (conservador).
@@ -39,6 +45,13 @@ if [ -n "$_mrid" ]; then
   else
     destino=$(gh pr view "$_mrid" ${_repo:+-R "$_repo"} --json baseRefName -q .baseRefName 2>/dev/null)
   fi
+fi
+
+# Ramas personales de integración (Develop<Usuario>, epic/*, integracion/*, feat/*, fix/*…) reciben
+# merge CONTINUO sin gate: ahí vive el día a día del modelo MINI-DEVELOP-por-dev. SOLO el `develop`
+# COMPARTIDO y `main` piden confirmación. destino vacío/desconocido → conservador (se trata como develop).
+if [ -n "$destino" ] && [ "$destino" != "develop" ] && [ "$destino" != "main" ]; then
+  exit 0
 fi
 
 # Mensajes recientes del usuario (autorización).
