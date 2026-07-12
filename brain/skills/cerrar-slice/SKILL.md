@@ -7,8 +7,9 @@ description: Ejecuta el ritual de CIERRE de un slice — verifica (build/tests/l
 
 Encapsula la **"definición de terminado" con evidencia** y el **flujo de git**. Lo refuerzan los hooks
 **Stop** (`dod-verificar`, bloquea "listo" sin evidencia), **git-branch-guard** (bloquea push a
-develop/main) y **confirmar-merge-develop** (exige tu OK expreso antes de integrar). Sigue el orden — no
-te saltes pasos. Versión **genérica** (agnóstica de stack): sirve para cualquier proyecto que use este cerebro.
+develop/main), **confirmar-merge-develop** (exige tu OK expreso antes de integrar) y **recordar-dashboard**
+(en el push te recuerda el dashboard + doc=realidad = el Paso 2 de aquí). Sigue el orden — no te saltes
+pasos. Versión **genérica** (agnóstica de stack): sirve para cualquier proyecto que use este cerebro.
 
 ## 1. Verifica (evidencia real, no tu memoria del chat)
 - Corre la **verificación técnica que aplique a tu stack** y **CITA la salida real** (0 errores):
@@ -20,11 +21,21 @@ te saltes pasos. Versión **genérica** (agnóstica de stack): sirve para cualqu
 - Recuerda: **verde técnico ≠ LISTO.** Es *verificado técnicamente*: peldaño necesario, insuficiente
   para declarar LISTO (falta (1) confirmación funcional del usuario o (2) su autorización expresa).
 
-## 2. Actualiza la memoria (en la misma tanda — doc = realidad)
+## 2. Actualiza la memoria Y la doc (en la misma tanda — doc = realidad)
+Modelo de estado: **`estado-proyecto.md` = hub vivo** (dónde estamos + backlog + prioridad); **`bitacora.md`
+= log append-only**. Un dato en UN lugar (bitácora=qué pasó, estado=qué sigue), no en tres (ver skill `orquestar-fanout`).
 - `.claude/memory/estado-proyecto.md`: mueve el ítem a **HECHO** (commit+fecha al mergear); registra
   **DECISIONES**; lo descartado a propósito va en **FUERA POR DECISIÓN** (no en pendiente).
 - Añade **UNA línea al final** de `.claude/memory/bitacora.md` (`- fecha · rama · quién · qué`).
 - Si la feature creció, deja su nota `.claude/memory/<feature>.md` y enlázala en `MEMORY.md`.
+- **doc = realidad (NO se pregunta):** si cambiaste comportamiento, config, rutas, una interfaz o un
+  hook/skill, actualiza la doc que lo **DESCRIBE** en ESTA misma tanda — README (p. ej. el árbol del
+  cerebro + el conteo de checks de `test-brain.sh`), `docs/`, comentarios. **Rastrea las copias** (un
+  `grep` del nombre/valor viejo): una doc desincronizada YA es una doc que miente.
+- **Dashboard GLOBAL** (`dashboard_cerebro.md`, memoria de ESTA máquina): añade una línea a su Bitácora
+  y ajusta Mapa/Infra/Cabos si cambió el layout de repos/memoria/proyectos.
+- **(fan-out)** limpia los worktrees zombies con `limpiar-worktrees.sh` (deja anotado el pendiente de
+  los que sigan vivos).
 
 ## 3. Confirma CON EL USUARIO antes del MR/PR
 Commit y push a la **ramita** van libres, sin pedir permiso. Pero **antes de integrar a develop,

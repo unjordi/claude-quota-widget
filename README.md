@@ -79,7 +79,7 @@ El cerebro se ordena por *dureza*: arriba lo que te **bloquea** sin negociar; ab
    └─ ✅ dod-verificar            Def. of Done (ver Norma 🎯 DoD) sin build+tests+memoria → denegado
 
 🔔 Automático — inyectan / recuerdan (no bloquean)
-├─ 📊 recordar-dashboard       recuerda actualizar el dashboard antes del push
+├─ 📊 recordar-dashboard       en el push recuerda dashboard + doc=realidad (README/docs) — cierre del slice
 ├─ 🕰️  rama-vieja              avisa si la ramita arrastra base vieja
 ├─ 📝 delegacion-registrar     materializa el "pregunta una sola vez"
 ├─ 📮 delegacion-reporte       al terminar un agente: recuerda registrar avance + limpiar su worktree
