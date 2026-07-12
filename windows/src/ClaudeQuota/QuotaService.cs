@@ -4,12 +4,12 @@ using System.Text.Json;
 namespace ClaudeQuota;
 
 /// <summary>
-/// The Windows data pipeline — the C# analogue of src/bin/claude-quota-fetch.
+/// The Windows data pipeline — the C# analogue of src/bin/claude-brain-fetch.
 ///
 /// Unlike the Linux/mac ports (which run a bash script on a systemd/launchd
 /// timer and let the UI only read the cache), the always-running tray app does
 /// the fetch itself in-process every 5 minutes. It still writes the same
-/// state.json / stats.json cache files under %LOCALAPPDATA%\claude-quota so the
+/// state.json / stats.json cache files under %LOCALAPPDATA%\claude-brain so the
 /// snapshot stays inspectable and cross-platform-compatible.
 ///
 /// Sources, in order of authority:
@@ -38,7 +38,7 @@ public sealed class QuotaService
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
     private static string CacheDir =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                     "claude-quota");
+                     "claude-brain");
     public static string StateFile => Path.Combine(CacheDir, "state.json");
     public static string StatsFile => Path.Combine(CacheDir, "stats.json");
     /// stats-global.json — vista fusionada de todas las máquinas (sync (e)); mismo dir del cache.
@@ -770,6 +770,138 @@ public sealed class QuotaService
             WriteAtomic(outFile, outp);
         }
         catch { /* fail-open: deja el archivo previo (o ninguno) */ }
+    }
+
+    // ---- 2c. (Feature B) mover una sesión a otro proyecto/slug ---------------
+    //
+    // La foundation ya sabe reubicar el transcript: `node <AppDir>\bin\session-move.js
+    // <id> --to-cwd <cwdDestino>` imprime en stdout `{"ok":true,...}` (exit 0) o
+    // `{"ok":false,"error":...}` (exit 1). Reusamos el mismo patrón que RunExtractorAsync
+    // (node + <AppDir>\bin), pero capturamos stdout AUNQUE el exit sea ≠0 para poder
+    // mostrar el `error` de la foundation. Tras un ok, quien llama debe refrescar.
+
+    /// <summary>Resultado de MoveSessionAsync: éxito, o el mensaje de error a mostrar.</summary>
+    public sealed record MoveResult(bool Ok, string? Error);
+
+    /// <summary>Mueve la sesión <paramref name="id"/> al cwd destino corriendo session-move.js.
+    /// Devuelve ok/error parseado del JSON que imprime la foundation.</summary>
+    public async Task<MoveResult> MoveSessionAsync(string id, string toCwd)
+    {
+        if (string.IsNullOrWhiteSpace(id)) return new MoveResult(false, "sesión inválida");
+        if (string.IsNullOrWhiteSpace(toCwd)) return new MoveResult(false, "destino inválido");
+        if (!OnPath("node")) return new MoveResult(false, "node no está en el PATH (necesario para mover)");
+
+        string script = Path.Combine(AppContext.BaseDirectory, "bin", "session-move.js");
+        if (!File.Exists(script)) return new MoveResult(false, "falta bin\\session-move.js junto al app");
+
+        string outp;
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "node",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            psi.ArgumentList.Add(script);
+            psi.ArgumentList.Add(id);
+            psi.ArgumentList.Add("--to-cwd");
+            psi.ArgumentList.Add(toCwd);
+            using var proc = Process.Start(psi);
+            if (proc == null) return new MoveResult(false, "no se pudo ejecutar node");
+            outp = await proc.StandardOutput.ReadToEndAsync();   // JSON tanto en ok como en error
+            await proc.WaitForExitAsync();
+        }
+        catch (Exception ex) { return new MoveResult(false, ex.Message); }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(outp);
+            var root = doc.RootElement;
+            bool ok = root.TryGetProperty("ok", out var okEl) && okEl.ValueKind == JsonValueKind.True;
+            if (ok) return new MoveResult(true, null);
+            string? err = root.TryGetProperty("error", out var eEl) && eEl.ValueKind == JsonValueKind.String
+                ? eEl.GetString() : null;
+            return new MoveResult(false, err ?? "no se pudo mover la sesión");
+        }
+        catch { return new MoveResult(false, "respuesta inesperada de session-move.js"); }
+    }
+
+    /// <summary>Regenera la lista de sesiones YA: corre SOLO `sessions-extract.js` (rápido, sin red),
+    /// reescribe sessions.json y publica el resultado en <see cref="Sessions"/>. Úsalo tras mover o
+    /// renombrar una sesión para que la lista refleje el cambio AL INSTANTE, sin esperar al fetch
+    /// completo (lento, con red, y que solo regenera sessions.json de pasada → por eso mover/renombrar
+    /// no se reflejaba). El fetch periódico reconcilia stats/tokens después. Fail-safe: si no hay JSON
+    /// parseable (sin node / sin el helper / error), deja la lista anterior intacta.</summary>
+    public async Task RefreshSessionsAsync()
+    {
+        if (!OnPath("node")) return;   // sin node no se puede regenerar (igual que el fetch)
+        await RunExtractorAsync("sessions-extract.js", SessionsFile);
+        try
+        {
+            if (File.Exists(SessionsFile) &&
+                JsonSerializer.Deserialize<List<Session>>(File.ReadAllText(SessionsFile)) is { } s)
+                Sessions = s;
+        }
+        catch { /* fail-safe: deja la lista anterior */ }
+    }
+
+    // ---- 2d. (Feature A) sugerir un nombre para la sesión vía `claude -p` -----
+    //
+    // Barato: manda SOLO el contexto (summary) y pide un nombre corto. Fail-open:
+    // sin CLI `claude` o si truena → null (el diálogo lo reporta sin romperse).
+
+    /// <summary>Corre `claude -p` con el contexto de la sesión y devuelve un nombre corto
+    /// (3-6 palabras, español, sin comillas) o null si no hay CLI / falla.</summary>
+    public static async Task<string?> SuggestSessionNameAsync(string? summary)
+    {
+        if (string.IsNullOrWhiteSpace(summary)) return null;
+        if (!OnPath("claude")) return null;
+
+        string prompt =
+            "A partir del siguiente contexto de una sesión de trabajo, propón un nombre corto de 3 a 6 " +
+            "palabras en español, sin comillas ni puntuación final. Devuelve SOLO el nombre.\n\n" +
+            "Contexto:\n" + summary;
+
+        string? outp = await RunClaudeAsync(prompt);
+        if (string.IsNullOrWhiteSpace(outp)) return null;
+
+        // Primera línea no vacía, sin comillas envolventes.
+        string name = outp.Trim()
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim() ?? "";
+        name = name.Trim('"', '\'', '“', '”', '`').Trim();
+        return name.Length == 0 ? null : name;
+    }
+
+    /// <summary>`claude -p "&lt;prompt&gt;"` capturando stdout. ArgumentList (no string) para no depender
+    /// del quoting del shell — el prompt trae saltos de línea y posibles comillas.</summary>
+    private static async Task<string?> RunClaudeAsync(string prompt)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo
+            {
+                FileName = "claude",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            psi.ArgumentList.Add("-p");
+            // --no-session-persistence: `claude -p` ES una sesión de Claude Code y por defecto la
+            // guarda en disco (cwd=/ al lanzarla desde la GUI → aparecía un proyecto fantasma "/" que
+            // consumía cuota). Con esta bandera la sugerencia NO deja rastro. (Solo aplica con --print.)
+            psi.ArgumentList.Add("--no-session-persistence");
+            psi.ArgumentList.Add(prompt);
+            using var proc = Process.Start(psi);
+            if (proc == null) return null;
+            string stdout = await proc.StandardOutput.ReadToEndAsync();
+            await proc.WaitForExitAsync();
+            return proc.ExitCode == 0 ? stdout : null;
+        }
+        catch { return null; }
     }
 
     // ---- 3. ccusage cost enrichment (optional) -----------------------------

@@ -31,24 +31,44 @@ function sessionAliases() {
   } catch (_) { return {}; }
 }
 
-// Lee el prefijo del transcript (basta con los primeros bytes) y saca el cwd + el primer mensaje
-// de usuario (etiqueta). Las primeras líneas (mode/permission/file-history) traen cwd=null.
+// Un mensaje de usuario NO aporta contexto para nombrar la sesión si es solo un saludo, un
+// marcador del sistema (<command-message>…, tool-result) o un aviso tipo "[Request interrupted]".
+// El estilo real de unjordi abre con "holaaaaaa" / "hola! …" + un ritual de "carga memorias,
+// despierta" antes de la petición de verdad → si tomáramos solo el 1er mensaje, el summary (y la
+// sugerencia de nombre) saldría inútil ("charla inicial sin rumbo"). Por eso se SALTAN estos.
+const GREETING = /^(?:h+o+l+a+|h+e+y+|o+l+a+|buen(?:os|as)(?: d[ií]as| tardes| noches)?|qu[eé] onda|saludos|hi+|hello+|holi+)[\s!¡.,:;]*$/i;
+function isSkippable(t) {
+  const s = (t || '').trim();
+  if (!s) return true;
+  if (s[0] === '<') return true;               // <command-message>…, salidas de herramienta, etc.
+  if (/^\[.*\]$/.test(s)) return true;          // "[Request interrupted by user]"
+  if (GREETING.test(s)) return true;            // saludo puro (sin contenido detrás)
+  return false;
+}
+
+// Lee el prefijo del transcript (los primeros bytes bastan) y saca el cwd + el texto para nombrar.
+//   label   = primer mensaje de usuario CON SUSTANCIA, 80 chars (para el listado).
+//   summary = los primeros mensajes con sustancia concatenados (≤320 chars) — el "de qué trata"
+//             que el diálogo de renombrar muestra y que alimenta al botón "Sugerir nombre" (opt-in,
+//             `claude -p`, vive en la GUI). Este Claude Code NO escribe resúmenes server-generados
+//             en el .jsonl → se DERIVA. Fallback: si TODO fue saludo/marcador, usa el 1er mensaje.
 function meta(file) {
   let txt = '';
   try {
     const fd = fs.openSync(file, 'r');
-    const buf = Buffer.alloc(65536);
+    const buf = Buffer.alloc(131072);
     const n = fs.readSync(fd, buf, 0, buf.length, 0);
     fs.closeSync(fd);
     txt = buf.toString('utf8', 0, n);
-  } catch (_) { return { cwd: null, label: null }; }
+  } catch (_) { return { cwd: null, label: null, summary: null }; }
 
-  let cwd = null, label = null;
+  let cwd = null;
+  const userTexts = [];
   for (const line of txt.split('\n')) {
     if (!line.trim()) continue;
     let o; try { o = JSON.parse(line); } catch (_) { continue; }   // la última línea puede venir cortada
     if (!cwd && typeof o.cwd === 'string' && o.cwd) cwd = o.cwd;
-    if (!label && o.type === 'user' && o.message) {
+    if (o.type === 'user' && o.message) {
       const c = o.message.content;
       let t = null;
       if (typeof c === 'string') t = c;
@@ -56,11 +76,20 @@ function meta(file) {
         const x = c.find(e => e && e.type === 'text' && typeof e.text === 'string');
         t = x ? x.text : null;
       }
-      if (t) { t = t.replace(/\s+/g, ' ').trim(); if (t) label = t.slice(0, 80); }
+      if (t) { t = t.replace(/\s+/g, ' ').trim(); if (t) userTexts.push(t); }
     }
-    if (cwd && label) break;
+    if (cwd && userTexts.length >= 8) break;     // suficiente para hallar los primeros con sustancia
   }
-  return { cwd, label };
+
+  const substantive = userTexts.filter(t => !isSkippable(t));
+  const firstAny = userTexts[0] || null;
+  const labelSrc = substantive[0] || firstAny;
+  const summarySrc = substantive.length ? substantive.slice(0, 4).join(' · ') : firstAny;
+  return {
+    cwd,
+    label: labelSrc ? labelSrc.slice(0, 80) : null,
+    summary: summarySrc ? summarySrc.slice(0, 320) : null,
+  };
 }
 
 function main() {
@@ -82,15 +111,17 @@ function main() {
     } catch (_) { continue; }
     files.sort((a, b) => b.m - a.m);
     for (const { f, m } of files.slice(0, PER_PROJECT)) {
-      const { cwd, label } = meta(path.join(sdir, f));
+      const { cwd, label, summary } = meta(path.join(sdir, f));
       const realCwd = cwd || slug.replace(/^-/, '/').replace(/-/g, '/');   // fallback lossy si no hubo cwd
       const id = f.replace(/\.jsonl$/, '');
       out.push({
         id,
         project: path.basename(realCwd) || slug,
         cwd: realCwd,
+        slug,                                          // dir real bajo projects/ (para mover entre slugs)
         updated_at: new Date(m).toISOString(),
-        label: aliases[id] || label || '(sesión)',   // el alias del widget gana sobre la etiqueta derivada
+        label: aliases[id] || label || '(sesión)',     // el alias del widget gana sobre la etiqueta derivada
+        summary: summary || null,                      // contexto del contenido para el diálogo de renombrar
       });
     }
   }

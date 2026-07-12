@@ -45,7 +45,11 @@ PlasmoidItem {
     // o ~/.claude, resuelta por el shell al leer/escribir (aliasDir).
     property var projAliasMap: ({})
     property var sessAliasMap: ({})
-    // Expresión de shell para la base de los mapas (idéntica a claude-quota-fetch / sessions-extract.js).
+    // ¿La última escritura de alias fue de una SESIÓN? La fija writeAliasMap por el nombre de archivo y
+    // la lee writeAliasSource para decidir el refresh: sesión → rápido (sessions-extract.js), proyecto
+    // → fetch completo (afecta la agregación de tokens). Espeja el applyRename kind-aware del macOS.
+    property bool lastAliasWasSession: false
+    // Expresión de shell para la base de los mapas (idéntica a claude-brain-fetch / sessions-extract.js).
     readonly property string aliasDir: "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 
     // ---------- Filtro de rango {hoy·7d·30d·∞} (Resumen/Modelos/Proyectos/Chats) ----------
@@ -66,7 +70,7 @@ PlasmoidItem {
     readonly property string cacheDir: {
         const raw = "" + StandardPaths.writableLocation(StandardPaths.GenericCacheLocation)
         const stripped = raw.startsWith("file://") ? raw.substring("file://".length) : raw
-        return stripped + "/claude-quota"
+        return stripped + "/claude-brain"
     }
 
     P5Support.DataSource {
@@ -123,14 +127,41 @@ PlasmoidItem {
     }
 
     // Escritura de los mapas de alias (proyectos-alias.json / sesiones-alias.json). Reusa el engine
-    // "executable" (igual que catSource lee con `cat`). Al TERMINAR la escritura dispara forceRefresh()
-    // — así el refetch relee el archivo YA escrito (evita la carrera write-vs-refetch). Espeja el
-    // `writeMap` + `onRefresh()` de PopoverView.swift.
+    // "executable" (igual que catSource lee con `cat`). Al TERMINAR la escritura dispara el refresh
+    // — así el refetch relee el archivo YA escrito (evita la carrera write-vs-refetch). El refresh es
+    // KIND-AWARE (espeja el applyRename de PopoverView.swift): renombrar una SESIÓN solo cambia su
+    // etiqueta → refresh RÁPIDO (solo sessions-extract.js, sin red); renombrar un PROYECTO afecta la
+    // agregación de tokens → fetch completo. lastAliasWasSession lo fija writeAliasMap por el archivo.
     P5Support.DataSource {
         id: writeAliasSource
         engine: "executable"
         connectedSources: []
-        onNewData: function(source, data) { disconnectSource(source); root.forceRefresh() }
+        onNewData: function(source, data) {
+            disconnectSource(source)
+            if (root.lastAliasWasSession) root.refreshSessions()
+            else root.forceRefresh()
+        }
+    }
+
+    // Refresh RÁPIDO de la lista de sesiones: corre SOLO `sessions-extract.js` (sin red) y vuelca su
+    // stdout (JSON array [{id,project,cwd,updated_at,label}]) a root.sessions. Es el MISMO helper que el
+    // fetch corre para poblar sessions.json, pero aquí lo invocamos directo (via `bash -lc`, PATH de
+    // login donde install.sh lo deja junto al fetch — igual que session-move.js/claude) SIN pasar por el
+    // fetch completo (lento, con red, "uno a la vez"). Espeja QuotaModel.refreshSessions() del macOS.
+    // Fail-safe: sin JSON de array parseable NO toca root.sessions (deja la lista previa).
+    P5Support.DataSource {
+        id: sessionsExtractSource
+        engine: "executable"
+        connectedSources: []
+        onNewData: function(source, data) {
+            disconnectSource(source)
+            if (data["exit code"] === 0 && data.stdout) {
+                try {
+                    var arr = JSON.parse(data.stdout)
+                    if (Array.isArray(arr)) root.sessions = arr
+                } catch (e) { /* fail-safe: deja la lista previa */ }
+            }
+        }
     }
 
     // Lanzador de terminal para "resumir" una sesión de Claude Code (pestaña Proyectos). Corre el
@@ -140,6 +171,52 @@ PlasmoidItem {
         engine: "executable"
         connectedSources: []
         onNewData: function(source, data) { disconnectSource(source) }
+    }
+
+    // (A) "Sugerir nombre" al renombrar una SESIÓN: shell-out NO interactivo a `claude -p` (print mode)
+    // vía el engine "executable" + `bash -lc`, para heredar el PATH de login donde vive `claude`
+    // (~/.local/bin) — la MISMA resolución que usamos para `claude --resume`. Lo dispara el usuario:
+    // cuesta tokens. OJO SCOPE (Plasma 6): renameField vive en fullRepresentation → el root NO lo ve;
+    // por eso aquí solo depositamos el resultado en root.suggestedName y un Connections de
+    // fullRepresentation lo vuelca a renameField.text (editable, no guarda solo).
+    P5Support.DataSource {
+        id: suggestSource
+        engine: "executable"
+        connectedSources: []
+        onNewData: function(source, data) {
+            disconnectSource(source)
+            if (data["exit code"] === 0 && data.stdout && ("" + data.stdout).trim() !== "") {
+                root.suggestedName = root.cleanSuggestion(data.stdout)
+                root.suggestState = ""
+            } else {
+                root.suggestState = "error"
+            }
+        }
+    }
+
+    // (B) "Mover a…" una sesión a otro slug: corre el helper node `session-move.js` vía `bash -lc`
+    // (PATH de login, mismo criterio que `claude`/`claude-brain-fetch`, ambos en ~/.local/bin). El
+    // helper escribe JSON a stdout SIEMPRE (ok:true | ok:false+error, con exit 1 en error) → parseamos
+    // stdout pase lo que pase. ok → refreshSessions() (la lista refleja el move YA, rápido y sin red) +
+    // forceRefresh() (reconcilia después los conteos por proyecto / agregación); !ok → depositamos el
+    // error y un Connections de fullRepresentation abre el diálogo de aviso (scope gotcha de Plasma 6).
+    P5Support.DataSource {
+        id: sessionMoveSource
+        engine: "executable"
+        connectedSources: []
+        onNewData: function(source, data) {
+            disconnectSource(source)
+            root.sessionMoveBusy = false
+            var res = null
+            if (data.stdout) { try { res = JSON.parse(data.stdout) } catch (e) {} }
+            if (res && res.ok) {
+                root.refreshSessions()   // instantáneo: la lista refleja el move YA (sin red)
+                root.forceRefresh()      // reconcilia conteos por proyecto / agregación después
+            } else {
+                root.sessionMoveError = (res && res.error) ? res.error
+                    : "no se pudo mover la sesión (rc=" + data["exit code"] + ")"
+            }
+        }
     }
 
     // Lectura del estado real del cerebro (brain-scan.sh scan → JSON). Reusa el engine "executable"
@@ -238,7 +315,7 @@ PlasmoidItem {
                 root.updateMessage = "✓ actualizado (recarga el widget)"
                 root.updateAvailable = false
             } else {
-                root.updateMessage = "✗ error (revisa /tmp/claude-quota-update.log)"
+                root.updateMessage = "✗ error (revisa /tmp/claude-brain-update.log)"
             }
         }
     }
@@ -255,7 +332,14 @@ PlasmoidItem {
         catSource.connectSource("cat \"" + aliasDir + "/sesiones-alias.json\" 2>/dev/null")
     }
     function forceRefresh() {
-        refreshRunner.connectSource("systemctl --user start claude-quota.service")
+        refreshRunner.connectSource("systemctl --user start claude-brain.service")
+    }
+    // Refresh RÁPIDO de la lista de sesiones (sin red): corre SOLO sessions-extract.js y su stdout
+    // repobla root.sessions vía sessionsExtractSource. Úsalo tras mover/renombrar una sesión para que
+    // la lista refleje el cambio al instante, SIN esperar al fetch completo (que se descarta si ya hay
+    // uno en vuelo → por eso mover no se reflejaba). Espeja QuotaModel.refreshSessions() del macOS.
+    function refreshSessions() {
+        sessionsExtractSource.connectSource("bash -lc " + shq("sessions-extract.js"))
     }
 
     // ---------- Renombrado por clic-secundario (espeja QuotaModel.swift) ----------
@@ -268,6 +352,10 @@ PlasmoidItem {
     // Escribe el mapa en <aliasDir>/<file> y, al terminar, refetch. Contenido single-quoted y escapado
     // ('->'\'') para blindar cualquier carácter; `printf '%s'` NO interpreta % ni \ del argumento.
     function writeAliasMap(file, map) {
+        // Gobierna el refresh KIND-AWARE de writeAliasSource: sesiones-alias.json → sesión (rápido),
+        // proyectos-alias.json → proyecto (fetch completo). Se fija aquí, el ÚNICO embudo de escritura
+        // (así también cubre el "Restaurar original" directo, que no pasa por prepRename/renameKind).
+        root.lastAliasWasSession = (("" + file).indexOf("sesiones-alias") !== -1)
         var json = serializeAliasMap(map)
         var esc = json.replace(/'/g, "'\\''")
         var cmd = "mkdir -p \"" + aliasDir + "\" && printf '%s' '" + esc + "' > \"" + aliasDir + "/" + file + "\""
@@ -303,18 +391,37 @@ PlasmoidItem {
     function sessionAliased(id) { return sessAliasMap[id] !== undefined && sessAliasMap[id] !== null }
 
     // Estado del diálogo de renombrado (compartido por proyecto y sesión).
+    // OJO SCOPE (Plasma 6): el `fullRepresentation` se instancia como scope APARTE → `renameDialog` y
+    // `renameField` (que viven dentro) NO son visibles desde funciones del root. Por eso el root SOLO
+    // siembra propiedades; ABRIR/CERRAR el diálogo y leer el campo se hace desde el scope del MENÚ/DIÁLOGO
+    // (que sí los ve). renameProject/renameSession y estas props son del root → accesibles vía `root.`.
     property string renameKind: ""   // "project" | "session"
     property string renameKey: ""    // (c) nombre mostrado del proyecto · (d) id de la sesión
-    function startRename(kind, key, current) {
-        renameKind = kind; renameKey = key
-        renameField.text = current
-        renameDialog.open()
-        renameField.selectAll(); renameField.forceActiveFocus()
+    property string renameSeed: ""   // texto inicial; el diálogo lo carga en su onOpened (ahí está en scope)
+    property string renameSummary: ""   // (A) contexto de la sesión (summary); "" oculta el bloque de contexto
+    // (A) "Sugerir nombre": "" = idle/listo · "running" = generando · "error". El resultado va a
+    // suggestedName; un Connections de fullRepresentation lo vuelca a renameField (scope gotcha).
+    property string suggestState: ""
+    property string suggestedName: ""
+    // (B) "Mover a…": destino sembrado por prepMove + estado del movimiento. El error lo muestra un diálogo.
+    property string moveSessionId: ""
+    property string moveSessionLabel: ""
+    property string moveTargetCwd: ""
+    property string moveTargetName: ""
+    property bool   sessionMoveBusy: false
+    property string sessionMoveError: ""
+    // Solo prepara el estado; el .open() lo hace el menú (que SÍ ve renameDialog). NO toca renameDialog aquí.
+    // `summary` solo aplica a sesión (el proyecto pasa undefined → se limpia). Resetea el estado de sugerir.
+    function prepRename(kind, key, current, summary) {
+        renameKind = kind; renameKey = key; renameSeed = current
+        renameSummary = summary ? summary : ""
+        suggestState = ""; suggestedName = ""
     }
-    function applyRenameFromDialog() {
-        if (renameKind === "project") renameProject(renameKey, renameField.text)
-        else if (renameKind === "session") renameSession(renameKey, renameField.text)
-        renameDialog.close()
+    // Aplica el alias. newText lo pasa el handler del diálogo (donde renameField está en scope). El
+    // .close() lo hace el propio diálogo; aquí NO se toca renameDialog (root no lo ve).
+    function applyRename(newText) {
+        if (renameKind === "project") renameProject(renameKey, newText)
+        else if (renameKind === "session") renameSession(renameKey, newText)
     }
 
     // epoch ms del último forceRefresh disparado por un reset ya pasado (guard anti-bucle).
@@ -331,7 +438,7 @@ PlasmoidItem {
             // viejo (>60s), el % mostrado sería el de la ventana anterior hasta el próximo fetch.
             // Disparamos forceRefresh() para adelantarlo. Acotado por lastResetRefresh (≥60s) para
             // NO machacar systemctl/API cada tick de 10s; el piso anti-abuso de ~5 min lo aplica
-            // claude-quota.service por dentro (un forceRefresh de más ahí es no-op). Espeja el
+            // claude-brain.service por dentro (un forceRefresh de más ahí es no-op). Espeja el
             // `(anyResetPassed && age > 60)` de AppDelegate.swift.
             var age = root.snapshotAgeSec()
             if (root.anyResetPassed && age > 60 && (Date.now() - root.lastResetRefresh) > 60000) {
@@ -634,6 +741,62 @@ PlasmoidItem {
         resumeSource.connectSource(cmd)
     }
 
+    // (A) Pide a `claude -p` un nombre corto para la sesión, SOLO a partir del summary (prompt barato).
+    // `bash -lc` para heredar el PATH de login donde vive `claude` (misma resolución que resumeSession).
+    // `--no-session-persistence`: `claude -p` ES una sesión de Claude Code y por defecto la guarda en
+    // disco; lanzada desde la GUI queda con cwd=/ → aparecía un proyecto fantasma "/" que consumía
+    // cuota. Con la bandera la sugerencia NO deja rastro (solo aplica con --print). Espeja QuotaModel.swift.
+    // No guarda: el resultado cae en renameField (editable) vía el Connections de fullRepresentation.
+    function suggestName() {
+        var ctx = ("" + root.renameSummary).trim()
+        if (ctx === "") return
+        root.suggestState = "running"
+        root.suggestedName = ""
+        var prompt = "Genera un nombre corto (de 3 a 6 palabras) en español para esta sesión de Claude Code, "
+                   + "a partir de su contexto. Responde SOLO con el nombre, sin comillas ni puntuación final.\n\n"
+                   + "Contexto: " + ctx
+        var inner = "claude -p --no-session-persistence " + shq(prompt)
+        var cmd = "bash -lc " + shq(inner)
+        suggestSource.connectSource(cmd)
+    }
+    // Limpia la salida de `claude -p`: primera línea no vacía, sin comillas/asteriscos/punto envolventes.
+    function cleanSuggestion(raw) {
+        var s = ("" + raw).trim()
+        var lines = s.split("\n")
+        for (var i = 0; i < lines.length; i++) { if (lines[i].trim() !== "") { s = lines[i].trim(); break } }
+        return s.replace(/^["'`*\s]+/, "").replace(/["'`*.\s]+$/, "")
+    }
+
+    // (B) Proyectos conocidos DISTINTOS del actual, derivados de las sesiones cargadas (uno por proyecto,
+    // con su cwd real). Excluye el proyecto pasado. Ordenado por nombre. Es la fuente del submenú "Mover a…".
+    function otherProjects(excludeProject) {
+        if (!sessions) return []
+        var seen = {}, out = []
+        for (var i = 0; i < sessions.length; i++) {
+            var s = sessions[i]
+            var p = s.project ? s.project : "?"
+            if (p === excludeProject || !s.cwd || seen[p]) continue
+            seen[p] = true
+            out.push({ name: p, cwd: s.cwd })
+        }
+        out.sort(function(a, b) { return a.name < b.name ? -1 : (a.name > b.name ? 1 : 0) })
+        return out
+    }
+    // (B) Siembra el destino del "Mover a…" (el diálogo de confirmación lee estas props). Como prepRename,
+    // solo prepara: el .open() del diálogo lo hace el menú (que SÍ ve moveDialog). No toca moveDialog aquí.
+    function prepMove(id, label, toCwd, toName) {
+        moveSessionId = id; moveSessionLabel = label
+        moveTargetCwd = toCwd; moveTargetName = toName
+    }
+    // (B) Ejecuta el movimiento vía session-move.js. Ver la nota de resolución de PATH en sessionMoveSource.
+    function moveSession(id, toCwd) {
+        root.sessionMoveBusy = true
+        root.sessionMoveError = ""
+        var inner = "session-move.js " + shq(id) + " --to-cwd " + shq(toCwd)
+        var cmd = "bash -lc " + shq(inner)
+        sessionMoveSource.connectSource(cmd)
+    }
+
     // ---------- Pestaña Cerebro: ESTRUCTURA curada + ESTADO real ----------
     // La ESTRUCTURA (qué piezas hay, su explicación, su evento y detalle) es curada y espeja el
     // BrainItem de PopoverView.swift; el ESTADO de instalación de cada pieza se LEE de la realidad
@@ -793,7 +956,7 @@ PlasmoidItem {
         var repo = root.updRepoPath
         var inner = "cd '" + repo + "' && git fetch origin --quiet && git merge --ff-only origin/main"
                   + " && bash '" + repo + "/install.sh'"
-        var cmd = "nohup bash -lc \"" + inner + "\" >/tmp/claude-quota-update.log 2>&1"
+        var cmd = "nohup bash -lc \"" + inner + "\" >/tmp/claude-brain-update.log 2>&1"
         updateRunSource.connectSource(cmd)
     }
 
@@ -945,7 +1108,8 @@ PlasmoidItem {
         spacing: 0
 
         // Diálogo de renombrado (compartido por proyecto y sesión). Se abre desde el menú de
-        // clic-secundario vía root.startRename(...). Vacío → "Restaurar original" (borra el alias).
+        // Se abre desde el menú de clic-secundario (root.prepRename siembra + renameDialog.open() en el
+        // scope del menú, que sí ve el diálogo). Vacío → "Restaurar original" (borra el alias).
         Kirigami.PromptDialog {
             id: renameDialog
             title: root.renameKind === "session" ? "Renombrar sesión" : "Renombrar proyecto"
@@ -953,11 +1117,19 @@ PlasmoidItem {
                 ? "Nueva etiqueta para esta sesión. Vacío para restaurar la original."
                 : "Nuevo nombre para este proyecto. Vacío para restaurar el original."
             standardButtons: QQC2.Dialog.NoButton
+            // Al abrir, el contenido del diálogo ya está instanciado -> renameField SÍ existe aquí;
+            // cargamos el texto sembrado. (Antes se hacía desde startRename, donde renameField aún no
+            // existía -> ReferenceError que abortaba el open y por eso el diálogo nunca aparecía.)
+            onOpened: {
+                renameField.text = root.renameSeed
+                renameField.selectAll()
+                renameField.forceActiveFocus()
+            }
             customFooterActions: [
                 Kirigami.Action {
                     text: "Guardar"
                     icon.name: "dialog-ok-apply"
-                    onTriggered: root.applyRenameFromDialog()
+                    onTriggered: { root.applyRename(renameField.text); renameDialog.close() }
                 },
                 Kirigami.Action {
                     text: "Restaurar original"
@@ -965,7 +1137,7 @@ PlasmoidItem {
                     visible: root.renameKind === "session"
                         ? root.sessionAliased(root.renameKey)
                         : root.projectAliased(root.renameKey)
-                    onTriggered: { renameField.text = ""; root.applyRenameFromDialog() }
+                    onTriggered: { root.applyRename(""); renameDialog.close() }
                 },
                 Kirigami.Action {
                     text: "Cancelar"
@@ -973,10 +1145,99 @@ PlasmoidItem {
                     onTriggered: renameDialog.close()
                 }
             ]
+            // (A) Contexto de la sesión (summary), solo lectura. Solo sesión y solo si hay summary.
+            PC3.Label {
+                Layout.fillWidth: true
+                visible: root.renameKind === "session" && root.renameSummary !== ""
+                text: root.renameSummary
+                wrapMode: Text.WordWrap
+                opacity: 0.7
+                font.pointSize: Kirigami.Theme.smallFont.pointSize
+            }
             PC3.TextField {
                 id: renameField
                 Layout.fillWidth: true
-                onAccepted: root.applyRenameFromDialog()
+                onAccepted: { root.applyRename(text); renameDialog.close() }
+            }
+            // (A) "Sugerir nombre" (solo sesión): propone un nombre con `claude -p`. Avisa que cuesta tokens;
+            // async con estado "generando…"/error, sin romper el diálogo. El resultado cae en renameField.
+            RowLayout {
+                Layout.fillWidth: true
+                visible: root.renameKind === "session"
+                spacing: Kirigami.Units.smallSpacing
+                PC3.Button {
+                    text: root.suggestState === "running" ? "generando…" : "Sugerir nombre"
+                    enabled: root.suggestState !== "running" && root.renameSummary !== ""
+                    icon.name: "tools-wizard"
+                    onClicked: root.suggestName()
+                    PC3.ToolTip.text: "Propone un nombre con `claude -p` a partir del contexto. Cuesta tokens."
+                    PC3.ToolTip.visible: hovered
+                    PC3.ToolTip.delay: 500
+                }
+                PC3.Label {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    opacity: 0.6
+                    color: root.suggestState === "error" ? "#dc3545" : Kirigami.Theme.textColor
+                    text: root.suggestState === "running" ? "generando… (cuesta tokens)"
+                        : (root.suggestState === "error" ? "no se pudo generar (¿claude en el PATH?)"
+                        : (root.renameSummary === "" ? "sin contexto para sugerir" : "propone un nombre con IA · cuesta tokens"))
+                }
+            }
+        }
+
+        // (B) Confirmación de "Mover a…": reubica el transcript de la sesión al slug del proyecto destino.
+        // Se abre desde el submenú (que SÍ ve moveDialog); lee el destino sembrado por root.prepMove.
+        Kirigami.PromptDialog {
+            id: moveDialog
+            title: "Mover sesión"
+            subtitle: "Reubica el transcript de esta sesión a otro proyecto."
+            standardButtons: QQC2.Dialog.NoButton
+            customFooterActions: [
+                Kirigami.Action {
+                    text: "Mover"
+                    icon.name: "dialog-ok-apply"
+                    enabled: !root.sessionMoveBusy
+                    onTriggered: { root.moveSession(root.moveSessionId, root.moveTargetCwd); moveDialog.close() }
+                },
+                Kirigami.Action {
+                    text: "Cancelar"
+                    icon.name: "dialog-cancel"
+                    onTriggered: moveDialog.close()
+                }
+            ]
+            PC3.Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                text: "«" + (root.moveSessionLabel !== "" ? root.moveSessionLabel : "(sesión)")
+                    + "» se moverá a «" + root.moveTargetName + "».\n"
+                    + "Se reescribe el cwd interno del transcript y se respalda el original (reversible)."
+            }
+        }
+
+        // (B) Aviso de error al mover. Lo abre el Connections de abajo cuando root.sessionMoveError cambia.
+        Kirigami.PromptDialog {
+            id: moveErrorDialog
+            title: "No se pudo mover la sesión"
+            subtitle: root.sessionMoveError
+            standardButtons: QQC2.Dialog.Ok
+            onClosed: root.sessionMoveError = ""
+        }
+
+        // (A) Vuelca el nombre sugerido por IA a renameField (editable). Vive AQUÍ, no en el root, por el
+        // scope gotcha de Plasma 6 (el root no ve renameField, pero fullRepresentation sí).
+        Connections {
+            target: root
+            function onSuggestedNameChanged() {
+                if (root.suggestedName !== "") renameField.text = root.suggestedName
+            }
+        }
+        // (B) Abre el aviso de error de "Mover a…" sin romper el flujo (mismo motivo de scope).
+        Connections {
+            target: root
+            function onSessionMoveErrorChanged() {
+                if (root.sessionMoveError !== "") moveErrorDialog.open()
             }
         }
 
@@ -1240,7 +1501,8 @@ PlasmoidItem {
                                         id: projMenu
                                         QQC2.MenuItem {
                                             text: "Renombrar…"
-                                            onTriggered: root.startRename("project", projName, projName)
+                                            // prep en root + open en ESTE scope (el menú SÍ ve renameDialog).
+                                            onTriggered: { root.prepRename("project", projName, projName); renameDialog.open() }
                                         }
                                         QQC2.MenuItem {
                                             text: "Restaurar original"
@@ -1302,13 +1564,48 @@ PlasmoidItem {
                                                 id: sessMenu
                                                 QQC2.MenuItem {
                                                     text: "Renombrar…"
-                                                    onTriggered: root.startRename("session", modelData.id, modelData.label ? modelData.label : "")
+                                                    onTriggered: { root.prepRename("session", modelData.id, modelData.label ? modelData.label : "", modelData.summary ? modelData.summary : ""); renameDialog.open() }
                                                 }
                                                 QQC2.MenuItem {
                                                     text: "Restaurar original"
                                                     visible: root.sessionAliased(modelData.id)
                                                     height: visible ? implicitHeight : 0
                                                     onTriggered: root.renameSession(modelData.id, "")
+                                                }
+                                                // (B) "Mover a…": submenú con los OTROS proyectos conocidos
+                                                // (deriva de las sesiones cargadas; excluye el actual). Al
+                                                // elegir, siembra el destino y abre el diálogo de confirmación.
+                                                // OJO: dentro del Repeater `modelData` es el PROYECTO destino,
+                                                // así que la sesión (id/label/project) se captura ANTES, en las
+                                                // props de sessMoveMenu, donde `modelData` aún es la sesión.
+                                                QQC2.Menu {
+                                                    id: sessMoveMenu
+                                                    title: "Mover a…"
+                                                    readonly property string sessId: modelData.id
+                                                    readonly property string sessLabel: modelData.label ? modelData.label : ""
+                                                    readonly property string sessProject: modelData.project ? modelData.project : ""
+                                                    readonly property var others: root.otherProjects(sessMoveMenu.sessProject)
+                                                    // Ítems dinámicos por el patrón oficial de QQC2 (Instantiator
+                                                    // + insertItem/removeItem); un Repeater directo en Menu no es
+                                                    // fiable entre versiones de Qt6.
+                                                    Instantiator {
+                                                        model: sessMoveMenu.others
+                                                        delegate: QQC2.MenuItem {
+                                                            text: modelData.name
+                                                            onTriggered: {
+                                                                root.prepMove(sessMoveMenu.sessId, sessMoveMenu.sessLabel, modelData.cwd, modelData.name)
+                                                                moveDialog.open()
+                                                            }
+                                                        }
+                                                        onObjectAdded: (index, object) => sessMoveMenu.insertItem(index, object)
+                                                        onObjectRemoved: (index, object) => sessMoveMenu.removeItem(object)
+                                                    }
+                                                    QQC2.MenuItem {
+                                                        text: "(no hay otros proyectos)"
+                                                        enabled: false
+                                                        visible: sessMoveMenu.others.length === 0
+                                                        height: visible ? implicitHeight : 0
+                                                    }
                                                 }
                                             }
                                             RowLayout {
