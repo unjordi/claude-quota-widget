@@ -95,10 +95,14 @@ volvieras a delegar.
 
 **Reporte sin niñera + estado sin redundancia (skill `orquestar-fanout`).** Al orquestar, NO monitorees
 a los agentes a mano ni actualices el estado tú al final: el cierre de CADA agente es AUTOMÁTICO —
-appendas su avance a `bitacora.md` (append-only, merge=union) y actualizas el ítem en `estado-proyecto.md`
+appendas su avance **al FINAL** de `bitacora.md` (con `>>`, no con un Edit) y actualizas el ítem en `estado-proyecto.md`
 (el BACKLOG VIVO = fuente de verdad, "aquí empiezas siempre"). **Dos archivos, roles claros, cero
 redundancia:** bitácora = *qué pasó* (aquí appendan los agentes); estado-proyecto = *qué sigue* (lo cura
-el orquestador). El mismo dato NO se escribe en 3 lados; el estado "actual" se DERIVA. La lista de
+el orquestador). El **append-al-final con `>>`** (no un Edit que reescribe) es lo que deja que varias
+sesiones/agentes escriban la MISMA bitácora a la vez sin pisarse — dos `>>` no chocan; un Edit tropieza
+con "File modified since read". Aplica igual al dashboard GLOBAL (`dashboard_cerebro.md`), que varias
+sesiones de Claude tocan en paralelo: sus entradas de bitácora van al FINAL con `>>`; solo las secciones
+CURADAS (Mapa/Cabos) se editan, y esas rara vez. El mismo dato NO se escribe en 3 lados; el estado "actual" se DERIVA. La lista de
 TodoWrite es SCRATCH de sesión — el backlog DURABLE es estado-proyecto.md. Lo recuerda el hook
 `delegacion-reporte` (PostToolUse/Task); los worktrees zombies los barre `limpiar-worktrees.sh` (borra
 los de ramas mergeadas, deja los vivos anotando su pendiente en la bitácora). **Señal de que te

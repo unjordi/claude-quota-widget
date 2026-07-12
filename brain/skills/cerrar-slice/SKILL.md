@@ -26,14 +26,19 @@ Modelo de estado: **`estado-proyecto.md` = hub vivo** (dónde estamos + backlog 
 = log append-only**. Un dato en UN lugar (bitácora=qué pasó, estado=qué sigue), no en tres (ver skill `orquestar-fanout`).
 - `.claude/memory/estado-proyecto.md`: mueve el ítem a **HECHO** (commit+fecha al mergear); registra
   **DECISIONES**; lo descartado a propósito va en **FUERA POR DECISIÓN** (no en pendiente).
-- Añade **UNA línea al final** de `.claude/memory/bitacora.md` (`- fecha · rama · quién · qué`).
+- **Appendea UNA línea al FINAL** de `.claude/memory/bitacora.md` (`- fecha · rama · quién · qué`)
+  con `>>` (`printf '%s\n' '- …' >> bitacora.md`), **no** con un Edit que reescriba: el append-al-final
+  es lo que deja que varias sesiones/agentes escriban la misma bitácora sin pisarse (dos `>>` no chocan;
+  un Edit tropieza con "File modified since read").
 - Si la feature creció, deja su nota `.claude/memory/<feature>.md` y enlázala en `MEMORY.md`.
 - **doc = realidad (NO se pregunta):** si cambiaste comportamiento, config, rutas, una interfaz o un
   hook/skill, actualiza la doc que lo **DESCRIBE** en ESTA misma tanda — README (p. ej. el árbol del
   cerebro + el conteo de checks de `test-brain.sh`), `docs/`, comentarios. **Rastrea las copias** (un
   `grep` del nombre/valor viejo): una doc desincronizada YA es una doc que miente.
-- **Dashboard GLOBAL** (`dashboard_cerebro.md`, memoria de ESTA máquina): añade una línea a su Bitácora
-  y ajusta Mapa/Infra/Cabos si cambió el layout de repos/memoria/proyectos.
+- **Dashboard GLOBAL** (`dashboard_cerebro.md`, memoria de ESTA máquina): **appendea** una línea al FINAL
+  de su Bitácora con `>>` (no con un Edit) — así no chocas con las otras sesiones de Claude que tocan ese
+  archivo a la vez. Ajusta Mapa/Infra/Cabos (secciones curadas, con Edit) solo si cambió el layout de
+  repos/memoria/proyectos.
 - **(fan-out)** limpia los worktrees zombies con `limpiar-worktrees.sh` (deja anotado el pendiente de
   los que sigan vivos).
 
@@ -71,7 +76,7 @@ Escríbelo como un **resumen curado en prosa**: título Conventional en español
 > (p. ej. en un grep o una descripción) → pásalo por variable/archivo, no en texto plano.
 > El candado server-side definitivo es proteger las ramas + `squash_option=always` (GitLab).
 
-## 5. Cosecha de aprendizaje (¿es genérico?)
+## 5. Cosecha de aprendizaje Y de herramientas (¿es genérico? ¿sobrevive al reinicio?)
 Antes de dar por cerrado el slice, pregúntate: **¿dejó una lección reutilizable** (un gotcha, una
 convención, un patrón, o hasta una skill nueva)? No lo dejes en "ya me acordaré" — cosecharlo es parte
 del cierre, no un extra.
@@ -81,4 +86,14 @@ del cierre, no un extra.
   con ruido específico del proyecto).
 - **Específica del proyecto** → ya quedó en la memoria del repo (Paso 2); no la subas al global.
 
-Un hook puede *recordar* este paso, pero no *juzgar* si cosechaste bien — por eso vive aquí.
+**Persiste las HERRAMIENTAS que construiste en scratch (no solo las lecciones).** Un script/tool
+reusable que armaste durante el slice (un extractor, un `analyze.py`, un one-off que resultó útil)
+vive en el **scratchpad de la sesión / `/tmp` / un worktree** — y eso **muere al reiniciar la app o
+cerrar el worktree**. Si es semilla reusable (no scratch de exploración de un solo uso), **cópialo al
+repo** en esta misma tanda (p. ej. `scripts/<tema>/`) y **commitéalo**. Y si un doc o el backlog ya
+**referencia una ruta** de esas herramientas (`scripts/etl-ots/`…), **que esa ruta exista** — una
+referencia a un archivo que no está es otra doc que miente. (Regla destilada del catch de cps 2026-07:
+la maquinaria ETL vivía solo en el scratchpad y la sesión nueva no la encontraba.)
+
+Un hook puede *recordar* este paso, pero no *juzgar* si cosechaste bien (lección vs herramienta,
+reusable vs scratch) — por eso vive aquí.

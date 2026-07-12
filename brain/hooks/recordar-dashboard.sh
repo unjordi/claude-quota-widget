@@ -9,7 +9,7 @@ cmd=$(jq -r '.tool_input.command // ""' 2>/dev/null)
 unquoted=$(printf '%s' "$cmd" | sed "s/'[^']*'//g; s/\"[^\"]*\"//g")
 printf '%s' "$unquoted" | grep -qE 'git[[:space:]]+push' || exit 0
 
-DASH="RECORDATORIO (cerebro autocontenido): antes de completar este push, revisa/actualiza el Dashboard del cerebro (dashboard_cerebro.md en la memoria GLOBAL de esta maquina: ~/.claude/projects/<slug-del-HOME>/memory/) — anade una linea a la Bitacora y ajusta Mapa/Infra/Cabos sueltos si cambio el layout de memoria, repos o proyectos de Claude. La memoria GLOBAL es solo config de ESTA maquina; lo de un proyecto vive en su .claude/. Esto es parte de CERRAR bien el slice (skill cerrar-slice): dashboard + doc=realidad + memoria + resumen curado."
+DASH="RECORDATORIO (cerebro autocontenido): antes de completar este push, revisa/actualiza el Dashboard del cerebro (dashboard_cerebro.md en la memoria GLOBAL de esta maquina: ~/.claude/projects/<slug-del-HOME>/memory/) — APPENDEA una linea al FINAL de la Bitacora con >> (p. ej. printf '%s\\n' '- FECHA - rama - que' >> \"\$DASH\"), NO edites arriba: el append-al-final no choca con otras sesiones de Claude que escriben este mismo archivo a la vez (dos >> no se pisan; un Edit tropieza con 'File modified since read'). Ajusta Mapa/Infra/Cabos sueltos solo si cambio el layout de memoria, repos o proyectos. La memoria GLOBAL es solo config de ESTA maquina; lo de un proyecto vive en su .claude/. Esto es parte de CERRAR bien el slice (skill cerrar-slice): dashboard + doc=realidad + memoria + resumen curado."
 
 # (2) doc=realidad del proyecto: analiza los commits que se van a pushear (vs upstream, o vs develop
 # si la rama es nueva). Afinado a senal ALTA para no fastidiar.
