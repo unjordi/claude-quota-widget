@@ -125,7 +125,7 @@ mismos datos que `/usage`, en tu escritorio, desde cualquier lado. Las pestañas
 | ![Resumen](screenshots/resumen.png) | ![Límites](screenshots/limites.png) |
 | **Resumen** — sesiones, mensajes, tokens, rachas, hora pico, modelo favorito, costo API-equiv y el heatmap diario. | **Límites** — ventana de 5 h y semanal, caps por-modelo, y el **gasto real de bolsillo** (spend / overage). |
 | ![Modelos](screenshots/modelos.png) | ![Proyectos](screenshots/proyectos.png) |
-| **Modelos** — barras apiladas por día + una fila por modelo (tokens in/out, %). | **Proyectos** — barras apiladas por día + una fila por carpeta de proyecto (tokens in/out, %). |
+| **Modelos** — barras apiladas por día + una fila por modelo (tokens in/out, %). | **Proyectos** — barras apiladas por día + una fila por carpeta de proyecto (tokens in/out, %). Desde aquí **renombras** una sesión (con su contexto + un botón "Sugerir nombre") y la **mueves** a otro proyecto. |
 
 ## Cómo funciona
 
