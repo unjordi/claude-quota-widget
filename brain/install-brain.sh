@@ -109,7 +109,7 @@ if [ ! -f "$DASH" ]; then
   if [ -f "$SRC_HOOKS/dashboard_cerebro.template.md" ]; then
     cp "$SRC_HOOKS/dashboard_cerebro.template.md" "$DASH"
   else
-    printf '# Dashboard del cerebro (memoria GLOBAL de esta compu)\n\n## Mapa\n## Infra clave\n## Cabos sueltos\n## Bitacora (mas reciente arriba)\n' > "$DASH"
+    printf '# Dashboard del cerebro (memoria GLOBAL de esta compu)\n\n## Mapa\n## Infra clave\n## Cabos sueltos\n## Bitacora (mas reciente ABAJO — appendea con >>, append-safe entre sesiones)\n' > "$DASH"
   fi
   echo "ok: dashboard sembrado en $DASH"
 else
