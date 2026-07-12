@@ -35,8 +35,8 @@ case "$DG_NIVEL" in
   metered)
     ok=$(jq -r --arg s "$DG_SID" --arg k "$DG_KEY" '.sesion[$s][$k] // false' "$CONS" 2>/dev/null)
     [ "$ok" = "true" ] && exit 0                       # ya consentido en ESTE workflow
-    if [ "$DG_CLASE" = claude ]; then motivo="tu ventana de 5h está agotada (overage → costo real)"; else motivo="agente de pago por token"; fi
-    ask "Delegación CON COSTO ($DG_TARGET) — $motivo. ¿Autorizar delegaciones con costo en ESTE workflow? Se pregunta 1× por workflow (no cada agente).${CUOTA}"
+    if [ "$DG_CLASE" = claude ]; then motivo="vas al ${DG_PCT}% de tu ventana de 5h (umbral ${DG_UMBRAL}%) — seguir ya es OVERAGE (gasto extra a tu plan)"; else motivo="agente de pago por token"; fi
+    ask "Delegación ($DG_TARGET) — $motivo. ¿Autorizar seguir delegando en ESTE workflow? Se pregunta 1× por workflow (no cada agente). Si además se agota el overage, limite-gasto frena.${CUOTA}"
     ;;
 esac
 exit 0

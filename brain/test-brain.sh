@@ -89,7 +89,7 @@ out="$(run_gate "$(payload S1 ollama '')")"
 is_ask "$out"    && ok "gratis (local: ollama) → pregunta" || bad "gratis (local) → esperaba ask; got: $out"
 
 out="$(run_gate "$(payload S1 '' sonnet)")"
-is_ask "$out"    && ok "incluido (claude, ventana 19% < 95%) → pregunta" || bad "incluido → esperaba ask; got: $out"
+is_ask "$out"    && ok "incluido (claude, ventana 19% < 90%) → pregunta" || bad "incluido → esperaba ask; got: $out"
 
 write_state 99
 out="$(run_gate "$(payload S1 '' sonnet)")"
@@ -122,6 +122,22 @@ run_registrar "$Q"
 out="$(run_gate "$Q")";      is_silent "$out" && ok "ventana · incluido consentido → silencio"  || bad "ventana incluido 2º → silencio; got: $out"
 write_state 99   # se agota la ventana → mismo agente pasa a metered
 out="$(run_gate "$Q")";      is_ask "$out"    && ok "ventana · agotada → vuelve a preguntar (metered)" || bad "ventana agotada → ask; got: $out"
+
+# ─────────────────────────────────────────────────────────────────────────────
+echo ""
+echo "== (b1b) limite-gasto: FRENA solo con la AND (ventana agotada Y overage sin holgura) =="
+write_state_lg() { cat > "$CACHE/state.json" <<EOF
+{ "five_hour":{"percent":$1}, "extra_usage":{"utilization":$2,"enabled":$3} }
+EOF
+}
+run_limite() { HOME="$FAKEHOME" XDG_CACHE_HOME="$FAKEHOME/.cache" bash "$HOOKS/limite-gasto.sh" <<<"$1"; }
+is_deny()    { printf '%s' "$1" | jq -e '.hookSpecificOutput.permissionDecision == "deny"' >/dev/null 2>&1; }
+TP="$(payload WL general-purpose '')"
+write_state_lg 10  100 true;  is_silent "$(run_limite "$TP")" && ok "lg: ventana fresca + overage topado → NO frena (plan cubre)"      || bad "lg: frenó con ventana fresca"
+write_state_lg 100 50  true;  is_silent "$(run_limite "$TP")" && ok "lg: ventana agotada + overage con saldo → NO frena (gate pregunta)" || bad "lg: frenó teniendo saldo de overage"
+write_state_lg 100 100 true;  is_deny   "$(run_limite "$TP")" && ok "lg: ventana agotada + overage topado → FRENA (sin capacidad)"      || bad "lg: NO frenó con ambos agotados"
+write_state_lg 100 0   false; is_deny   "$(run_limite "$TP")" && ok "lg: ventana agotada + overage deshabilitado → FRENA"               || bad "lg: NO frenó sin overage y sin ventana"
+write_state 19   # restablece el state.json de ventana para lo que siga
 
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
