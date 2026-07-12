@@ -15,16 +15,17 @@ REG_FILE="$HOME/.claude/agentes-costo.json"
 clasificar_delegacion() {
   local input="$1"
   DG_ES_TASK=0; DG_SID="sin-sesion"; DG_TARGET=""; DG_CLASE="token"; DG_FIRMA="desconocido"
-  DG_UMBRAL=95; DG_PCT="?"; DG_NIVEL="metered"; DG_KEY=""
+  DG_UMBRAL=90; DG_PCT="?"; DG_NIVEL="metered"; DG_KEY=""
 
   [ "$(printf '%s' "$input" | jq -r '.tool_name // empty' 2>/dev/null)" = "Task" ] || return 0
   DG_ES_TASK=1
   DG_SID=$(printf '%s' "$input" | jq -r '.session_id // "sin-sesion"' 2>/dev/null)
   DG_TARGET=$(printf '%s' "$input" | jq -r '[.tool_input.subagent_type // "", .tool_input.model // ""] | join(" ") | ascii_downcase' 2>/dev/null)
 
-  # clase + firma desde el registro (1ª regla que casa; si no, default). umbral configurable (def 95).
+  # clase + firma desde el registro (1ª regla que casa; si no, default). umbral configurable (def 90):
+  # al llegar a ese % de la ventana de 5h, el gate PREGUNTA (seguir ya sería overage).
   if [ -f "$REG_FILE" ]; then
-    DG_UMBRAL=$(jq -r '.umbral_ventana_pct // 95' "$REG_FILE" 2>/dev/null)
+    DG_UMBRAL=$(jq -r '.umbral_ventana_pct // 90' "$REG_FILE" 2>/dev/null)
     local cf
     cf=$(jq -r --arg t "$DG_TARGET" '
       ([ (.reglas // [])[] | select(.match as $m | ($t | test($m; "i"))) ][0]) as $h
