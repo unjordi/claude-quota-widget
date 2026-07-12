@@ -142,7 +142,7 @@ SESSIONMOVE_SRC="$ROOT/../bin/session-move.js"
 # NSWorkspace.setIcon (set-icon.swift), reusando AppIcon.icns (trae la variante chica nítida en 16/32).
 # Fail-safe: sin swift/rsvg o sin icns, se salta (el daemon corre igual, solo sin ícono bonito).
 ICNS="$ROOT/build/AppIcon.icns"
-[[ -f "$ICNS" ]] || bash "$ROOT/make-icon.sh" >/dev/null 2>&1 || true
+bash "$ROOT/make-icon.sh" >/dev/null 2>&1 || true   # regenera SIEMPRE desde el SVG (no reusar un .icns rancio)
 if [[ -f "$ICNS" && -f "$ROOT/set-icon.swift" ]] && command -v swift >/dev/null 2>&1; then
   if swift "$ROOT/set-icon.swift" "$ICNS" "$FETCH_DEST" 2>/dev/null; then
     echo "    ícono de Claude Brain incrustado en el daemon (login item)"
