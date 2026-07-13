@@ -43,6 +43,10 @@ Reglas que lo blindan:
   nombró explícitamente — no se estira a "todo el paquete". El silencio, tomarse el tiempo para
   leer/considerar, o una reacción positiva a UNA idea NO son autorización. Ante alcance ambiguo, la
   carga de aclarar es de Claude: **preguntar "¿adelante con qué exactamente?"**, no maximizar la interpretación.
+  Y un **doc que respalda algo NO es autorización viva para DESTRUIR**: un cambio que ELIMINA
+  funcionalidad/entidades/complejidad existente es destructivo y no-transitivo — preséntalo como PÉRDIDA
+  explícita y pide OK antes de ejecutarlo, aunque `AGENTS.md`/un doc lo sugiera (en cps se aplanó un
+  esquema de permisos de meses así).
 - Lo hace cumplir el hook `dod-verificar` (Stop): distingue lenguaje de ESTATUS/espera (no dispara) de
   lenguaje de CIERRE (exige, además del verde técnico, la marca citada de (1) o (2)); además bloquea un
   claim VISUAL sin tool de navegador en el turno (a ciegas) y recuerda la auditoría de paridad en migraciones.
