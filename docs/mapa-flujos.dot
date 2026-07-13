@@ -26,11 +26,11 @@ digraph flujos {
 
     Z_OPEN [shape=box color="#8A8A8A" fillcolor="#232323" fontcolor="#CFC8C0" penwidth=1.5 label="abres Claude Code en un folder"];
     Z_GIT  [shape=diamond fillcolor="#2B2622" color="#D97757" penwidth=2 label="¿repo git CON .claude/\n(cerebro autocontenido)?"];
-    Z_PLAIN [color="#7FB069" label="🟢  folder simple: sin hooks del repo;\naplican solo los hooks GLOBALES de la máquina"];
+    Z_PLAIN [color="#7FB069" label="🟢  folder simple: sin hooks del repo;\naplican solo los hooks GLOBALES de la máquina\n(en repos personales → auto-mode genérico · P10)"];
     Z_BOOT [color="#8A8A8A" fillcolor="#232323" fontcolor="#CFC8C0" penwidth=1.5 label="🔧  bootstrap-claude.sh (UNA vez tras clonar)\ninstala hooks GLOBALES + enlaza el cerebro + verifica\ngit & jq; los hooks del repo se cablean en\n.claude/settings.json (viajan por git). Aquí vive el «protocolo»"];
 
     Z_START [shape=diamond fillcolor="#2B2622" color="#D97757" penwidth=2 label="🔔\n🧭  sesion-inicio  (SessionStart)\nsource: startup / resume / compact"];
-    Z_INJECT [color="#E08E45" label="🟠  inyecta additionalContext: rama actual + NORMA de git\n+ ritual anti-hilo (lee MEMORY.md + AGENTS.md;\nNO declares LISTO sin evidencia)\n📜 → 🌿 Flujo de git · 🎯 Def. de LISTO"];
+    Z_INJECT [color="#E08E45" label="🟠  inyecta additionalContext: rama actual + NORMA de git\n+ ritual anti-hilo (lee MEMORY.md + AGENTS.md;\nNO declares LISTO sin evidencia)\n+ avisa si lo que ves es de otra rama (P16)\n📜 → 🌿 Flujo de git · 🎯 Def. de LISTO"];
     Z_PROT [shape=diamond fillcolor="#2B2622" color="#D97757" penwidth=2 label="¿rama = develop/main?"];
     Z_PROTW [color="#E08E45" label="🟠  + aviso: rama PROTEGIDA →\nsaca una ramita feat/… desde develop"];
     Z_EST [shape=diamond fillcolor="#2B2622" color="#D97757" penwidth=2 label="¿existe\nestado-proyecto.md?"];
@@ -200,7 +200,7 @@ digraph flujos {
     labeljust="l"; fontcolor="#5B8DBF"; fontsize=14; color="#5B8DBF"; style="rounded"; penwidth=1.6; margin=16;
 
     C_IN [shape=box color="#8A8A8A" fillcolor="#232323" fontcolor="#CFC8C0" penwidth=1.5 label="💡\ncrees que terminaste un slice\n📜 → 🎯 Definición de LISTO"];
-    C1 [color="#5B8DBF" penwidth=2.5 label="1 · 🔍  Verifica\nbuild + tests + lint según tu stack y\nCITA la salida real (0 errores); revisa\nAGENTS.md si tocaste capas"];
+    C1 [color="#5B8DBF" penwidth=2.5 label="1 · 🔍  Verifica\nbuild + tests + lint según tu stack y\nCITA la salida real (0 errores); revisa\nAGENTS.md si tocaste capas\n+ QA de NO-REGRESIÓN visual (P13)"];
     C_DESTR [shape=diamond fillcolor="#2B2622" color="#D97757" penwidth=2 label="¿el diff ELIMINA funcionalidad /\nentidades / mucho código?"];
     C_PAUSA [color="#E08E45" label="🟠  PAUSA — es DESTRUCTIVO y NO transitivo\n(aunque un doc lo respalde): preséntalo como\nPÉRDIDA explícita y pide OK ANTES"];
     C_API [shape=diamond fillcolor="#2B2622" color="#D97757" penwidth=2 label="¿cambio de API / DTO /\nrepos / SQL?"];
@@ -320,7 +320,8 @@ digraph flujos {
     N_P0 -> N_GIT [style=dashed color="#D97757" penwidth=1.4 constraint=false];
     // apila las normas en COLUMNA (invisible: solo rango) para que no se vayan a lo ancho
     edge [style=invis];
-    N_P0 -> N_DOD -> N_GIT -> N_DOC -> N_MINI -> N_COST -> N_ORQ -> N_AISL -> N_MEC;
+    N_TPL  [label="📜\n🧬  Al templatizar: DOMINIO vs regla genérica (P9)\nal derivar un template de un concreto, quita el dominio pero\nCONSERVA las reglas genéricas (diff PORTAR-vs-OK-EXCLUIDO)"];
+    N_P0 -> N_DOD -> N_GIT -> N_DOC -> N_MINI -> N_COST -> N_ORQ -> N_AISL -> N_MEC -> N_TPL;
     edge [style=solid];
   }
 

@@ -20,3 +20,5 @@ src/plasmoid/contents/version.json
 
 # El graphml del mapa del cerebro es artefacto regenerable (bin/dot2yed.py); no se versiona.
 docs/mapa-flujos.graphml
+# El png del mapa es regenerable (dot -Tpng); el repo versiona .dot (fuente) + .svg (vista).
+docs/mapa-flujos.png

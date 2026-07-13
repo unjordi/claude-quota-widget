@@ -15,6 +15,7 @@ branch=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "?")
 lines=()
 lines+=("🧠 CEREBRO DEL REPO — léelo ANTES de tocar código o declarar algo terminado.")
 lines+=("Rama actual: ${branch}.")
+lines+=("Ojo: lo que ves/muestras es de ESTA rama; en otra rama puede diferir. Si algo «desaparece» al cambiar de rama (p. ej. el backlog o un archivo), NO es pérdida — es el working tree rotando; avísalo, no lo trates como borrado.")
 case "$branch" in
   develop|main) lines+=("⚠️ Estás en una rama PROTEGIDA: no se commitea ni pushea aquí. Saca una ramita feat/… desde develop.");;
 esac

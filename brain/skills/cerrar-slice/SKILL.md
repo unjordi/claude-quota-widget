@@ -26,6 +26,8 @@ pasos. Versión **genérica** (agnóstica de stack): sirve para cualquier proyec
   es destructivo y **NO transitivo** aunque un doc lo respalde: preséntalo al usuario como PÉRDIDA explícita
   ("esto borra X que costó Y") y pide su OK ANTES de ejecutarlo/cerrarlo. (En un caso real se aplanó un esquema de
   permisos jerárquico de meses amparado en `AGENTS.md`, sin avisar que era una pérdida.)
+- **QA de NO-REGRESIÓN visual.** Tras tocar un layout/estilo COMPARTIDO, re-verifica los 2-3 ajustes
+  previos del mismo componente: un fix de layout puede romper otro que ya estaba bien.
 - Recuerda: **verde técnico ≠ LISTO.** Es *verificado técnicamente*: peldaño necesario, insuficiente
   para declarar LISTO (falta (1) confirmación funcional del usuario o (2) su autorización expresa).
 
