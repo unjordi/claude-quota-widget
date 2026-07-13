@@ -35,6 +35,24 @@ recuperó por cherry-pick, pero casi se pierde). Si un ítem NO se puede aislar 
 orquestador**, no un agente suelto en el árbol compartido. Lo respalda el guard `proteger-arbol` (avisa
 antes de un git destructivo que orfanaría commits sin pushear).
 
+## Con agentes ACTIVOS — reglas anti-desastre (destiladas de cps, 2026-07)
+- **El sub-agente es TERMINAL.** Su prompt DEBE decírselo: *"eres terminal — cuando tu turno acaba NADA
+  tuyo sigue corriendo; NO puedes 'lanzar en background' ni esperar notificaciones. Ejecuta el trabajo
+  COMPLETO en ESTE turno."* (En cps un agente se despidió creyendo que dejó algo "corriendo en background"
+  — no había hecho nada, esperaba una notificación que jamás llegaría.)
+- **Verifica ANTES de creer.** El reporte de un agente NO es evidencia: el orquestador comprueba el
+  resultado real (git status/worktree/archivo existe/compila) **read-only** antes de marcar el ítem hecho.
+  El prompt del agente exige *"ENTREGA el artefacto ejecutado y verificado, NO un plan ni un stub; si no
+  puedes completarlo, dilo explícito"* (agentes devolvieron esqueletos en vez del trabajo real).
+- **NUNCA publiques/deployes desde el worktree de un agente.** Los worktrees NO heredan archivos
+  gitignored (p. ej. `appsettings.json`) → un publish desde ahí sale con manifiesto inconsistente y
+  **rompe la app** (en cps tumbó el login del usuario). El deploy sale SIEMPRE del clon principal tras `git pull`.
+- **Con agentes activos, el orquestador NO hace `git checkout`/build en el clon principal** (cruzaría la
+  rama que un worktree tiene tomada — "is already used by worktree"). Usa tu propio worktree o espera.
+- **Mensajería con dirección explícita.** Encabeza los mensajes a un agente con `[DE: orquestador → PARA:
+  agente X]` para que no confunda una instrucción-descendente con un reporte-ascendente (un agente prudente
+  lee un mensaje ambiguo como posible inyección y se traba).
+
 ## El flujo (lo que hace el orquestador)
 1. **Asigna:** saca del backlog (estado-proyecto.md) ítems **autocontenidos** (uno que un agente
    pueda cerrar solo, sin depender de otro en vuelo). Reparte **archivos disjuntos** (regla anti-choque)
@@ -64,3 +82,5 @@ antes de un git destructivo que orfanaría commits sin pushear).
 - ❌ Dejar worktrees zombies acumulándose. → `limpiar-worktrees.sh` al cerrar la ola.
 - ❌ Asignar ítems NO autocontenidos (que dependen de otro agente en vuelo). → Serialízalos o únelos.
 - ❌ Dejar que un agente mute/commitee en el árbol de trabajo COMPARTIDO (o corra `git reset`/`checkout`/`rebase` ahí). → Worktree AISLADO por agente, o lo hace el orquestador. Es lo que orfanó un commit en cps.
+- ❌ Creer el reporte de un agente sin verificar el resultado real. → Comprueba read-only (git/archivo/compila) antes de marcar hecho; el agente pudo devolver un stub o "alucinar" trabajo en background.
+- ❌ Publicar/deployar desde el worktree de un agente (no hereda gitignored → rompe el deploy). → Del clon principal tras `git pull`.
