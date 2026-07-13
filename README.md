@@ -20,7 +20,7 @@ Un `install-brain.sh` y tu máquina queda con el candado puesto. Idempotente y a
 
 |  |  |  |  |
 |:--|:--|:--|:--|
-| **8** · hooks globales | **4** · hooks por-repo | **45** · pruebas verdes | **3** · plataformas |
+| **8** · hooks globales | **4** · hooks por-repo | **68** · pruebas verdes | **3** · plataformas |
 
 > El cerebro **no es propietario**: no trae skills de proyecto (ni .NET, ni repos de empresa) — solo
 > hooks agnósticos, normas y una skill genérica `cerrar-slice` que cualquier proyecto puede adoptar.
@@ -76,11 +76,12 @@ El cerebro se ordena por *dureza*: arriba lo que te **bloquea** sin negociar; ab
 ├─ 🛑 limite-gasto             sin ventana 5h Y sin overage (ambos agotados) → freno duro
 └─ 📁 por-repo · viajan en el .claude de cada repo
    ├─ ✋ confirmar-merge-develop  merge sin tu OK → denegado
-   └─ ✅ dod-verificar            Def. of Done (ver Norma 🎯 DoD) sin build+tests+memoria → denegado
+   └─ ✅ dod-verificar            cierre sin evidencia/OK → denegado; claim visual a ciegas (sin ver la pantalla) también
 
 🔔 Automático — inyectan / recuerdan (no bloquean)
 ├─ 📊 recordar-dashboard       en el push recuerda dashboard + doc=realidad (README/docs) — cierre del slice
 ├─ 🕰️  rama-vieja              avisa si la ramita arrastra base vieja
+├─ 🌳 proteger-arbol           git destructivo que orfanaría commits sin pushear → avisa (fan-out: usa worktree aislado)
 ├─ 📝 delegacion-registrar     materializa el "pregunta una sola vez"
 ├─ 📮 delegacion-reporte       al terminar un agente: recuerda registrar avance + limpiar su worktree
 └─ 📁 por-repo · viajan en el .claude de cada repo
@@ -100,10 +101,27 @@ El cerebro se ordena por *dureza*: arriba lo que te **bloquea** sin negociar; ab
 
 Los hooks **por-repo** son fuente en [`brain/hooks/`](brain/hooks/) que cada repo copia a su propio
 `.claude/` y cablea en su `settings.json` — se cargan solo cuando una sesión *inicia* en ese repo. El
-cerebro **se autoprueba**: [`brain/test-brain.sh`](brain/test-brain.sh) corre 56 checks contra un
+cerebro **se autoprueba**: [`brain/test-brain.sh`](brain/test-brain.sh) corre 68 checks contra un
 `$HOME` aislado, y la CI repite `bash -n` + `jq empty` + `shellcheck` en cada push. Tras un fan-out,
 el helper [`limpiar-worktrees.sh`](brain/hooks/limpiar-worktrees.sh) barre los worktrees de ramas ya
 mergeadas y deja anotado en la bitácora el pendiente de los que sigan vivos.
+
+### 🗺️ El mapa del cerebro — fuente de verdad visual
+
+[`docs/mapa-flujos.dot`](docs/mapa-flujos.dot) es el **mapa único** del cerebro: los flowcharts de
+decisión de cada hook (⓪ ciclo de sesión · ① integrar · ② comando git · ③ push-nudges · ④ dod-verificar
+↔ ⑤ cerrar-slice · ⑥ delegar · ⑦ orquestar-fanout), **fieles a la lógica real de los `.sh`**, más las
+📜 **normas** que hacen cumplir (el cimiento), la referencia de lib/skill, y la leyenda con este mismo
+árbol. Cada flujo apunta a la norma/skill que invoca (📜/💡) y viceversa.
+
+Es **doc de record** (norma *doc = realidad*): si cambia un hook/norma/skill —alta, baja o cambio de
+lógica— se actualiza `mapa-flujos.dot` **en la misma tanda**, igual que este árbol y el conteo de
+checks de `test-brain.sh`.
+
+- **Ver / regenerar la imagen:** `dot -Tpng docs/mapa-flujos.dot -o docs/mapa-flujos.png` (requiere Graphviz).
+- **Exportar a yEd** (editable, conservando forma/color/etiquetas y agrupando por flujo):
+  `python3 bin/dot2yed.py docs/mapa-flujos.dot docs/mapa-flujos.graphml` — reusa las posiciones y estilos
+  que calcula Graphviz; en yEd se acomoda por flujo. El `.graphml` es artefacto **regenerable** (no se versiona).
 
 ## Lo que lo hace vivo — se refleja, se cura, se actualiza
 

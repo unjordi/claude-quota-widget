@@ -5,7 +5,7 @@
 #
 # Instala GLOBAL (en ~/.claude, aplica a TODOS los repos de esta máquina):
 #   (a) HOOKS de tier global en ~/.claude/hooks/  → git-branch-guard, merge-squash-guard,
-#       confirmar-merge-develop, recordar-dashboard, secret-scan, rama-vieja (PreToolUse/Bash),
+#       confirmar-merge-develop, recordar-dashboard, secret-scan, rama-vieja, proteger-arbol (PreToolUse/Bash),
 #       delegacion-gate + limite-gasto (PreToolUse/Task), delegacion-registrar (PostToolUse/Task),
 #       + delegacion-comun.sh (lib) + agentes-costo.json (config).
 #   (b) CABLEADO en ~/.claude/settings.json con "shell":"bash" (idempotente).
@@ -14,7 +14,7 @@
 #   (e) NORMAS globales inyectadas en ~/.claude/CLAUDE.md (bloque con marcador, solo si faltan).
 #
 # confirmar-merge-develop AHORA es GLOBAL (candado de merges a develop/main con OK explícito): antes
-# vivía solo por-repo y por eso faltaba donde el repo no lo traía (caso cps 2026-07-11) → promovido a
+# vivía solo por-repo y por eso faltaba donde el repo no lo traía (un caso real 2026-07-11) → promovido a
 # global para que aplique en TODA sesión/clon. NO instala globales los hooks REPO-SCOPED restantes
 # (sesion-inicio, precompact-volcar-estado, dod-verificar): esos viven en brain/hooks/ como FUENTE para
 # que cada repo los copie a su .claude/ y los cablee (se cargan solo si la sesión INICIA en el repo).
@@ -46,7 +46,7 @@ fi
 
 # ── (a) Copiar hooks de tier global + la lib compartida ──
 GLOBAL_HOOKS="git-branch-guard.sh merge-squash-guard.sh confirmar-merge-develop.sh recordar-dashboard.sh \
-              secret-scan.sh rama-vieja.sh limite-gasto.sh \
+              secret-scan.sh rama-vieja.sh proteger-arbol.sh limite-gasto.sh \
               delegacion-gate.sh delegacion-registrar.sh delegacion-reporte.sh delegacion-comun.sh \
               limpiar-worktrees.sh"
 for h in $GLOBAL_HOOKS; do
@@ -84,11 +84,12 @@ register_hook PreToolUse  Bash 'bash "$HOME/.claude/hooks/confirmar-merge-develo
 register_hook PreToolUse  Bash 'bash "$HOME/.claude/hooks/recordar-dashboard.sh"'  'recordar-dashboard'
 register_hook PreToolUse  Bash 'bash "$HOME/.claude/hooks/secret-scan.sh"'         'secret-scan'
 register_hook PreToolUse  Bash 'bash "$HOME/.claude/hooks/rama-vieja.sh"'          'rama-vieja'
+register_hook PreToolUse  Bash 'bash "$HOME/.claude/hooks/proteger-arbol.sh"'     'proteger-arbol'
 register_hook PreToolUse  Task 'bash "$HOME/.claude/hooks/limite-gasto.sh"'        'limite-gasto'
 register_hook PreToolUse  Task 'bash "$HOME/.claude/hooks/delegacion-gate.sh"'     'delegacion-gate'
 register_hook PostToolUse Task 'bash "$HOME/.claude/hooks/delegacion-registrar.sh"' 'delegacion-registrar'
 register_hook PostToolUse Task 'bash "$HOME/.claude/hooks/delegacion-reporte.sh"'   'delegacion-reporte'
-echo "ok: hooks cableados en $GSET (git-branch-guard, merge-squash-guard, confirmar-merge-develop, recordar-dashboard, secret-scan, rama-vieja, limite-gasto, delegacion-gate/registrar)"
+echo "ok: hooks cableados en $GSET (git-branch-guard, merge-squash-guard, confirmar-merge-develop, recordar-dashboard, secret-scan, rama-vieja, proteger-arbol, limite-gasto, delegacion-gate/registrar)"
 
 # ── (c) Skills genéricas del cerebro (cerrar-slice, orquestar-fanout, …) ──
 if [ -d "$SRC_SKILLS" ]; then

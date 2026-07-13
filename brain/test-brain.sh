@@ -169,6 +169,61 @@ rm -rf "$SCANREPO"
 
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
+echo "== (b3) proteger-arbol: avisa si un git destructivo orfanaría commits sin pushear =="
+PABARE="$(mktemp -d "${TMPDIR:-/tmp}/brain-pa.XXXXXX")/remote.git"
+PAREPO="$(mktemp -d "${TMPDIR:-/tmp}/brain-pa.XXXXXX")/wt"
+git init --bare -q "$PABARE" >/dev/null 2>&1
+git clone -q "$PABARE" "$PAREPO" >/dev/null 2>&1
+git -C "$PAREPO" config user.email t@t >/dev/null 2>&1
+git -C "$PAREPO" config user.name  tester >/dev/null 2>&1
+printf 'base\n' > "$PAREPO/a.txt"; git -C "$PAREPO" add a.txt >/dev/null 2>&1
+git -C "$PAREPO" commit -q -m base >/dev/null 2>&1
+git -C "$PAREPO" push -q origin HEAD >/dev/null 2>&1
+git -C "$PAREPO" branch --set-upstream-to=origin/"$(git -C "$PAREPO" rev-parse --abbrev-ref HEAD)" >/dev/null 2>&1
+pa() { printf '%s' "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$1\"}}" \
+       | CLAUDE_PROJECT_DIR="$PAREPO" bash "$HOOKS/proteger-arbol.sh"; }
+# sin commits en riesgo (todo pusheado) → reset --hard silencioso
+o="$(pa 'git reset --hard HEAD')"
+[ -z "$o" ] && ok "proteger-arbol: reset sin commits en riesgo → silencio" || bad "proteger-arbol avisó sin riesgo; got: $o"
+# ahora 1 commit local SIN pushear → en riesgo
+printf 'local\n' >> "$PAREPO/a.txt"; git -C "$PAREPO" add a.txt >/dev/null 2>&1
+git -C "$PAREPO" commit -q -m local >/dev/null 2>&1
+o="$(pa 'git reset --hard HEAD~1')"
+printf '%s' "$o" | grep -q 'ORFANAR' && ok "proteger-arbol: reset --hard con commit sin pushear → AVISA" || bad "proteger-arbol NO avisó con commit en riesgo; got: $o"
+# comando no-destructivo → silencio aunque haya riesgo
+o="$(pa 'git status')"
+[ -z "$o" ] && ok "proteger-arbol: comando no-destructivo → silencio" || bad "proteger-arbol reaccionó a no-destructivo; got: $o"
+# 'git reset' entrecomillado (dato de un grep) → silencio
+o="$(pa "grep -r 'git reset --hard' .")"
+[ -z "$o" ] && ok "proteger-arbol: 'git reset' entrecomillado (dato) → silencio" || bad "proteger-arbol matcheó texto entrecomillado; got: $o"
+rm -rf "$PABARE" "$PAREPO"
+
+# ─────────────────────────────────────────────────────────────────────────────
+echo ""
+echo "== (b4) dod-verificar: cierre/claim-visual sin evidencia bloquea; con OK o tool de navegador, no =="
+DODTX="$FAKEHOME/dod-transcript.jsonl"
+dod() { # dod "<texto final asistente>" "<línea extra de tool/edit o vacío>"
+  { printf '%s\n' '{"type":"user","message":{"role":"user","content":[{"type":"text","text":"haz el cambio"}]}}'
+    [ -n "$2" ] && printf '%s\n' "$2"
+    jq -nc --arg t "$1" '{type:"assistant",message:{role:"assistant",content:[{type:"text",text:$t}]}}'
+  } > "$DODTX"
+  printf '%s' "{\"stop_hook_active\":false,\"transcript_path\":\"$DODTX\"}" | bash "$HOOKS/dod-verificar.sh"
+}
+is_block() { printf '%s' "$1" | jq -e '.decision == "block"' >/dev/null 2>&1; }
+EDITR='{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Edit","input":{"file_path":"src/Foo.razor"}}]}}'
+BROWSERT='{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"mcp__claude-in-chrome__navigate","input":{}}]}}'
+is_block "$(dod '¡Cerrado! 🏁 el módulo quedó terminado.' "$EDITR")" && ok "dod B1: 'cerrado 🏁' + código sin OK → bloquea" || bad "dod B1 NO bloqueó cierre sin evidencia"
+is_block "$(dod 'Lo dejé en preview, con tu OK lo cierro.' "$EDITR")" && bad "dod bloqueó lenguaje de estatus" || ok "dod: 'en preview / con tu OK' → no bloquea"
+is_block "$(dod 'Quedó idéntico al mockup, se ve tal cual.' "$EDITR")" && ok "dod B2: claim visual sin browser-tool → bloquea (a ciegas)" || bad "dod B2 NO bloqueó claim visual a ciegas"
+o="$(dod 'En Chrome se ve como el mockup.' "$BROWSERT")"; is_block "$o" && bad "dod B2 bloqueó con browser-tool presente; got: $o" || ok "dod B2: claim visual + browser-tool → no bloquea"
+is_block "$(dod 'Quedó listo; validaste el QA visual y diste el ok.' "$EDITR")" && bad "dod bloqueó con (1) confirmación del usuario" || ok "dod: con (1) confirmación citada del usuario → no bloquea"
+# P1 (precisión): una PREGUNTA no es un cierre, aunque traiga léxico de cierre → NO dispara
+is_block "$(dod '¿ya quedó terminado el módulo?' "$EDITR")" && bad "dod P1: bloqueó una PREGUNTA (falso positivo del UUID)" || ok "dod P1: pregunta con léxico de cierre → no bloquea"
+is_block "$(dod 'Terminé el fix. ¿Lo cierro y abro el MR?' "$EDITR")" && bad "dod P1: bloqueó una oferta que termina preguntando" || ok "dod P1: mensaje que termina en pregunta → no bloquea"
+rm -f "$DODTX"
+
+# ─────────────────────────────────────────────────────────────────────────────
+echo ""
 echo "== (c) idempotencia: install-brain.sh 2× contra el \$HOME falso =="
 FAKEHOME2="$(mktemp -d "${TMPDIR:-/tmp}/brain-inst.XXXXXX")"
 HOME="$FAKEHOME2" bash "$INSTALLER" >/dev/null 2>&1
@@ -176,7 +231,7 @@ HOME="$FAKEHOME2" bash "$INSTALLER" >/dev/null 2>&1
 GSET2="$FAKEHOME2/.claude/settings.json"
 GCLAUDE2="$FAKEHOME2/.claude/CLAUDE.md"
 
-for pat in git-branch-guard merge-squash-guard recordar-dashboard delegacion-gate delegacion-registrar; do
+for pat in git-branch-guard merge-squash-guard recordar-dashboard proteger-arbol delegacion-gate delegacion-registrar; do
   n="$(jq --arg p "$pat" '[.hooks[]?[]? | select(([.hooks[]?.command]|join(" "))|test($p))] | length' "$GSET2" 2>/dev/null)"
   if [ "$n" = "1" ]; then ok "settings.json: $pat cableado 1× (idempotente)"; else bad "settings.json: $pat aparece ${n:-?}× (esperaba 1)"; fi
 done
@@ -216,7 +271,7 @@ rm -rf "$FAKEHOME3"
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
 echo "== (d) los .ps1 son ASCII puro (Windows PowerShell 5.1 lee un .ps1 sin BOM como ANSI, no UTF-8, =="
-echo "==     y un no-ASCII -acento, em-dash, emoji- le rompe la tokenización. Caso real: Windows de Liora) =="
+echo "==     y un no-ASCII -acento, em-dash, emoji- le rompe la tokenización. caso real: un Windows ajeno) =="
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 if command -v perl >/dev/null 2>&1; then
   # perl (no grep): determinista e igual en GNU/BSD/ugrep/Git-Bash. Sale 1 si hay algún byte >0x7F.
@@ -232,6 +287,37 @@ if command -v perl >/dev/null 2>&1; then
 else
   echo "  (perl no disponible -> salto el guard ASCII de .ps1)"
 fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+echo ""
+echo "== (e) sin referencias circulares NUEVAS entre elementos del cerebro =="
+# Allowlist de pares bidireccionales BENIGNOS conocidos (skill<->hook enforcement / lib<->consumidor /
+# hooks-hermanos). Un par NUEVO fuera de aqui = posible referencia circular -> revisalo (peor que una
+# contradiccion). El test COMPUTA los pares en cada corrida, no depende de contarlos a mano.
+CE_ALLOW="cerrar-slice|merge-squash-guard
+cerrar-slice|recordar-dashboard
+delegacion-comun|delegacion-gate
+delegacion-comun|delegacion-registrar
+delegacion-gate|limite-gasto
+delegacion-reporte|orquestar-fanout"
+ce_els=()
+for d in "$SCRIPT_DIR"/skills/*/; do [ -d "$d" ] && ce_els+=("$(basename "$d")"); done
+for h in "$HOOKS"/*.sh; do [ -e "$h" ] && ce_els+=("$(basename "$h" .sh)"); done
+ce_fileof() { if [ -f "$SCRIPT_DIR/skills/$1/SKILL.md" ]; then echo "$SCRIPT_DIR/skills/$1/SKILL.md"; elif [ -f "$HOOKS/$1.sh" ]; then echo "$HOOKS/$1.sh"; fi; }
+ce_new=0
+for x in "${ce_els[@]}"; do
+  fx="$(ce_fileof "$x")"; [ -z "$fx" ] && continue
+  for y in "${ce_els[@]}"; do
+    [[ "$x" < "$y" ]] || continue
+    fy="$(ce_fileof "$y")"; [ -z "$fy" ] && continue
+    if grep -qw "$y" "$fx" 2>/dev/null && grep -qw "$x" "$fy" 2>/dev/null; then
+      if ! printf '%s\n' "$CE_ALLOW" | grep -qxF "$x|$y"; then
+        bad "ref bidireccional NUEVA (¿circular?): $x <-> $y — revísala (o agrégala al allowlist si es benigna)"; ce_new=1
+      fi
+    fi
+  done
+done
+[ "$ce_new" = 0 ] && ok "sin referencias circulares nuevas (los 6 pares bidireccionales son los benignos conocidos)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
