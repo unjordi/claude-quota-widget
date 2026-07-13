@@ -7,9 +7,10 @@
 #   (a) HOOKS de tier global en ~/.claude/hooks/  → git-branch-guard, merge-squash-guard,
 #       confirmar-merge-develop, recordar-dashboard, secret-scan, rama-vieja, proteger-arbol (PreToolUse/Bash),
 #       delegacion-gate + limite-gasto (PreToolUse/Task), delegacion-registrar (PostToolUse/Task),
+#       rehidratar-hilo (SessionStart: reinyecta el hilo mental si existe),
 #       + delegacion-comun.sh (lib) + agentes-costo.json (config).
 #   (b) CABLEADO en ~/.claude/settings.json con "shell":"bash" (idempotente).
-#   (c) SKILL genérica cerrar-slice en ~/.claude/skills/.
+#   (c) SKILLS genéricas (cerrar-slice, orquestar-fanout, checkpoint) en ~/.claude/skills/.
 #   (d) DASHBOARD del cerebro sembrado en la memoria GLOBAL (slug del HOME) si falta.
 #   (e) NORMAS globales inyectadas en ~/.claude/CLAUDE.md (bloque con marcador, solo si faltan).
 #
@@ -46,7 +47,7 @@ fi
 
 # ── (a) Copiar hooks de tier global + la lib compartida ──
 GLOBAL_HOOKS="git-branch-guard.sh merge-squash-guard.sh confirmar-merge-develop.sh recordar-dashboard.sh \
-              secret-scan.sh rama-vieja.sh proteger-arbol.sh limite-gasto.sh \
+              secret-scan.sh rama-vieja.sh proteger-arbol.sh limite-gasto.sh rehidratar-hilo.sh \
               delegacion-gate.sh delegacion-registrar.sh delegacion-reporte.sh delegacion-comun.sh \
               limpiar-worktrees.sh"
 for h in $GLOBAL_HOOKS; do
@@ -74,7 +75,7 @@ register_hook() {
       .hooks = (.hooks // {}) |
       .hooks[$ev] = (.hooks[$ev] // []) |
       if any(.hooks[$ev][]?; ([.hooks[]?.command] | join(" ")) | test($pat))
-      then . else .hooks[$ev] += [{"matcher":$m,"hooks":[{"type":"command","command":$cmd,"shell":"bash"}]}] end
+      then . else .hooks[$ev] += [ (if $m=="" then {} else {"matcher":$m} end) + {"hooks":[{"type":"command","command":$cmd,"shell":"bash"}]} ] end
     ' "$GSET" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then mv "$tmp" "$GSET"; else rm -f "$tmp"; echo "warn: no pude fusionar hook ($pat)"; fi
 }
 
@@ -89,7 +90,9 @@ register_hook PreToolUse  Task 'bash "$HOME/.claude/hooks/limite-gasto.sh"'     
 register_hook PreToolUse  Task 'bash "$HOME/.claude/hooks/delegacion-gate.sh"'     'delegacion-gate'
 register_hook PostToolUse Task 'bash "$HOME/.claude/hooks/delegacion-registrar.sh"' 'delegacion-registrar'
 register_hook PostToolUse Task 'bash "$HOME/.claude/hooks/delegacion-reporte.sh"'   'delegacion-reporte'
-echo "ok: hooks cableados en $GSET (git-branch-guard, merge-squash-guard, confirmar-merge-develop, recordar-dashboard, secret-scan, rama-vieja, proteger-arbol, limite-gasto, delegacion-gate/registrar)"
+# SessionStart sin matcher (matcher vacío ⇒ se omite la clave ⇒ casa TODAS las fuentes: startup/resume/compact/clear)
+register_hook SessionStart '' 'bash "$HOME/.claude/hooks/rehidratar-hilo.sh"'       'rehidratar-hilo'
+echo "ok: hooks cableados en $GSET (git-branch-guard, merge-squash-guard, confirmar-merge-develop, recordar-dashboard, secret-scan, rama-vieja, proteger-arbol, limite-gasto, delegacion-gate/registrar, rehidratar-hilo)"
 
 # ── (c) Skills genéricas del cerebro (cerrar-slice, orquestar-fanout, …) ──
 if [ -d "$SRC_SKILLS" ]; then
