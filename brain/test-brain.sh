@@ -7,6 +7,8 @@
 #   (b) gate de delegación: casos gratis / incluido / metered(overage) / metered(externo) /
 #       desconocido, el ciclo gate→registrar→gate-silencioso, y la transición dentro/fuera de la
 #       ventana de 5h (incluido → metered al agotarse la ventana).
+#   (b5) compactación: precompact NO emite hookSpecificOutput (contrato de PreCompact — el bug real
+#        que bash -n no veía) + rehidratar-hilo inyecta/silencia según exista el hilo.
 #   (c) idempotencia: install-brain.sh corrido 2× contra el $HOME falso → cada hook queda 1× en
 #       settings.json y hay 1 solo bloque de normas en CLAUDE.md.
 #
@@ -224,6 +226,33 @@ rm -f "$DODTX"
 
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
+echo "== (b5) compactación: precompact conforme al contrato de PreCompact + rehidratar-hilo =="
+# El bug real (2026-07-13): precompact emitía hookSpecificOutput.additionalContext, que PreCompact
+# RECHAZA ("Invalid input") → el hook quedaba MUERTO. `bash -n` (sección a) no lo veía; solo la
+# compactación real. Este test cierra ese hueco: valida el CONTRATO DE SALIDA por-evento.
+pcout="$(printf '%s' '{"trigger":"manual","transcript_path":"/dev/null"}' | bash "$HOOKS/precompact-volcar-estado.sh")"
+printf '%s' "$pcout" | grep -q 'hookSpecificOutput' \
+  && bad "precompact: emite hookSpecificOutput (PreCompact NO lo soporta → crash)" \
+  || ok "precompact: NO emite hookSpecificOutput (conforme al contrato de PreCompact)"
+is_silent "$pcout" && ok "precompact: salida vacía + exit 0 (no-op honesto, permite compactar)" || bad "precompact: esperaba silencio; got: $pcout"
+
+# rehidratar-hilo (SessionStart): con hilo → inyecta additionalContext; sin/vacío → silencio
+RHROOT="$(mktemp -d "${TMPDIR:-/tmp}/brain-rh.XXXXXX")"
+mkdir -p "$RHROOT/.claude/memory"
+rh() { printf '%s' '{"source":"compact"}' | CLAUDE_PROJECT_DIR="$RHROOT" bash "$HOOKS/rehidratar-hilo.sh"; }
+is_silent "$(rh)" && ok "rehidratar-hilo: sin hilo-mental-actual.md → silencio" || bad "rehidratar-hilo: esperaba silencio sin hilo"
+: > "$RHROOT/.claude/memory/hilo-mental-actual.md"
+is_silent "$(rh)" && ok "rehidratar-hilo: hilo vacío → silencio" || bad "rehidratar-hilo: esperaba silencio con hilo vacío"
+printf '# Hilo mental actual\n## En qué estamos AHORA\nMARCA_HILO_XYZ\n' > "$RHROOT/.claude/memory/hilo-mental-actual.md"
+rhout="$(rh)"
+printf '%s' "$rhout" | jq -e '.hookSpecificOutput.hookEventName == "SessionStart"' >/dev/null 2>&1 \
+  && ok "rehidratar-hilo: emite hookSpecificOutput SessionStart válido" || bad "rehidratar-hilo: JSON SessionStart inválido; got: $rhout"
+printf '%s' "$rhout" | jq -r '.hookSpecificOutput.additionalContext' 2>/dev/null | grep -q 'MARCA_HILO_XYZ' \
+  && ok "rehidratar-hilo: el cuerpo del hilo viaja en additionalContext" || bad "rehidratar-hilo: no encontré el cuerpo del hilo"
+rm -rf "$RHROOT"
+
+# ─────────────────────────────────────────────────────────────────────────────
+echo ""
 echo "== (c) idempotencia: install-brain.sh 2× contra el \$HOME falso =="
 FAKEHOME2="$(mktemp -d "${TMPDIR:-/tmp}/brain-inst.XXXXXX")"
 HOME="$FAKEHOME2" bash "$INSTALLER" >/dev/null 2>&1
@@ -231,7 +260,7 @@ HOME="$FAKEHOME2" bash "$INSTALLER" >/dev/null 2>&1
 GSET2="$FAKEHOME2/.claude/settings.json"
 GCLAUDE2="$FAKEHOME2/.claude/CLAUDE.md"
 
-for pat in git-branch-guard merge-squash-guard recordar-dashboard proteger-arbol delegacion-gate delegacion-registrar; do
+for pat in git-branch-guard merge-squash-guard confirmar-merge-develop recordar-dashboard proteger-arbol rehidratar-hilo delegacion-gate delegacion-registrar; do
   n="$(jq --arg p "$pat" '[.hooks[]?[]? | select(([.hooks[]?.command]|join(" "))|test($p))] | length' "$GSET2" 2>/dev/null)"
   if [ "$n" = "1" ]; then ok "settings.json: $pat cableado 1× (idempotente)"; else bad "settings.json: $pat aparece ${n:-?}× (esperaba 1)"; fi
 done
@@ -240,6 +269,8 @@ e="$(grep -c 'END claude-brain'   "$GCLAUDE2" 2>/dev/null || echo 0)"
 { [ "$b" = "1" ] && [ "$e" = "1" ]; } && ok "CLAUDE.md: 1 solo bloque de normas (BEGIN/END)" || bad "CLAUDE.md: BEGIN=$b END=$e (esperaba 1/1)"
 # la skill y la lib deben haber quedado instaladas
 [ -f "$FAKEHOME2/.claude/skills/cerrar-slice/SKILL.md" ] && ok "skill cerrar-slice instalada" || bad "falta skill cerrar-slice"
+[ -f "$FAKEHOME2/.claude/skills/checkpoint/SKILL.md" ]   && ok "skill checkpoint instalada"   || bad "falta skill checkpoint"
+[ -f "$FAKEHOME2/.claude/hooks/rehidratar-hilo.sh" ]     && ok "hook rehidratar-hilo instalado" || bad "falta hook rehidratar-hilo"
 [ -f "$FAKEHOME2/.claude/hooks/delegacion-comun.sh" ]    && ok "lib delegacion-comun.sh instalada" || bad "falta lib delegacion-comun.sh"
 
 # Bonus: el desinstalador deja settings.json sin las entradas del cerebro y sin el bloque de normas
@@ -299,7 +330,10 @@ cerrar-slice|recordar-dashboard
 delegacion-comun|delegacion-gate
 delegacion-comun|delegacion-registrar
 delegacion-gate|limite-gasto
-delegacion-reporte|orquestar-fanout"
+delegacion-reporte|orquestar-fanout
+cerrar-slice|checkpoint
+cerrar-slice|rehidratar-hilo
+checkpoint|rehidratar-hilo"
 ce_els=()
 for d in "$SCRIPT_DIR"/skills/*/; do [ -d "$d" ] && ce_els+=("$(basename "$d")"); done
 for h in "$HOOKS"/*.sh; do [ -e "$h" ] && ce_els+=("$(basename "$h" .sh)"); done
@@ -317,7 +351,7 @@ for x in "${ce_els[@]}"; do
     fi
   done
 done
-[ "$ce_new" = 0 ] && ok "sin referencias circulares nuevas (los 6 pares bidireccionales son los benignos conocidos)"
+[ "$ce_new" = 0 ] && ok "sin referencias circulares nuevas (los pares bidireccionales presentes son los benignos del allowlist)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""

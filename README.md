@@ -84,9 +84,10 @@ El cerebro se ordena por *dureza*: arriba lo que te **bloquea** sin negociar; ab
 ├─ 🌳 proteger-arbol           git destructivo que orfanaría commits sin pushear → avisa (fan-out: usa worktree aislado)
 ├─ 📝 delegacion-registrar     materializa el "pregunta una sola vez"
 ├─ 📮 delegacion-reporte       al terminar un agente: recuerda registrar avance + limpiar su worktree
+├─ 🧵 rehidratar-hilo          reinyecta hilo-mental-actual.md al abrir/retomar/compactar (GLOBAL)
 └─ 📁 por-repo · viajan en el .claude de cada repo
    ├─ 🧭 sesion-inicio            reinyecta rama + norma + memoria al abrir
-   └─ 💾 precompact-volcar-estado vuelca el avance antes de compactar
+   └─ 💤 precompact-volcar-estado no-op honesto (PreCompact no puede inyectar; lo vuelca 💾 checkpoint)
 
 📜 Normas — reglas que Claude se autoimpone (CLAUDE.md)
 ├─ 🎯 Definition of Done       verde técnico ≠ Done/Listo/Ya Quedó; exige QA o un OK explícito
@@ -96,6 +97,7 @@ El cerebro se ordena por *dureza*: arriba lo que te **bloquea** sin negociar; ab
 
 💡 Skills — opt-in, las invocas tú
 ├─ 📦 cerrar-slice             build+tests+memoria al día + MR con resumen curado
+├─ 💾 checkpoint               vuelca el HILO a memoria para compactar sin perderlo (proactivo)
 └─ 🧵 orquestar-fanout         fan-out sin niñera: asigna del backlog, auto-reporta y limpia al cerrar
 ```
 

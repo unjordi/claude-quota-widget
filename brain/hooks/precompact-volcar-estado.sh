@@ -1,19 +1,24 @@
 #!/usr/bin/env bash
-# precompact-volcar-estado.sh — PreCompact hook. Se dispara JUSTO antes de compactar el
-# contexto (trigger=auto cuando se llena; trigger=manual con /compact). La compactación
-# borra el detalle del chat: este hook inyecta la orden de VOLCAR a la memoria cualquier
-# avance/decisión/pendiente que aún no esté escrito, y le pide al resumen preservar el
-# estado de la tarea. Junto con sesion-inicio.sh (que rehidrata en source=compact) cierra
-# el hueco del "sprint demasiado largo". NO bloquea. Fail-open.
+# precompact-volcar-estado.sh — PreCompact hook.
+#
+# FIX 2026-07-13: este hook ANTES intentaba INYECTAR un recordatorio ("volcá el estado a la memoria")
+# vía hookSpecificOutput.additionalContext. Dos problemas, ambos de raíz:
+#   1) PreCompact NO soporta ese canal → Claude Code RECHAZABA la salida ("Hook JSON output
+#      validation failed — Invalid input") y el recordatorio nunca llegaba. El hook estaba MUERTO.
+#   2) Aunque el canal existiera, sería inútil: entre que PreCompact dispara y la compactación
+#      ocurre NO hay turno del modelo → no se le puede pedir que "vuelque ahora". El
+#      "recordatorio de último momento" era imposible desde el día 1; el crash solo lo hizo visible.
+#
+# PreCompact SOLO puede: bloquear la compactación (decision:"block") o dejarla proceder (exit 0).
+# Su stdout se DESCARTA. Así que este hook ya no intenta lo imposible: sale 0 limpio (permite
+# compactar) y documenta dónde vive el mecanismo REAL de "no perder el hilo al compactar":
+#   • el skill `checkpoint` VUELCA el hilo a .claude/memory/hilo-mental-actual.md (proactivo), y
+#   • el hook `rehidratar-hilo.sh` (SessionStart, canal FIABLE) lo REINYECTA al retomar/compactar.
+#
+# OJO disciplina: el auto-compact (contexto lleno) NO avisa y este hook no puede salvarte el hilo
+# → corre `checkpoint` PROACTIVAMENTE en pausas naturales, no confíes en un aviso de último momento.
+#
+# Se conserva cableado como punto de extensión documentado (y para no romper configs existentes).
 set -u
-input=$(cat 2>/dev/null || true)
-trigger=$(printf '%s' "$input" | { jq -r '.trigger // "auto"' 2>/dev/null || echo auto; })
-
-ctx="⏳ COMPACTACIÓN DE CONTEXTO (${trigger}) — se va a perder el detalle del chat. ANTES de continuar, VUELCA a .claude/memory/estado-proyecto.md todo lo que aún no esté escrito de este sprint: qué quedó HECHO (con commit+fecha), qué está PENDIENTE (con punto de entrada al código) y qué está FUERA POR DECISIÓN (no es regresión). Si es migración, actualiza también docs/inventario-paridad.md (migrados/total). No confíes en recordarlo: escríbelo ahora. Al resumen: preserva la rama actual, la tarea en curso, el orden de capas pendiente y los archivos tocados."
-
-if command -v jq >/dev/null 2>&1; then
-  jq -n --arg c "$ctx" '{hookSpecificOutput:{hookEventName:"PreCompact",additionalContext:$c}}'
-else
-  printf '%s\n' "$ctx"
-fi
+cat >/dev/null 2>&1 || true   # drena el payload de PreCompact en stdin; no lo usamos
 exit 0
