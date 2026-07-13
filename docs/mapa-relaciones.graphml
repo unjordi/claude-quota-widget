@@ -1,90 +1,815 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- Mapa del cerebro claude-brain — RELACIONES / jerarquía (sin flujos: ver mapa-flujos.graphml).
-     Documento de REFERENCIA: descripciones COMPLETAS (aclara cualquier duda). Lenguaje visual del
-     README/widget: grafito + terracota (#D97757), emoji por elemento, borde por categoría
-     (rojo=Forzoso, ámbar=Automático, verde=Norma, azul=Skill, gris=lib). Cajas anchas (340) + texto
-     envuelto para que NADA se corte. Abrir en yEd -> Layout > Hierarchical (Top-to-Bottom). -->
-<graphml xmlns="http://graphml.graphdrawing.org/xmlns"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xmlns:y="http://www.yworks.com/xml/graphml"
-         xmlns:yed="http://www.yworks.com/xml/yed/3"
-         xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://www.yworks.com/xml/schema/graphml/1.1/ygraphml.xsd">
-  <key id="d0" for="node" yfiles.type="nodegraphics"/>
-  <key id="d1" for="edge" yfiles.type="edgegraphics"/>
-  <graph id="rel" edgedefault="directed">
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:java="http://www.yworks.com/xml/yfiles-common/1.0/java" xmlns:sys="http://www.yworks.com/xml/yfiles-common/markup/primitives/2.0" xmlns:x="http://www.yworks.com/xml/yfiles-common/markup/2.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:y="http://www.yworks.com/xml/graphml" xmlns:yed="http://www.yworks.com/xml/yed/3" xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://www.yworks.com/xml/schema/graphml/1.1/ygraphml.xsd">
+  <!--Created by yEd 3.25.1-->
+  <key for="port" id="d0" yfiles.type="portgraphics"/>
+  <key for="port" id="d1" yfiles.type="portgeometry"/>
+  <key for="port" id="d2" yfiles.type="portuserdata"/>
+  <key attr.name="url" attr.type="string" for="node" id="d3"/>
+  <key attr.name="description" attr.type="string" for="node" id="d4"/>
+  <key for="node" id="d5" yfiles.type="nodegraphics"/>
+  <key for="graphml" id="d6" yfiles.type="resources"/>
+  <key attr.name="url" attr.type="string" for="edge" id="d7"/>
+  <key attr.name="description" attr.type="string" for="edge" id="d8"/>
+  <key for="edge" id="d9" yfiles.type="edgegraphics"/>
+  <graph edgedefault="directed" id="G">
+    <node id="n0">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="130.0" width="360.0" x="0.94921875" y="367.0"/>
+          <y:Fill color="#2B2622" transparent="false"/>
+          <y:BorderStyle color="#D97757" type="line" width="2.0"/>
+          <y:NodeLabel alignment="left" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="102.9296875" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="361.8984375" x="-0.94921875" xml:space="preserve" y="13.53515625">&#129504; claude-brain — mapa de RELACIONES
 
-    <node id="TIT"><data key="d0"><y:ShapeNode><y:Geometry height="130" width="360"/><y:Fill color="#2B2622"/><y:BorderStyle color="#D97757" width="2.0"/><y:NodeLabel alignment="left" textColor="#F2EDE6">🧠 claude-brain — mapa de RELACIONES&#10;&#10;📜 NORMA (verde) ← la hace cumplir…&#10;🔒 hook FORZOSO (rojo, bloquea) / 🔔 NUDGE (ámbar, avisa)&#10;💡 SKILL (azul) usa los hooks · ⚙ lib (gris)&#10;— flecha: enforce / usa / source&#10;- - punteada terracota: 🛡 P0 protege la integridad</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-
-    <!-- ===== NORMAS (verde) — descripción completa ===== -->
-    <node id="N_DOD"><data key="d0"><y:ShapeNode><y:Geometry height="64" width="340"/><y:Fill color="#2B2B2B"/><y:BorderStyle color="#7FB069" width="2.0"/><y:NodeLabel textColor="#F2EDE6">🎯 Definición de LISTO&#10;verde técnico ≠ LISTO: build+tests+memoria es&#10;necesario pero NO suficiente; falta (1) QA del&#10;usuario o (2) su OK expreso de cierre</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-    <node id="N_DOC"><data key="d0"><y:ShapeNode><y:Geometry height="52" width="340"/><y:Fill color="#2B2B2B"/><y:BorderStyle color="#7FB069" width="2.0"/><y:NodeLabel textColor="#F2EDE6">🪞 doc = realidad&#10;al cambiar algo, su doc se actualiza en la MISMA&#10;tanda (README / memoria / dashboard / comentarios)</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-    <node id="N_GIT"><data key="d0"><y:ShapeNode><y:Geometry height="52" width="340"/><y:Fill color="#2B2B2B"/><y:BorderStyle color="#7FB069" width="2.0"/><y:NodeLabel textColor="#F2EDE6">🌿 Flujo de git&#10;ramita → MR → develop (con squash); main es&#10;release-only; NUNCA push directo a develop/main</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-    <node id="N_MINI"><data key="d0"><y:ShapeNode><y:Geometry height="52" width="340"/><y:Fill color="#2B2B2B"/><y:BorderStyle color="#7FB069" width="2.0"/><y:NodeLabel textColor="#F2EDE6">🌱 Modelo MINI-DEVELOP&#10;ramitas → rama personal/integración por merge&#10;LOCAL (sin fricción); solo el MR a develop se gatea</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-    <node id="N_COST"><data key="d0"><y:ShapeNode><y:Geometry height="52" width="340"/><y:Fill color="#2B2B2B"/><y:BorderStyle color="#7FB069" width="2.0"/><y:NodeLabel textColor="#F2EDE6">💰 Consentimiento de costo de delegación&#10;delegar cuesta por nivel: gratis (local) / incluido&#10;(ventana 5h) / metered (overage o API externa)</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-    <node id="N_ORQ"><data key="d0"><y:ShapeNode><y:Geometry height="52" width="340"/><y:Fill color="#2B2B2B"/><y:BorderStyle color="#7FB069" width="2.0"/><y:NodeLabel textColor="#F2EDE6">🎼 Orquesta: delega y quédate en el loop&#10;con trabajo paralelizable: fan-out + supervisión&#10;(no grind serial); auto-reporte sin niñera</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-    <node id="N_AISL"><data key="d0"><y:ShapeNode><y:Geometry height="52" width="340"/><y:Fill color="#2B2B2B"/><y:BorderStyle color="#7FB069" width="2.0"/><y:NodeLabel textColor="#F2EDE6">🧱 Aislamiento de fan-out&#10;todo agente que MUTA/commitea corre en worktree&#10;AISLADO, nunca en el árbol de trabajo compartido</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-    <node id="N_P0"><data key="d0"><y:ShapeNode><y:Geometry height="64" width="360"/><y:Fill color="#2B2B2B"/><y:BorderStyle color="#D97757" type="dashed" width="2.5"/><y:NodeLabel textColor="#F2EDE6">🛡 P0 (PROPUESTA): Integridad de los guardarraíles&#10;Claude NO afloja sus propios candados de supervisión&#10;para desatorarse; cambiar un control exige tu OK&#10;EXPLÍCITO a cambiar ESE control (≠ el OK a la acción)</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-
-    <!-- ===== HOOKS FORZOSOS (rojo) — descripción completa ===== -->
-    <node id="H_BRANCH"><data key="d0"><y:ShapeNode><y:Geometry height="52" width="340"/><y:Fill color="#2B2B2B"/><y:BorderStyle color="#C0392B" width="2.5"/><y:NodeLabel textColor="#F2EDE6">🚧 git-branch-guard  (PreToolUse / Bash)&#10;push o merge DIRECTO a develop·main → DENEGADO;&#10;te redirige al flujo ramita → MR</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-    <node id="H_SQUASH"><data key="d0"><y:ShapeNode><y:Geometry height="52" width="340"/><y:Fill color="#2B2B2B"/><y:BorderStyle color="#C0392B" width="2.5"/><y:NodeLabel textColor="#F2EDE6">🔗 merge-squash-guard  (PreToolUse / Bash)&#10;MR a develop sin --squash → DENEGADO (1 commit&#10;limpio por slice); main/release va SIN squash (EXENTO)</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-    <node id="H_CONF"><data key="d0"><y:ShapeNode><y:Geometry height="52" width="340"/><y:Fill color="#2B2B2B"/><y:BorderStyle color="#C0392B" width="2.5"/><y:NodeLabel textColor="#F2EDE6">✋ confirmar-merge-develop  (Bash, repo compartido)&#10;integrar a develop/main sin tu OK EXPLÍCITO →&#10;DENEGADO (a main exige un OK súper explícito)</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-    <node id="H_DOD"><data key="d0"><y:ShapeNode><y:Geometry height="52" width="340"/><y:Fill color="#2B2B2B"/><y:BorderStyle color="#C0392B" width="2.5"/><y:NodeLabel textColor="#F2EDE6">✅ dod-verificar  (Stop)&#10;declarar LISTO sin evidencia (1)/(2) → DENEGADO;&#10;afirmar QA visual sin ver la pantalla → DENEGADO</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-    <node id="H_SECRET"><data key="d0"><y:ShapeNode><y:Geometry height="46" width="340"/><y:Fill color="#2B2B2B"/><y:BorderStyle color="#C0392B" width="2.5"/><y:NodeLabel textColor="#F2EDE6">🕵 secret-scan  (PreToolUse / Bash)&#10;commit/push con un secreto detectado → DENEGADO</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-    <node id="H_LIMITE"><data key="d0"><y:ShapeNode><y:Geometry height="52" width="340"/><y:Fill color="#2B2B2B"/><y:BorderStyle color="#C0392B" width="2.5"/><y:NodeLabel textColor="#F2EDE6">🛑 limite-gasto  (PreToolUse / Task)&#10;sin ventana 5h Y sin overage (AMBOS agotados) →&#10;FRENO duro a delegar (no hay capacidad)</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-    <node id="H_GATE"><data key="d0"><y:ShapeNode><y:Geometry height="52" width="340"/><y:Fill color="#2B2B2B"/><y:BorderStyle color="#C0392B" width="2.5"/><y:NodeLabel textColor="#F2EDE6">💸 delegacion-gate  (PreToolUse / Task)&#10;reclutar un agente con costo → pide tu&#10;consentimiento (ASK; 1×/compu ó 1×/workflow)</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-
-    <!-- ===== HOOKS AUTOMÁTICOS / NUDGE (ámbar) — descripción completa ===== -->
-    <node id="H_DASH"><data key="d0"><y:ShapeNode><y:Geometry height="52" width="340"/><y:Fill color="#2B2B2B"/><y:BorderStyle color="#E08E45" width="2.0"/><y:NodeLabel textColor="#F2EDE6">📊 recordar-dashboard  (PreToolUse / Bash)&#10;en el push: recuerda actualizar el dashboard global&#10;+ doc=realidad (README/docs) — cierre del slice</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-    <node id="H_RAMA"><data key="d0"><y:ShapeNode><y:Geometry height="46" width="340"/><y:Fill color="#2B2B2B"/><y:BorderStyle color="#E08E45" width="2.0"/><y:NodeLabel textColor="#F2EDE6">🕰 rama-vieja  (PreToolUse / Bash)&#10;avisa si la ramita arrastra una base vieja de develop</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-    <node id="H_ARBOL"><data key="d0"><y:ShapeNode><y:Geometry height="52" width="340"/><y:Fill color="#2B2B2B"/><y:BorderStyle color="#E08E45" width="2.0"/><y:NodeLabel textColor="#F2EDE6">🌳 proteger-arbol  (PreToolUse / Bash)&#10;git destructivo (reset --hard / checkout -f / rebase)&#10;que orfanaría commits sin pushear → AVISA</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-    <node id="H_REG"><data key="d0"><y:ShapeNode><y:Geometry height="46" width="340"/><y:Fill color="#2B2B2B"/><y:BorderStyle color="#E08E45" width="2.0"/><y:NodeLabel textColor="#F2EDE6">📝 delegacion-registrar  (PostToolUse / Task)&#10;materializa el "pregunta una sola vez" del gate de costo</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-    <node id="H_REP"><data key="d0"><y:ShapeNode><y:Geometry height="46" width="340"/><y:Fill color="#2B2B2B"/><y:BorderStyle color="#E08E45" width="2.0"/><y:NodeLabel textColor="#F2EDE6">📮 delegacion-reporte  (PostToolUse / Task)&#10;al terminar un agente: recuerda registrar avance + limpiar su worktree</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-    <node id="H_SESION"><data key="d0"><y:ShapeNode><y:Geometry height="46" width="340"/><y:Fill color="#2B2B2B"/><y:BorderStyle color="#E08E45" width="2.0"/><y:NodeLabel textColor="#F2EDE6">🧭 sesion-inicio  (SessionStart, repo-scoped)&#10;al abrir/retomar reinyecta rama + norma de git + orden de leer memoria</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-    <node id="H_PRECOMP"><data key="d0"><y:ShapeNode><y:Geometry height="46" width="340"/><y:Fill color="#2B2B2B"/><y:BorderStyle color="#E08E45" width="2.0"/><y:NodeLabel textColor="#F2EDE6">💾 precompact-volcar-estado  (PreCompact, repo-scoped)&#10;antes de compactar el contexto, vuelca avance/decisiones/pendientes a memoria</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-
-    <!-- ===== LIBS / HELPERS (gris) ===== -->
-    <node id="L_COMUN"><data key="d0"><y:ShapeNode><y:Geometry height="44" width="300"/><y:Fill color="#232323"/><y:BorderStyle color="#8A8A8A" width="1.5"/><y:NodeLabel textColor="#CFC8C0">⚙ delegacion-comun  (lib)&#10;clasificación de costo compartida (gate y registrador no divergen)</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-    <node id="L_WT"><data key="d0"><y:ShapeNode><y:Geometry height="44" width="300"/><y:Fill color="#232323"/><y:BorderStyle color="#8A8A8A" width="1.5"/><y:NodeLabel textColor="#CFC8C0">🧹 limpiar-worktrees.sh  (helper)&#10;barre worktrees zombies (rama mergeada); deja los vivos anotados en bitácora</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-
-    <!-- ===== SKILLS (azul) — descripción completa ===== -->
-    <node id="S_CERRAR"><data key="d0"><y:ShapeNode><y:Geometry height="52" width="340"/><y:Fill color="#2B2B2B"/><y:BorderStyle color="#5B8DBF" width="2.5"/><y:NodeLabel textColor="#F2EDE6">📦 cerrar-slice  (skill, opt-in)&#10;ritual de cierre: evidencia (build+tests) + memoria/doc&#10;+ confirmar con el usuario + flujo de git + cosecha</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-    <node id="S_FANOUT"><data key="d0"><y:ShapeNode><y:Geometry height="52" width="340"/><y:Fill color="#2B2B2B"/><y:BorderStyle color="#5B8DBF" width="2.5"/><y:NodeLabel textColor="#F2EDE6">🧵 orquestar-fanout  (skill, opt-in)&#10;fan-out sin niñera: asigna ítems autocontenidos,&#10;worktrees aislados, auto-reporte y limpieza al cerrar</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-    <node id="S_NET"><data key="d0"><y:ShapeNode><y:Geometry height="46" width="340"/><y:Fill color="#2B2B2B"/><y:BorderStyle color="#5B8DBF" width="2.5"/><y:NodeLabel textColor="#F2EDE6">🔩 skills .NET (plantilla, específicas de stack)&#10;crear-pagina-blazor, migracion-ef, build-produccion, agregar-seed…</y:NodeLabel><y:Shape type="roundrectangle"/></y:ShapeNode></data></node>
-
-    <!-- ===== EDGES ===== -->
-    <edge source="H_BRANCH" target="N_GIT"><data key="d1"><y:PolyLineEdge><y:LineStyle color="#B0A89F"/><y:Arrows source="none" target="standard"/><y:EdgeLabel textColor="#8A8078">enforce</y:EdgeLabel></y:PolyLineEdge></data></edge>
-    <edge source="H_SQUASH" target="N_GIT"><data key="d1"><y:PolyLineEdge><y:LineStyle color="#B0A89F"/><y:Arrows source="none" target="standard"/><y:EdgeLabel textColor="#8A8078">enforce</y:EdgeLabel></y:PolyLineEdge></data></edge>
-    <edge source="H_CONF" target="N_GIT"><data key="d1"><y:PolyLineEdge><y:LineStyle color="#B0A89F"/><y:Arrows source="none" target="standard"/><y:EdgeLabel textColor="#8A8078">enforce</y:EdgeLabel></y:PolyLineEdge></data></edge>
-    <edge source="H_CONF" target="N_DOD"><data key="d1"><y:PolyLineEdge><y:LineStyle color="#B0A89F"/><y:Arrows source="none" target="standard"/><y:EdgeLabel textColor="#8A8078">al integrar</y:EdgeLabel></y:PolyLineEdge></data></edge>
-    <edge source="H_DOD" target="N_DOD"><data key="d1"><y:PolyLineEdge><y:LineStyle color="#B0A89F"/><y:Arrows source="none" target="standard"/><y:EdgeLabel textColor="#8A8078">al declarar</y:EdgeLabel></y:PolyLineEdge></data></edge>
-    <edge source="H_DASH" target="N_DOC"><data key="d1"><y:PolyLineEdge><y:LineStyle color="#B0A89F"/><y:Arrows source="none" target="standard"/><y:EdgeLabel textColor="#8A8078">recuerda</y:EdgeLabel></y:PolyLineEdge></data></edge>
-    <edge source="H_GATE" target="N_COST"><data key="d1"><y:PolyLineEdge><y:LineStyle color="#B0A89F"/><y:Arrows source="none" target="standard"/><y:EdgeLabel textColor="#8A8078">enforce</y:EdgeLabel></y:PolyLineEdge></data></edge>
-    <edge source="H_LIMITE" target="N_COST"><data key="d1"><y:PolyLineEdge><y:LineStyle color="#B0A89F"/><y:Arrows source="none" target="standard"/><y:EdgeLabel textColor="#8A8078">enforce</y:EdgeLabel></y:PolyLineEdge></data></edge>
-    <edge source="H_ARBOL" target="N_AISL"><data key="d1"><y:PolyLineEdge><y:LineStyle color="#B0A89F"/><y:Arrows source="none" target="standard"/><y:EdgeLabel textColor="#8A8078">respalda</y:EdgeLabel></y:PolyLineEdge></data></edge>
-    <edge source="H_REP" target="N_ORQ"><data key="d1"><y:PolyLineEdge><y:LineStyle color="#B0A89F"/><y:Arrows source="none" target="standard"/><y:EdgeLabel textColor="#8A8078">respalda</y:EdgeLabel></y:PolyLineEdge></data></edge>
-
-    <edge source="N_P0" target="H_DOD"><data key="d1"><y:PolyLineEdge><y:LineStyle type="dashed" color="#D97757" width="1.5"/><y:Arrows source="none" target="standard"/><y:EdgeLabel textColor="#D97757">protege</y:EdgeLabel></y:PolyLineEdge></data></edge>
-    <edge source="N_P0" target="H_CONF"><data key="d1"><y:PolyLineEdge><y:LineStyle type="dashed" color="#D97757" width="1.5"/><y:Arrows source="none" target="standard"/></y:PolyLineEdge></data></edge>
-    <edge source="N_P0" target="H_SQUASH"><data key="d1"><y:PolyLineEdge><y:LineStyle type="dashed" color="#D97757" width="1.5"/><y:Arrows source="none" target="standard"/></y:PolyLineEdge></data></edge>
-    <edge source="N_P0" target="H_BRANCH"><data key="d1"><y:PolyLineEdge><y:LineStyle type="dashed" color="#D97757" width="1.5"/><y:Arrows source="none" target="standard"/></y:PolyLineEdge></data></edge>
-    <edge source="N_P0" target="H_ARBOL"><data key="d1"><y:PolyLineEdge><y:LineStyle type="dashed" color="#D97757" width="1.5"/><y:Arrows source="none" target="standard"/></y:PolyLineEdge></data></edge>
-
-    <edge source="S_CERRAR" target="H_DOD"><data key="d1"><y:PolyLineEdge><y:LineStyle color="#5B8DBF"/><y:Arrows source="none" target="standard"/><y:EdgeLabel textColor="#5B8DBF">usa</y:EdgeLabel></y:PolyLineEdge></data></edge>
-    <edge source="S_CERRAR" target="H_CONF"><data key="d1"><y:PolyLineEdge><y:LineStyle color="#5B8DBF"/><y:Arrows source="none" target="standard"/></y:PolyLineEdge></data></edge>
-    <edge source="S_CERRAR" target="H_SQUASH"><data key="d1"><y:PolyLineEdge><y:LineStyle color="#5B8DBF"/><y:Arrows source="none" target="standard"/></y:PolyLineEdge></data></edge>
-    <edge source="S_CERRAR" target="H_DASH"><data key="d1"><y:PolyLineEdge><y:LineStyle color="#5B8DBF"/><y:Arrows source="none" target="standard"/></y:PolyLineEdge></data></edge>
-    <edge source="S_CERRAR" target="L_WT"><data key="d1"><y:PolyLineEdge><y:LineStyle color="#5B8DBF"/><y:Arrows source="none" target="standard"/></y:PolyLineEdge></data></edge>
-    <edge source="S_CERRAR" target="N_DOD"><data key="d1"><y:PolyLineEdge><y:LineStyle color="#5B8DBF"/><y:Arrows source="none" target="standard"/><y:EdgeLabel textColor="#5B8DBF">materializa</y:EdgeLabel></y:PolyLineEdge></data></edge>
-    <edge source="S_FANOUT" target="H_REP"><data key="d1"><y:PolyLineEdge><y:LineStyle color="#5B8DBF"/><y:Arrows source="none" target="standard"/><y:EdgeLabel textColor="#5B8DBF">usa</y:EdgeLabel></y:PolyLineEdge></data></edge>
-    <edge source="S_FANOUT" target="H_GATE"><data key="d1"><y:PolyLineEdge><y:LineStyle color="#5B8DBF"/><y:Arrows source="none" target="standard"/></y:PolyLineEdge></data></edge>
-    <edge source="S_FANOUT" target="H_ARBOL"><data key="d1"><y:PolyLineEdge><y:LineStyle color="#5B8DBF"/><y:Arrows source="none" target="standard"/></y:PolyLineEdge></data></edge>
-    <edge source="S_FANOUT" target="L_WT"><data key="d1"><y:PolyLineEdge><y:LineStyle color="#5B8DBF"/><y:Arrows source="none" target="standard"/></y:PolyLineEdge></data></edge>
-    <edge source="S_FANOUT" target="N_ORQ"><data key="d1"><y:PolyLineEdge><y:LineStyle color="#5B8DBF"/><y:Arrows source="none" target="standard"/><y:EdgeLabel textColor="#5B8DBF">materializa</y:EdgeLabel></y:PolyLineEdge></data></edge>
-
-    <edge source="H_GATE" target="L_COMUN"><data key="d1"><y:PolyLineEdge><y:LineStyle type="dashed" color="#8A8A8A"/><y:Arrows source="none" target="standard"/><y:EdgeLabel textColor="#8A8078">source</y:EdgeLabel></y:PolyLineEdge></data></edge>
-    <edge source="H_REG" target="L_COMUN"><data key="d1"><y:PolyLineEdge><y:LineStyle type="dashed" color="#8A8A8A"/><y:Arrows source="none" target="standard"/><y:EdgeLabel textColor="#8A8078">source</y:EdgeLabel></y:PolyLineEdge></data></edge>
-    <edge source="H_REP" target="L_WT"><data key="d1"><y:PolyLineEdge><y:LineStyle color="#8A8A8A"/><y:Arrows source="none" target="standard"/><y:EdgeLabel textColor="#8A8078">dispara</y:EdgeLabel></y:PolyLineEdge></data></edge>
-
+&#128220; NORMA (verde) ← la hace cumplir…
+&#128274; hook FORZOSO (rojo, bloquea) / &#128276; NUDGE (ámbar, avisa)
+&#128161; SKILL (azul) usa los hooks · ⚙ lib (gris)
+— flecha: enforce / usa / source
+- - punteada terracota: &#128737; P0 protege la integridad</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n1">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="64.0" width="340.0" x="3284.7738095238096" y="258.0"/>
+          <y:Fill color="#2B2B2B" transparent="false"/>
+          <y:BorderStyle color="#7FB069" type="line" width="2.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="60.53125" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="284.083984375" x="27.9580078125" xml:space="preserve" y="1.734375">&#127919; Definición de LISTO
+verde técnico ≠ LISTO: build+tests+memoria es
+necesario pero NO suficiente; falta (1) QA del
+usuario o (2) su OK expreso de cierre</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n2">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="52.0" width="340.0" x="3655.7738095238096" y="258.0"/>
+          <y:Fill color="#2B2B2B" transparent="false"/>
+          <y:BorderStyle color="#7FB069" type="line" width="2.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="46.3984375" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="323.265625" x="8.3671875" xml:space="preserve" y="2.80078125">&#129694; doc = realidad
+al cambiar algo, su doc se actualiza en la MISMA
+tanda (README / memoria / dashboard / comentarios)</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n3">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="52.0" width="340.0" x="2544.7738095238096" y="258.0"/>
+          <y:Fill color="#2B2B2B" transparent="false"/>
+          <y:BorderStyle color="#7FB069" type="line" width="2.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="46.3984375" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="298.46875" x="20.765625" xml:space="preserve" y="2.80078125">&#127807; Flujo de git
+ramita → MR → develop (con squash); main es
+release-only; NUNCA push directo a develop/main</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n4">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="52.0" width="340.0" x="406.8984375" y="367.0"/>
+          <y:Fill color="#2B2B2B" transparent="false"/>
+          <y:BorderStyle color="#7FB069" type="line" width="2.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="46.3984375" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="298.15234375" x="20.923828125" xml:space="preserve" y="2.80078125">&#127793; Modelo MINI-DEVELOP
+ramitas → rama personal/integración por merge
+LOCAL (sin fricción); solo el MR a develop se gatea</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n5">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="52.0" width="340.0" x="85.0" y="258.0"/>
+          <y:Fill color="#2B2B2B" transparent="false"/>
+          <y:BorderStyle color="#7FB069" type="line" width="2.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="46.3984375" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="283.05859375" x="28.470703125" xml:space="preserve" y="2.80078125">&#128176; Consentimiento de costo de delegación
+delegar cuesta por nivel: gratis (local) / incluido
+(ventana 5h) / metered (overage o API externa)</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n6">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="52.0" width="340.0" x="939.8944444444444" y="258.0"/>
+          <y:Fill color="#2B2B2B" transparent="false"/>
+          <y:BorderStyle color="#7FB069" type="line" width="2.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="46.3984375" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="284.06640625" x="27.966796875" xml:space="preserve" y="2.80078125">&#127932; Orquesta: delega y quédate en el loop
+con trabajo paralelizable: fan-out + supervisión
+(no grind serial); auto-reporte sin niñera</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n7">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="52.0" width="340.0" x="1803.7738095238096" y="258.0"/>
+          <y:Fill color="#2B2B2B" transparent="false"/>
+          <y:BorderStyle color="#7FB069" type="line" width="2.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="46.3984375" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="308.13671875" x="15.931640625" xml:space="preserve" y="2.80078125">&#129521; Aislamiento de fan-out
+todo agente que MUTA/commitea corre en worktree
+AISLADO, nunca en el árbol de trabajo compartido</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n8">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="64.0" width="360.0" x="2236.7738095238096" y="0.0"/>
+          <y:Fill color="#2B2B2B" transparent="false"/>
+          <y:BorderStyle color="#D97757" type="dashed" width="2.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="60.53125" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="321.5078125" x="19.24609375" xml:space="preserve" y="1.734375">&#128737; P0 (PROPUESTA): Integridad de los guardarraíles
+Claude NO afloja sus propios candados de supervisión
+para desatorarse; cambiar un control exige tu OK
+EXPLÍCITO a cambiar ESE control (≠ el OK a la acción)</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n9">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="52.0" width="340.0" x="2174.7738095238096" y="175.0"/>
+          <y:Fill color="#2B2B2B" transparent="false"/>
+          <y:BorderStyle color="#C0392B" type="line" width="2.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="46.3984375" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="321.84765625" x="9.076171875" xml:space="preserve" y="2.80078125">&#128679; git-branch-guard  (PreToolUse / Bash)
+push o merge DIRECTO a develop·main → DENEGADO;
+te redirige al flujo ramita → MR</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n10">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="52.0" width="340.0" x="2544.7738095238096" y="175.0"/>
+          <y:Fill color="#2B2B2B" transparent="false"/>
+          <y:BorderStyle color="#C0392B" type="line" width="2.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="46.3984375" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="323.78125" x="8.109375" xml:space="preserve" y="2.80078125">&#128279; merge-squash-guard  (PreToolUse / Bash)
+MR a develop sin --squash → DENEGADO (1 commit
+limpio por slice); main/release va SIN squash (EXENTO)</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n11">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="52.0" width="340.0" x="2914.7738095238096" y="175.0"/>
+          <y:Fill color="#2B2B2B" transparent="false"/>
+          <y:BorderStyle color="#C0392B" type="line" width="2.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="46.3984375" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="323.767578125" x="8.1162109375" xml:space="preserve" y="2.80078125">✋ confirmar-merge-develop  (Bash, repo compartido)
+integrar a develop/main sin tu OK EXPLÍCITO →
+DENEGADO (a main exige un OK súper explícito)</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n12">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="52.0" width="340.0" x="3284.7738095238096" y="175.0"/>
+          <y:Fill color="#2B2B2B" transparent="false"/>
+          <y:BorderStyle color="#C0392B" type="line" width="2.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="46.3984375" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="297.26171875" x="21.369140625" xml:space="preserve" y="2.80078125">✅ dod-verificar  (Stop)
+declarar LISTO sin evidencia (1)/(2) → DENEGADO;
+afirmar QA visual sin ver la pantalla → DENEGADO</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n13">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="46.0" width="340.0" x="2249.59375" y="367.0"/>
+          <y:Fill color="#2B2B2B" transparent="false"/>
+          <y:BorderStyle color="#C0392B" type="line" width="2.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="32.265625" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="319.50390625" x="10.248046875" xml:space="preserve" y="6.8671875">&#128373; secret-scan  (PreToolUse / Bash)
+commit/push con un secreto detectado → DENEGADO</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n14">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="52.0" width="340.0" x="0.0" y="175.0"/>
+          <y:Fill color="#2B2B2B" transparent="false"/>
+          <y:BorderStyle color="#C0392B" type="line" width="2.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="46.3984375" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="297.203125" x="21.3984375" xml:space="preserve" y="2.80078125">&#128721; limite-gasto  (PreToolUse / Task)
+sin ventana 5h Y sin overage (AMBOS agotados) →
+FRENO duro a delegar (no hay capacidad)</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n15">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="52.0" width="340.0" x="370.0" y="175.0"/>
+          <y:Fill color="#2B2B2B" transparent="false"/>
+          <y:BorderStyle color="#C0392B" type="line" width="2.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="46.3984375" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="290.171875" x="24.9140625" xml:space="preserve" y="2.80078125">&#128184; delegacion-gate  (PreToolUse / Task)
+reclutar un agente con costo → pide tu
+consentimiento (ASK; 1×/compu ó 1×/workflow)</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n16">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="52.0" width="340.0" x="3655.7738095238096" y="175.0"/>
+          <y:Fill color="#2B2B2B" transparent="false"/>
+          <y:BorderStyle color="#E08E45" type="line" width="2.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="46.3984375" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="302.763671875" x="18.6181640625" xml:space="preserve" y="2.80078125">&#128202; recordar-dashboard  (PreToolUse / Bash)
+en el push: recuerda actualizar el dashboard global
++ doc=realidad (README/docs) — cierre del slice</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n17">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="46.0" width="340.0" x="2634.59375" y="367.0"/>
+          <y:Fill color="#2B2B2B" transparent="false"/>
+          <y:BorderStyle color="#E08E45" type="line" width="2.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="32.265625" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="304.357421875" x="17.8212890625" xml:space="preserve" y="6.8671875">&#128368; rama-vieja  (PreToolUse / Bash)
+avisa si la ramita arrastra una base vieja de develop</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n18">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="52.0" width="340.0" x="1803.7738095238096" y="175.0"/>
+          <y:Fill color="#2B2B2B" transparent="false"/>
+          <y:BorderStyle color="#E08E45" type="line" width="2.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="46.3984375" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="307.08203125" x="16.458984375" xml:space="preserve" y="2.80078125">&#127795; proteger-arbol  (PreToolUse / Bash)
+git destructivo (reset --hard / checkout -f / rebase)
+que orfanaría commits sin pushear → AVISA</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n19">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="46.0" width="340.0" x="740.0" y="175.0"/>
+          <y:Fill color="#2B2B2B" transparent="false"/>
+          <y:BorderStyle color="#E08E45" type="line" width="2.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="32.265625" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="327.98828125" x="6.005859375" xml:space="preserve" y="6.8671875">&#128221; delegacion-registrar  (PostToolUse / Task)
+materializa el "pregunta una sola vez" del gate de costo</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n20">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="46.0" width="340.0" x="1148.6670634920636" y="175.0"/>
+          <y:Fill color="#2B2B2B" transparent="false"/>
+          <y:BorderStyle color="#E08E45" type="line" width="2.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="32.265625" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="415.333984375" x="-37.6669921875" xml:space="preserve" y="6.8671875">&#128238; delegacion-reporte  (PostToolUse / Task)
+al terminar un agente: recuerda registrar avance + limpiar su worktree</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n21">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="46.0" width="340.0" x="1360.185546875" y="367.0"/>
+          <y:Fill color="#2B2B2B" transparent="false"/>
+          <y:BorderStyle color="#E08E45" type="line" width="2.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="32.265625" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="429.44921875" x="-44.724609375" xml:space="preserve" y="6.8671875">&#129517; sesion-inicio  (SessionStart, repo-scoped)
+al abrir/retomar reinyecta rama + norma de git + orden de leer memoria</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n22">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="46.0" width="340.0" x="861.1796875" y="367.0"/>
+          <y:Fill color="#2B2B2B" transparent="false"/>
+          <y:BorderStyle color="#E08E45" type="line" width="2.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="32.265625" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="478.5625" x="-69.28125" xml:space="preserve" y="6.8671875">&#128190; precompact-volcar-estado  (PreCompact, repo-scoped)
+antes de compactar el contexto, vuelca avance/decisiones/pendientes a memoria</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n23">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="44.0" width="300.0" x="566.8376984126984" y="258.0"/>
+          <y:Fill color="#232323" transparent="false"/>
+          <y:BorderStyle color="#8A8A8A" type="line" width="1.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="32.265625" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#CFC8C0" verticalTextPosition="bottom" visible="true" width="386.11328125" x="-43.056640625" xml:space="preserve" y="5.8671875">⚙ delegacion-comun  (lib)
+clasificación de costo compartida (gate y registrador no divergen)</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n24">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="44.0" width="300.0" x="1391.834126984127" y="258.0"/>
+          <y:Fill color="#232323" transparent="false"/>
+          <y:BorderStyle color="#8A8A8A" type="line" width="1.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="32.265625" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#CFC8C0" verticalTextPosition="bottom" visible="true" width="463.87890625" x="-81.939453125" xml:space="preserve" y="5.8671875">&#129529; limpiar-worktrees.sh  (helper)
+barre worktrees zombies (rama mergeada); deja los vivos anotados en bitácora</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n25">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="52.0" width="340.0" x="3385.2738095238096" y="0.0"/>
+          <y:Fill color="#2B2B2B" transparent="false"/>
+          <y:BorderStyle color="#5B8DBF" type="line" width="2.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="46.3984375" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="325.427734375" x="7.2861328125" xml:space="preserve" y="2.80078125">&#128230; cerrar-slice  (skill, opt-in)
+ritual de cierre: evidencia (build+tests) + memoria/doc
++ confirmar con el usuario + flujo de git + cosecha</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n26">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="52.0" width="340.0" x="1148.6670634920636" y="0.0"/>
+          <y:Fill color="#2B2B2B" transparent="false"/>
+          <y:BorderStyle color="#5B8DBF" type="line" width="2.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="46.3984375" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="310.744140625" x="14.6279296875" xml:space="preserve" y="2.80078125">&#129525; orquestar-fanout  (skill, opt-in)
+fan-out sin niñera: asigna ítems autocontenidos,
+worktrees aislados, auto-reporte y limpieza al cerrar</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <node id="n27">
+      <data key="d4"/>
+      <data key="d5">
+        <y:ShapeNode>
+          <y:Geometry height="46.0" width="340.0" x="1827.251953125" y="367.0"/>
+          <y:Fill color="#2B2B2B" transparent="false"/>
+          <y:BorderStyle color="#5B8DBF" type="line" width="2.0"/>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="32.265625" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="414.68359375" x="-37.341796875" xml:space="preserve" y="6.8671875">&#128297; skills .NET (plantilla, específicas de stack)
+crear-pagina-blazor, migracion-ef, build-produccion, agregar-seed…</y:NodeLabel>
+          <y:Shape type="roundrectangle"/>
+        </y:ShapeNode>
+      </data>
+    </node>
+    <edge id="e0" source="n9" target="n3">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="0.0" sy="26.0" tx="-113.33333333333334" ty="-26.0">
+            <y:Point x="2344.7738095238096" y="242.5"/>
+            <y:Point x="2601.440476190476" y="242.5"/>
+          </y:Path>
+          <y:LineStyle color="#B0A89F" type="line" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:EdgeLabel alignment="center" distance="2.0" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="18.1328125" horizontalTextPosition="center" iconTextGap="4" modelName="six_pos" modelPosition="tail" preferredPlacement="anywhere" ratio="0.5" textColor="#8A8078" verticalTextPosition="bottom" visible="true" width="47.658203125" x="104.50411551339312" xml:space="preserve" y="17.5">enforce<y:PreferredPlacementDescriptor angle="0.0" angleOffsetOnRightSide="0" angleReference="absolute" angleRotationOnRightSide="co" distance="-1.0" frozen="true" placement="anywhere" side="anywhere" sideReference="relative_to_edge_flow"/></y:EdgeLabel>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e1" source="n10" target="n3">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="0.0" sy="26.0" tx="0.0" ty="-26.0"/>
+          <y:LineStyle color="#B0A89F" type="line" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:EdgeLabel alignment="center" distance="2.0" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="18.1328125" horizontalTextPosition="center" iconTextGap="4" modelName="six_pos" modelPosition="tail" preferredPlacement="anywhere" ratio="0.5" textColor="#8A8078" verticalTextPosition="bottom" visible="true" width="47.658203125" x="1.999883742559632" xml:space="preserve" y="6.43359375">enforce<y:PreferredPlacementDescriptor angle="0.0" angleOffsetOnRightSide="0" angleReference="absolute" angleRotationOnRightSide="co" distance="-1.0" frozen="true" placement="anywhere" side="anywhere" sideReference="relative_to_edge_flow"/></y:EdgeLabel>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e2" source="n11" target="n3">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="-85.0" sy="26.0" tx="113.33333333333337" ty="-26.0">
+            <y:Point x="2999.7738095238096" y="242.5"/>
+            <y:Point x="2828.107142857143" y="242.5"/>
+          </y:Path>
+          <y:LineStyle color="#B0A89F" type="line" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:EdgeLabel alignment="center" distance="2.0" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="18.1328125" horizontalTextPosition="center" iconTextGap="4" modelName="six_pos" modelPosition="tail" preferredPlacement="anywhere" ratio="0.5" textColor="#8A8078" verticalTextPosition="bottom" visible="true" width="47.658203125" x="-109.66255115327385" xml:space="preserve" y="17.5">enforce<y:PreferredPlacementDescriptor angle="0.0" angleOffsetOnRightSide="0" angleReference="absolute" angleRotationOnRightSide="co" distance="-1.0" frozen="true" placement="anywhere" side="anywhere" sideReference="relative_to_edge_flow"/></y:EdgeLabel>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e3" source="n11" target="n1">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="85.0" sy="26.0" tx="-113.33333333333334" ty="-32.0">
+            <y:Point x="3169.7738095238096" y="242.5"/>
+            <y:Point x="3341.440476190476" y="242.5"/>
+          </y:Path>
+          <y:LineStyle color="#B0A89F" type="line" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:EdgeLabel alignment="center" distance="2.0" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="18.1328125" horizontalTextPosition="center" iconTextGap="4" modelName="six_pos" modelPosition="tail" preferredPlacement="anywhere" ratio="0.5" textColor="#8A8078" verticalTextPosition="bottom" visible="true" width="63.912109375" x="53.87716238839312" xml:space="preserve" y="17.5">al integrar<y:PreferredPlacementDescriptor angle="0.0" angleOffsetOnRightSide="0" angleReference="absolute" angleRotationOnRightSide="co" distance="-1.0" frozen="true" placement="anywhere" side="anywhere" sideReference="relative_to_edge_flow"/></y:EdgeLabel>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e4" source="n12" target="n1">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="0.0" sy="26.0" tx="0.0" ty="-32.0"/>
+          <y:LineStyle color="#B0A89F" type="line" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:EdgeLabel alignment="center" distance="2.0" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="18.1328125" horizontalTextPosition="center" iconTextGap="4" modelName="six_pos" modelPosition="tail" preferredPlacement="anywhere" ratio="0.5" textColor="#8A8078" verticalTextPosition="bottom" visible="true" width="64.8203125" x="1.999883742559632" xml:space="preserve" y="6.43359375">al declarar<y:PreferredPlacementDescriptor angle="0.0" angleOffsetOnRightSide="0" angleReference="absolute" angleRotationOnRightSide="co" distance="-1.0" frozen="true" placement="anywhere" side="anywhere" sideReference="relative_to_edge_flow"/></y:EdgeLabel>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e5" source="n16" target="n2">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="0.0" sy="26.0" tx="0.0" ty="-26.0"/>
+          <y:LineStyle color="#B0A89F" type="line" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:EdgeLabel alignment="center" distance="2.0" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="18.1328125" horizontalTextPosition="center" iconTextGap="4" modelName="six_pos" modelPosition="tail" preferredPlacement="anywhere" ratio="0.5" textColor="#8A8078" verticalTextPosition="bottom" visible="true" width="54.96484375" x="1.999883742559632" xml:space="preserve" y="6.43359375">recuerda<y:PreferredPlacementDescriptor angle="0.0" angleOffsetOnRightSide="0" angleReference="absolute" angleRotationOnRightSide="co" distance="-1.0" frozen="true" placement="anywhere" side="anywhere" sideReference="relative_to_edge_flow"/></y:EdgeLabel>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e6" source="n15" target="n5">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="-85.0" sy="26.0" tx="85.0" ty="-26.0">
+            <y:Point x="455.0" y="242.5"/>
+            <y:Point x="340.0" y="242.5"/>
+          </y:Path>
+          <y:LineStyle color="#B0A89F" type="line" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:EdgeLabel alignment="center" distance="2.0" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="18.1328125" horizontalTextPosition="center" iconTextGap="4" modelName="six_pos" modelPosition="tail" preferredPlacement="anywhere" ratio="0.5" textColor="#8A8078" verticalTextPosition="bottom" visible="true" width="47.658203125" x="-81.3291015625" xml:space="preserve" y="17.5">enforce<y:PreferredPlacementDescriptor angle="0.0" angleOffsetOnRightSide="0" angleReference="absolute" angleRotationOnRightSide="co" distance="-1.0" frozen="true" placement="anywhere" side="anywhere" sideReference="relative_to_edge_flow"/></y:EdgeLabel>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e7" source="n14" target="n5">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="0.0" sy="26.0" tx="-85.0" ty="-26.0"/>
+          <y:LineStyle color="#B0A89F" type="line" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:EdgeLabel alignment="center" distance="2.0" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="18.1328125" horizontalTextPosition="center" iconTextGap="4" modelName="six_pos" modelPosition="tail" preferredPlacement="anywhere" ratio="0.5" textColor="#8A8078" verticalTextPosition="bottom" visible="true" width="47.658203125" x="2.0" xml:space="preserve" y="6.43359375">enforce<y:PreferredPlacementDescriptor angle="0.0" angleOffsetOnRightSide="0" angleReference="absolute" angleRotationOnRightSide="co" distance="-1.0" frozen="true" placement="anywhere" side="anywhere" sideReference="relative_to_edge_flow"/></y:EdgeLabel>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e8" source="n18" target="n7">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="0.0" sy="26.0" tx="0.0" ty="-26.0"/>
+          <y:LineStyle color="#B0A89F" type="line" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:EdgeLabel alignment="center" distance="2.0" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="18.1328125" horizontalTextPosition="center" iconTextGap="4" modelName="six_pos" modelPosition="tail" preferredPlacement="anywhere" ratio="0.5" textColor="#8A8078" verticalTextPosition="bottom" visible="true" width="53.541015625" x="2.000005812872132" xml:space="preserve" y="6.43359375">respalda<y:PreferredPlacementDescriptor angle="0.0" angleOffsetOnRightSide="0" angleReference="absolute" angleRotationOnRightSide="co" distance="-1.0" frozen="true" placement="anywhere" side="anywhere" sideReference="relative_to_edge_flow"/></y:EdgeLabel>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e9" source="n20" target="n6">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="-85.0" sy="23.0" tx="85.0" ty="-26.0">
+            <y:Point x="1233.6670634920636" y="236.5"/>
+            <y:Point x="1194.8944444444444" y="236.5"/>
+          </y:Path>
+          <y:LineStyle color="#B0A89F" type="line" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:EdgeLabel alignment="center" distance="2.0" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="18.1328125" horizontalTextPosition="center" iconTextGap="4" modelName="six_pos" modelPosition="tail" preferredPlacement="anywhere" ratio="0.5" textColor="#8A8078" verticalTextPosition="bottom" visible="true" width="53.541015625" x="-46.156868102058525" xml:space="preserve" y="17.5">respalda<y:PreferredPlacementDescriptor angle="0.0" angleOffsetOnRightSide="0" angleReference="absolute" angleRotationOnRightSide="co" distance="-1.0" frozen="true" placement="anywhere" side="anywhere" sideReference="relative_to_edge_flow"/></y:EdgeLabel>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e10" source="n8" target="n12">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="144.0" sy="32.0" tx="-85.0" ty="-26.0">
+            <y:Point x="2560.7738095238096" y="79.5"/>
+            <y:Point x="3369.7738095238096" y="79.5"/>
+          </y:Path>
+          <y:LineStyle color="#D97757" type="dashed" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:EdgeLabel alignment="center" distance="2.0" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="18.1328125" horizontalTextPosition="center" iconTextGap="4" modelName="six_pos" modelPosition="tail" preferredPlacement="anywhere" ratio="0.5" textColor="#D97757" verticalTextPosition="bottom" visible="true" width="49.17578125" x="379.91199311755963" xml:space="preserve" y="17.5">protege<y:PreferredPlacementDescriptor angle="0.0" angleOffsetOnRightSide="0" angleReference="absolute" angleRotationOnRightSide="co" distance="-1.0" frozen="true" placement="anywhere" side="anywhere" sideReference="relative_to_edge_flow"/></y:EdgeLabel>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e11" source="n8" target="n11">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="72.0" sy="32.0" tx="-85.0" ty="-26.0">
+            <y:Point x="2488.7738095238096" y="95.5"/>
+            <y:Point x="2999.7738095238096" y="95.5"/>
+          </y:Path>
+          <y:LineStyle color="#D97757" type="dashed" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e12" source="n8" target="n10">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="0.0" sy="32.0" tx="-85.0" ty="-26.0">
+            <y:Point x="2416.7738095238096" y="127.5"/>
+            <y:Point x="2629.7738095238096" y="127.5"/>
+          </y:Path>
+          <y:LineStyle color="#D97757" type="dashed" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e13" source="n8" target="n9">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="-72.0" sy="32.0" tx="0.0" ty="-26.0"/>
+          <y:LineStyle color="#D97757" type="dashed" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e14" source="n8" target="n18">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="-144.0" sy="32.0" tx="85.0" ty="-26.0">
+            <y:Point x="2272.7738095238096" y="79.5"/>
+            <y:Point x="2058.7738095238096" y="79.5"/>
+          </y:Path>
+          <y:LineStyle color="#D97757" type="dashed" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e15" source="n25" target="n12">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="28.333333333333343" sy="26.0" tx="85.0" ty="-26.0">
+            <y:Point x="3583.607142857143" y="159.5"/>
+            <y:Point x="3539.7738095238096" y="159.5"/>
+          </y:Path>
+          <y:LineStyle color="#5B8DBF" type="line" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:EdgeLabel alignment="center" distance="2.0" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="18.1328125" horizontalTextPosition="center" iconTextGap="4" modelName="six_pos" modelPosition="tail" preferredPlacement="anywhere" ratio="0.5" textColor="#5B8DBF" verticalTextPosition="bottom" visible="true" width="24.19140625" x="1.999965122768117" xml:space="preserve" y="49.24609375">usa<y:PreferredPlacementDescriptor angle="0.0" angleOffsetOnRightSide="0" angleReference="absolute" angleRotationOnRightSide="co" distance="-1.0" frozen="true" placement="anywhere" side="anywhere" sideReference="relative_to_edge_flow"/></y:EdgeLabel>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e16" source="n25" target="n11">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="-28.333333333333314" sy="26.0" tx="85.0" ty="-26.0">
+            <y:Point x="3526.940476190476" y="143.5"/>
+            <y:Point x="3169.7738095238096" y="143.5"/>
+          </y:Path>
+          <y:LineStyle color="#5B8DBF" type="line" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e17" source="n25" target="n10">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="-84.99999999999997" sy="26.0" tx="85.0" ty="-26.0">
+            <y:Point x="3470.2738095238096" y="127.5"/>
+            <y:Point x="2799.7738095238096" y="127.5"/>
+          </y:Path>
+          <y:LineStyle color="#5B8DBF" type="line" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e18" source="n25" target="n16">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="141.66666666666666" sy="26.0" tx="0.0" ty="-26.0">
+            <y:Point x="3696.940476190476" y="67.5"/>
+            <y:Point x="3825.7738095238096" y="67.5"/>
+          </y:Path>
+          <y:LineStyle color="#5B8DBF" type="line" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e19" source="n25" target="n24">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="-141.66666666666652" sy="26.0" tx="100.0" ty="-22.0">
+            <y:Point x="3413.607142857143" y="111.5"/>
+            <y:Point x="2159.2738095238096" y="111.5"/>
+            <y:Point x="2159.2738095238096" y="242.5"/>
+            <y:Point x="1641.834126984127" y="242.5"/>
+          </y:Path>
+          <y:LineStyle color="#5B8DBF" type="line" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e20" source="n25" target="n1">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="85.0" sy="26.0" tx="113.33333333333348" ty="-32.0">
+            <y:Point x="3640.2738095238096" y="242.5"/>
+            <y:Point x="3568.107142857143" y="242.5"/>
+          </y:Path>
+          <y:LineStyle color="#5B8DBF" type="line" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:EdgeLabel alignment="center" distance="2.0" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="18.1328125" horizontalTextPosition="center" iconTextGap="4" modelName="six_pos" modelPosition="tail" preferredPlacement="anywhere" ratio="0.5" textColor="#5B8DBF" verticalTextPosition="bottom" visible="true" width="68.453125" x="1.999883742559632" xml:space="preserve" y="90.74609375">materializa<y:PreferredPlacementDescriptor angle="0.0" angleOffsetOnRightSide="0" angleReference="absolute" angleRotationOnRightSide="co" distance="-1.0" frozen="true" placement="anywhere" side="anywhere" sideReference="relative_to_edge_flow"/></y:EdgeLabel>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e21" source="n26" target="n20">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="0.0" sy="26.0" tx="0.0" ty="-23.0"/>
+          <y:LineStyle color="#5B8DBF" type="line" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:EdgeLabel alignment="center" distance="2.0" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="18.1328125" horizontalTextPosition="center" iconTextGap="4" modelName="six_pos" modelPosition="tail" preferredPlacement="anywhere" ratio="0.5" textColor="#5B8DBF" verticalTextPosition="bottom" visible="true" width="24.19140625" x="1.999949234251062" xml:space="preserve" y="52.43359375">usa<y:PreferredPlacementDescriptor angle="0.0" angleOffsetOnRightSide="0" angleReference="absolute" angleRotationOnRightSide="co" distance="-1.0" frozen="true" placement="anywhere" side="anywhere" sideReference="relative_to_edge_flow"/></y:EdgeLabel>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e22" source="n26" target="n15">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="-136.0" sy="26.0" tx="0.0" ty="-26.0">
+            <y:Point x="1182.6670634920636" y="67.5"/>
+            <y:Point x="540.0" y="67.5"/>
+          </y:Path>
+          <y:LineStyle color="#5B8DBF" type="line" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e23" source="n26" target="n18">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="136.0" sy="26.0" tx="-85.0" ty="-26.0">
+            <y:Point x="1454.6670634920636" y="67.5"/>
+            <y:Point x="1888.7738095238096" y="67.5"/>
+          </y:Path>
+          <y:LineStyle color="#5B8DBF" type="line" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e24" source="n26" target="n24">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="68.0" sy="26.0" tx="0.0" ty="-22.0">
+            <y:Point x="1386.6670634920636" y="83.5"/>
+            <y:Point x="1541.834126984127" y="83.5"/>
+          </y:Path>
+          <y:LineStyle color="#5B8DBF" type="line" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e25" source="n26" target="n6">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="-68.0" sy="26.0" tx="-85.0" ty="-26.0">
+            <y:Point x="1250.6670634920636" y="83.5"/>
+            <y:Point x="1095.5" y="83.5"/>
+            <y:Point x="1095.5" y="236.5"/>
+            <y:Point x="1024.8944444444444" y="236.5"/>
+          </y:Path>
+          <y:LineStyle color="#5B8DBF" type="line" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:EdgeLabel alignment="center" distance="2.0" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="18.1328125" horizontalTextPosition="center" iconTextGap="4" modelName="six_pos" modelPosition="tail" preferredPlacement="anywhere" ratio="0.5" textColor="#5B8DBF" verticalTextPosition="bottom" visible="true" width="68.453125" x="-111.8101450117806" xml:space="preserve" y="33.5">materializa<y:PreferredPlacementDescriptor angle="0.0" angleOffsetOnRightSide="0" angleReference="absolute" angleRotationOnRightSide="co" distance="-1.0" frozen="true" placement="anywhere" side="anywhere" sideReference="relative_to_edge_flow"/></y:EdgeLabel>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e26" source="n15" target="n23">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="85.0" sy="26.0" tx="-75.0" ty="-22.0">
+            <y:Point x="625.0" y="242.5"/>
+            <y:Point x="641.8376984126984" y="242.5"/>
+          </y:Path>
+          <y:LineStyle color="#8A8A8A" type="dashed" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:EdgeLabel alignment="center" distance="2.0" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="18.1328125" horizontalTextPosition="center" iconTextGap="4" modelName="six_pos" modelPosition="tail" preferredPlacement="anywhere" ratio="0.5" textColor="#8A8078" verticalTextPosition="bottom" visible="true" width="42.677734375" x="-12.92001798115075" xml:space="preserve" y="17.5">source<y:PreferredPlacementDescriptor angle="0.0" angleOffsetOnRightSide="0" angleReference="absolute" angleRotationOnRightSide="co" distance="-1.0" frozen="true" placement="anywhere" side="anywhere" sideReference="relative_to_edge_flow"/></y:EdgeLabel>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e27" source="n19" target="n23">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="0.0" sy="23.0" tx="75.0" ty="-22.0">
+            <y:Point x="910.0" y="236.5"/>
+            <y:Point x="791.8376984126984" y="236.5"/>
+          </y:Path>
+          <y:LineStyle color="#8A8A8A" type="dashed" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:EdgeLabel alignment="center" distance="2.0" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="18.1328125" horizontalTextPosition="center" iconTextGap="4" modelName="six_pos" modelPosition="tail" preferredPlacement="anywhere" ratio="0.5" textColor="#8A8078" verticalTextPosition="bottom" visible="true" width="42.677734375" x="-80.42001798115075" xml:space="preserve" y="17.5">source<y:PreferredPlacementDescriptor angle="0.0" angleOffsetOnRightSide="0" angleReference="absolute" angleRotationOnRightSide="co" distance="-1.0" frozen="true" placement="anywhere" side="anywhere" sideReference="relative_to_edge_flow"/></y:EdgeLabel>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
+    <edge id="e28" source="n20" target="n24">
+      <data key="d8"/>
+      <data key="d9">
+        <y:PolyLineEdge>
+          <y:Path sx="85.0" sy="23.0" tx="-100.0" ty="-22.0">
+            <y:Point x="1403.6670634920636" y="236.5"/>
+            <y:Point x="1441.834126984127" y="236.5"/>
+          </y:Path>
+          <y:LineStyle color="#8A8A8A" type="line" width="1.0"/>
+          <y:Arrows source="none" target="standard"/>
+          <y:EdgeLabel alignment="center" distance="2.0" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="18.1328125" horizontalTextPosition="center" iconTextGap="4" modelName="six_pos" modelPosition="tail" preferredPlacement="anywhere" ratio="0.5" textColor="#8A8078" verticalTextPosition="bottom" visible="true" width="46.85546875" x="-4.344253394717271" xml:space="preserve" y="17.5">dispara<y:PreferredPlacementDescriptor angle="0.0" angleOffsetOnRightSide="0" angleReference="absolute" angleRotationOnRightSide="co" distance="-1.0" frozen="true" placement="anywhere" side="anywhere" sideReference="relative_to_edge_flow"/></y:EdgeLabel>
+          <y:BendStyle smoothed="false"/>
+        </y:PolyLineEdge>
+      </data>
+    </edge>
   </graph>
+  <data key="d6">
+    <y:Resources/>
+  </data>
 </graphml>
