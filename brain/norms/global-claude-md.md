@@ -74,6 +74,12 @@ se volvieron hooks). Al crear una norma de proceso, **nace con su mecanismo o es
 Corolario: un mecanismo mal dirigido (un hook con falsos positivos) desgasta la confianza tanto como su
 ausencia — la PRECISIÓN del guard importa igual que su existencia.
 
+## Al templatizar: DOMINIO vs regla genérica (norma dura)
+Al derivar un TEMPLATE de un proyecto concreto (o al genericizar algo), distingue **mecánicamente** lo de
+**DOMINIO** (quitar) de la **REGLA GENÉRICA** (conservar) — un diff *PORTAR-vs-OK-EXCLUIDO* como método por
+defecto. Un template que, al quitar el dominio, también pierde reglas genéricas queda a medias (pasó al
+templatizar un `AGENTS.md`: quedó con <½ de las filas y perdió reglas que aplicaban a cualquier proyecto).
+
 ## Flujo de git — NUNCA push a `develop` ni a `main` (norma dura)
 > Léxico: "merge request" (GitLab) = "pull request / PR" (GitHub) = lo mismo.
 
@@ -105,6 +111,10 @@ Enforced por: ramas protegidas server-side + los hooks `git-branch-guard`, `merg
 > **El gate NO es "no puedes".** `confirmar-merge-develop` no prohíbe integrar a `develop`: con tu OK
 > EXPLÍCITO, Claude mergea `develop` por CLI (con `--squash`), SIN que des clics en la web. El candado
 > solo exige esa confirmación expresa; no te obliga a hacerlo tú.
+
+> **Repos SIN los hooks del template.** En un repo sin el cerebro instalado (p. ej. uno personal), Claude
+> cae en el clasificador auto-mode genérico → más fricción en git (merge/borrado/config). Al tocar un repo
+> así: siémbrale `develop` + los hooks del template, o documenta qué acciones esperar bloqueadas ahí.
 
 ## Modelo MINI-DEVELOP (iterar sin fricción)
 Para trabajar horas/días sin pedir permiso a cada paso: mergea las ramitas de feature **con `git merge`

@@ -4,6 +4,18 @@
 > develop, squash). Al arrancar uno, muévelo a "en curso"; al cerrarlo con QA, bórralo de aquí y
 > deja la huella en `bitacora.md`. Ordenado por lo más reciente arriba.
 
+## [2026-07-13] ✅ Audit P0–P17 ATERRIZADO (resuelto) — leer antes que las secciones ↓
+Todos los pendientes del audit forense (secciones abajo) quedaron atendidos y en develop:
+- **P0–P8 + P17** implementados (integridad de guardarraíles · norma-nace-con-mecanismo · producto-instalable ·
+  preferencia-ambigua · dod pregunta-no-dispara + suite de tests · merge-squash tool-aware · confirmar-merge
+  busca en los últimos 10 msgs de usuario · orquestar-fanout PORTA/latido/repo-destino). **test-brain 70/0.**
+- **P9** (templatizar: dominio vs genérico), **P10** (repos sin hooks), **P13** (QA no-regresión visual),
+  **P16** (contenido en ramita sin mergear) → implementados como norma/skill/hook.
+- **P11** (append-«>>») y **P15** (gh `state`/guard-no-bloquea-su-test/zsh) → **ya cubiertos**, no se re-implementan.
+- **P12** (agente no disponible en su sesión) → nota durable de máquina; **P14** (smoke offline) → skill de
+  proyecto (`aplicar-plantilla`). **Parqueados** fuera del cerebro portable.
+- **Genericización total**: cero nombres de proyecto/persona/empresa en `brain/` → cerebro 100% portable.
+
 ## [2026-07-12] Pain-points de los transcripts de plantilla/claude-brain (auditoría forense #2)
 **Método:** 3 agentes read-only barrieron 8 transcripts (~35.8k líneas) de los slugs plantilladotnet +
 claude-quota-widget, **incluida ESTA sesión**. Deduplicado contra la auditoría de cps (sección aparte) y
