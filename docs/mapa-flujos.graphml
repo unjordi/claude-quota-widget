@@ -288,10 +288,10 @@ checkout -f / rebase?</y:NodeLabel>
       <data key="d4"/>
       <data key="d5">
         <y:ShapeNode>
-          <y:Geometry height="42.0" width="320.0" x="686.1123046875" y="820.0"/>
+          <y:Geometry height="42.0" width="360.0" x="666.1123046875" y="820.0"/>
           <y:Fill color="#2B2B2B" transparent="false"/>
           <y:BorderStyle color="#E08E45" type="line" width="2.0"/>
-          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="18.1328125" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="342.224609375" x="-11.1123046875" xml:space="preserve" y="11.93359375">&#128992; orfanaría commits sin pushear → AVISA (usa worktree)</y:NodeLabel>
+          <y:NodeLabel alignment="center" autoSizePolicy="content" fontFamily="Dialog" fontSize="12" fontStyle="plain" hasBackgroundColor="false" hasLineColor="false" height="18.1328125" horizontalTextPosition="center" iconTextGap="4" modelName="internal" modelPosition="c" textColor="#F2EDE6" verticalTextPosition="bottom" visible="true" width="342.224609375" x="8.8876953125" xml:space="preserve" y="11.93359375">&#128992; orfanaría commits sin pushear → AVISA (usa worktree)</y:NodeLabel>
           <y:Shape type="roundrectangle"/>
         </y:ShapeNode>
       </data>
