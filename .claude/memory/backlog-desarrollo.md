@@ -12,6 +12,9 @@ main=merge-commit, test anti-ciclos #123) y lo YA capturado (hedging/inventar-ca
 Solo va lo **NUEVO**. `[HECHO]`=leído · `[INF]`=inferido. (Nota: puede chocar trivialmente al mergear con
 el MR de pain-points de cps —ambos insertan aquí arriba—; se resuelve conservando las dos secciones.)
 
+> **TRIAGE (unjordi, 2026-07-12):** **P1–P8 = READY** (aprobados para atacar). **P9–P16 = HELD**
+> (parqueados, pendientes de decisión — NO arrancar sin que unjordi los nombre).
+
 ### 🔴 ALTA
 - **P1. `dod-verificar` da FALSOS POSITIVOS — y #121 pudo empeorarlo** [HECHO]. Disparó ~10× en una
   sesión, ≥2 demostrablemente falsos (saltó cuando Claude solo PREGUNTABA por un UUID, sin declarar
@@ -54,12 +57,13 @@ el MR de pain-points de cps —ambos insertan aquí arriba—; se resuelve conse
   auto-reporte y doc=realidad (se arreglaron volviéndolos hooks #114/#116). → principio para el brain:
   **toda norma de higiene/cierre nace con su mecanismo (hook/gate/paso operativo), o no se cumple sola.**
   Corolario inverso (P1): un hook mal dirigido genera falsos positivos que desgastan la confianza.
+
+### ⏸ HELD — parqueados por unjordi (P9–P16, pendientes de decisión)
 - **P9. AGENTS.md se DEGRADÓ al templatizar** [HECHO]: el template quedó con <½ de las filas de cps/cenam
   y perdió reglas GENÉRICAS (no solo el dominio). → al derivar un "template" de un concreto, distinguir
   mecánicamente "dominio (quitar)" de "regla genérica (conservar)"; un diff PORTAR-vs-OK-EXCLUIDO como
   método por defecto. Casa: skill de instanciar/templatizar.
-
-### 🟢 BAJA (gotchas / notas reutilizables)
+- 🟢 BAJA (gotchas / notas reutilizables):
 - **P10. Repos personales (GitHub) sin los hooks del template** → caen en el clasificador auto-mode
   genérico → fricción recurrente en git (merge/borrado/config). → sembrar develop+hooks al tocarlos, o
   documentar qué acciones esperar bloqueadas ahí. [HECHO]
