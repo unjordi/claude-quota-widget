@@ -156,6 +156,26 @@ write_state 19   # restablece el state.json de ventana para lo que siga
 
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
+echo "== (b1c) merge-squash-guard: EXIGE squash SOLO si destino=develop confirmado (G4) =="
+# Modelo canónico (decisión de unjordi): squash únicamente cuando el destino es develop CONFIRMADO;
+# main (release), ramas personales, ramitas y destino INDETERMINADO → libres (nunca se fuerza squash).
+MSBIN="$FAKEHOME/msbin"; mkdir -p "$MSBIN"
+mock_glab() { printf '#!/usr/bin/env bash\necho '\''{"target_branch":"%s"}'\''\n' "$1" > "$MSBIN/glab"; chmod +x "$MSBIN/glab"; }
+ms() { PATH="$MSBIN:$PATH" HOME="$FAKEHOME" CLAUDE_PROJECT_DIR="$FAKEHOME" bash "$HOOKS/merge-squash-guard.sh" <<<"{\"tool_input\":{\"command\":\"$1\"}}"; }
+mock_glab develop; out="$(ms 'glab mr merge 42 --auto-merge --yes')"
+is_deny "$out"   && ok "squash-guard G4: destino=develop confirmado, sin --squash → deny" || bad "squash-guard G4: no denegó merge a develop sin squash; got: $out"
+mock_glab develop; out="$(ms 'glab mr merge 42 --squash --auto-merge --yes')"
+is_silent "$out" && ok "squash-guard G4: develop CON --squash → pasa"                     || bad "squash-guard G4: bloqueó un merge que ya trae squash; got: $out"
+mock_glab DevelopUnjordi; out="$(ms 'glab mr merge 42 --auto-merge --yes')"
+is_silent "$out" && ok "squash-guard G4: destino=rama personal → NO fuerza squash (día a día libre)" || bad "squash-guard G4: forzó squash a rama personal; got: $out"
+mock_glab main; out="$(ms 'glab mr merge 42 --yes')"
+is_silent "$out" && ok "squash-guard G4: destino=main (release) → NO fuerza squash"       || bad "squash-guard G4: forzó squash a un release; got: $out"
+out="$(ms 'glab mr merge --auto-merge --yes')"   # sin ID → destino indeterminado
+is_silent "$out" && ok "squash-guard G4: destino INDETERMINADO → NO fuerza squash (fail-safe hacia libre)" || bad "squash-guard G4: forzó squash con destino indeterminado; got: $out"
+rm -rf "$MSBIN"
+
+# ─────────────────────────────────────────────────────────────────────────────
+echo ""
 echo "== (b2) secret-scan: bloquea un secreto staged, deja pasar lo limpio, respeta --no-verify =="
 SCANREPO="$(mktemp -d "${TMPDIR:-/tmp}/brain-scan.XXXXXX")"
 git -C "$SCANREPO" init -q >/dev/null 2>&1
