@@ -83,7 +83,10 @@ printf '%s' "$last" | grep -qiE "$CONF_RE" && conf=si || conf=no
 # QA de Chrome sin ver la pantalla y reaparecieron bugs ya resueltos.) ──
 VISUAL_RE='(qued[oó]|se ve[n]?) (igual|como|tal cual|clavad|idéntic)[^.]{0,25}(mockup|dise[nñ]|legado|pantalla)|lo verifiqu[eé] (en chrome|en el navegador|visualmente|en pantalla)|en chrome (se ve|qued[oó]|funciona|jala|lo prob[eé]|ya)|la pantalla (muestra|se ve|qued)|hice .{0,12}qa visual|qa visual.{0,15}(ok|pas|hecho|verde|aprob|correct)|screenshot (muestra|confirma)|el render (se ve|qued[oó]|correct)|se ve (id[eé]ntic|tal cual|como el (mockup|legado|dise))'
 if [ "$conf" != si ] && printf '%s' "$last" | grep -qiE "$VISUAL_RE"; then
-  if ! printf '%s' "$turn" | grep -qE 'mcp__claude-in-chrome__|"name":[[:space:]]*"computer"|read_page|tabs_context|tabs_create|gif_creator|browser_batch|screenshot'; then
+  # G2(b): detecta la tool de navegador por ESTRUCTURA del transcript (un tool_use cuyo "name" es una
+  # tool de navegador), NO por la palabra "screenshot" suelta en prosa — si no, decir "no tomé
+  # screenshot" suprimía el bloqueo. Solo un tool_use REAL (chrome MCP o el tool `computer`) cuenta.
+  if ! printf '%s' "$turn" | grep -qE '"name"[[:space:]]*:[[:space:]]*"(mcp__claude-in-chrome__[a-z_]+|computer)"'; then
     vreason="DETENTE — afirmaste una OBSERVACIÓN VISUAL ('se ve/quedó como el mockup / en Chrome / la pantalla muestra…') pero en ESTE turno NO corriste NINGUNA tool de navegador/screenshot: lo estás declarando A CIEGAS. No uses léxico de QA visual sin haber mirado la pantalla. Estatus honesto: 'verificado técnicamente, SIN QA visual (a ciegas)' — el QA visual lo hace el usuario o una captura real. (Lección real (2026-07): se insinuó QA de Chrome sin verla y reaparecieron bugs ya resueltos.)"
     jq -n --arg r "$vreason" '{decision:"block", reason:$r}'
     exit 0
@@ -96,6 +99,20 @@ fi
 # ¿El TURNO tocó CÓDIGO (algún archivo que NO sea documentación ni memoria)? Si no, un "listo" no exige
 # verificación técnica (turno de docs/config puro).
 codigo=$(printf '%s' "$turn" | grep -oE '"file_path":"[^"]+"' | grep -vE '\.(md|txt)"|/\.claude/memory/' | head -1)
+# G2(a): editar por Bash (sed -i / patch / redirección `>`/`tee` a un archivo) NO genera "file_path" →
+# antes parecía que el turno no tocó código (evasión). Inspecciona los comandos Bash del turno.
+if [ -z "$codigo" ]; then
+  _bash=$(printf '%s' "$turn" | jq -rs '[.[] | (.message.content[]? // empty) | select(.type=="tool_use" and .name=="Bash") | (.input.command // "")] | join("\n")' 2>/dev/null)
+  if printf '%s' "$_bash" | grep -qE 'sed[[:space:]]+-i|(^|[[:space:]])patch([[:space:]]|$)'; then
+    codigo="(bash-inplace)"   # edición in-place / parche → mutación fuerte (rara vez solo-doc)
+  else
+    # Redirección o tee hacia un archivo con extensión NO-doc (excluye docs, logs y /dev/*).
+    codigo=$(printf '%s\n' "$_bash" \
+      | grep -oE '(>>?|(^|[[:space:]])tee([[:space:]]+-a)?)[[:space:]]*[^[:space:]|;&<>]+\.[A-Za-z0-9]+' \
+      | grep -oE '[^[:space:]|;&<>]+\.[A-Za-z0-9]+$' \
+      | grep -vE '\.(md|txt|log)$|^/dev/' | head -1)
+  fi
+fi
 [ -z "$codigo" ] && exit 0
 
 # Evidencia en el turno (build/tests/lint es SOFT — se reporta; el candado duro es conf).
