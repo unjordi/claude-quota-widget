@@ -222,6 +222,11 @@ is_block "$(dod 'Quedó listo; validaste el QA visual y diste el ok.' "$EDITR")"
 # P1 (precisión): una PREGUNTA no es un cierre, aunque traiga léxico de cierre → NO dispara
 is_block "$(dod '¿ya quedó terminado el módulo?' "$EDITR")" && bad "dod P1: bloqueó una PREGUNTA (falso positivo del UUID)" || ok "dod P1: pregunta con léxico de cierre → no bloquea"
 is_block "$(dod 'Terminé el fix. ¿Lo cierro y abro el MR?' "$EDITR")" && bad "dod P1: bloqueó una oferta que termina preguntando" || ok "dod P1: mensaje que termina en pregunta → no bloquea"
+# G1 (precisión): una pregunta co-ubicada NO debe salvar un CLAIM de cierre AFIRMADO en el mismo
+# mensaje (la evasión "Listo, quedó terminado. ¿Reviso algo más?"). El claim se evalúa sobre el texto
+# SIN los tramos ¿…?: si el cierre está afirmado FUERA de la pregunta, se bloquea igual.
+is_block "$(dod 'Listo, quedó terminado el módulo. ¿Reviso algo más?' "$EDITR")" && ok "dod G1: claim afirmado + pregunta aparte → bloquea (no se salva por la pregunta)" || bad "dod G1: la pregunta co-ubicada salvó un cierre afirmado (evasión)"
+is_block "$(dod 'Todo quedó funcionando y en producción. ¿Avanzo con el siguiente?' "$EDITR")" && ok "dod G1: cierre afirmado + pregunta neutra → bloquea" || bad "dod G1: una pregunta neutra evadió un cierre afirmado"
 rm -f "$DODTX"
 
 # ─────────────────────────────────────────────────────────────────────────────
