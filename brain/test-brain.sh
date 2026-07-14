@@ -159,19 +159,24 @@ echo ""
 echo "== (b1c) merge-squash-guard: EXIGE squash SOLO si destino=develop confirmado (G4) =="
 # Modelo canónico (decisión de unjordi): squash únicamente cuando el destino es develop CONFIRMADO;
 # main (release), ramas personales, ramitas y destino INDETERMINADO → libres (nunca se fuerza squash).
+rm -f "${TMPDIR:-/tmp}"/acg-mrdest-* 2>/dev/null   # caché de destino limpia (la lib cachea por MR-id)
 MSBIN="$FAKEHOME/msbin"; mkdir -p "$MSBIN"
 mock_glab() { printf '#!/usr/bin/env bash\necho '\''{"target_branch":"%s"}'\''\n' "$1" > "$MSBIN/glab"; chmod +x "$MSBIN/glab"; }
 ms() { PATH="$MSBIN:$PATH" HOME="$FAKEHOME" CLAUDE_PROJECT_DIR="$FAKEHOME" bash "$HOOKS/merge-squash-guard.sh" <<<"{\"tool_input\":{\"command\":\"$1\"}}"; }
+# NOTA: la lib cachea el destino por MR-id (compartido squash↔confirmar), así que cada caso usa un
+# MR-id DISTINTO — si no, la caché del 1er caso (develop) contaminaría a los siguientes. En producción
+# cada MR tiene su id; aquí es un artefacto de reusar mocks con el mismo número.
 mock_glab develop; out="$(ms 'glab mr merge 42 --auto-merge --yes')"
 is_deny "$out"   && ok "squash-guard G4: destino=develop confirmado, sin --squash → deny" || bad "squash-guard G4: no denegó merge a develop sin squash; got: $out"
 mock_glab develop; out="$(ms 'glab mr merge 42 --squash --auto-merge --yes')"
 is_silent "$out" && ok "squash-guard G4: develop CON --squash → pasa"                     || bad "squash-guard G4: bloqueó un merge que ya trae squash; got: $out"
-mock_glab DevelopUnjordi; out="$(ms 'glab mr merge 42 --auto-merge --yes')"
+mock_glab DevelopUnjordi; out="$(ms 'glab mr merge 43 --auto-merge --yes')"
 is_silent "$out" && ok "squash-guard G4: destino=rama personal → NO fuerza squash (día a día libre)" || bad "squash-guard G4: forzó squash a rama personal; got: $out"
-mock_glab main; out="$(ms 'glab mr merge 42 --yes')"
+mock_glab main; out="$(ms 'glab mr merge 44 --yes')"
 is_silent "$out" && ok "squash-guard G4: destino=main (release) → NO fuerza squash"       || bad "squash-guard G4: forzó squash a un release; got: $out"
 out="$(ms 'glab mr merge --auto-merge --yes')"   # sin ID → destino indeterminado
 is_silent "$out" && ok "squash-guard G4: destino INDETERMINADO → NO fuerza squash (fail-safe hacia libre)" || bad "squash-guard G4: forzó squash con destino indeterminado; got: $out"
+rm -f "${TMPDIR:-/tmp}"/acg-mrdest-* 2>/dev/null
 rm -rf "$MSBIN"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -195,6 +200,59 @@ printf '%s' "$(gb 'git push origin develop')" | grep -q '"deny"' && ok "gbg: 'gi
 is_silent "$(gb 'git commit -m "doc: no hacer git push a develop"')" && ok "gbg H13: 'git push a develop' entrecomillado → silencio" || bad "gbg H13: mención entrecomillada disparó"
 is_silent "$(gb 'gh pr merge 5 -R org/develop --squash')" && ok "gbg H11: '-R org/develop' (nombre de repo) → silencio" || bad "gbg H11: -R org/develop disparó falso positivo"
 rm -rf "$GBROOT"
+
+# ─────────────────────────────────────────────────────────────────────────────
+echo ""
+echo "== (b1e) confirmar-merge-develop: escape ANCLADO al subcomando (H3) + destino cacheado/timeout (H5) =="
+# Antes NO tenía test de comportamiento. H3: el escape casaba `status|list|view` como token suelto en
+# CUALQUIER parte → `glab mr merge 5 && git status` evadía el gate. H5: 2 llamadas de red idénticas +
+# fail-open si el proceso lo mata el timeout del hook. La lógica ahora vive en la lib (acg_es_merge_mr,
+# acg_destino_de_mr con caché por MR-id + timeout interno).
+rm -f "${TMPDIR:-/tmp}"/acg-mrdest-* 2>/dev/null
+CMROOT="$(mktemp -d "${TMPDIR:-/tmp}/brain-cm.XXXXXX")"; CMREPO="$CMROOT/repo"; CMHOME="$CMROOT/home"; CMBIN="$CMROOT/bin"; CMTX="$CMROOT/tx.jsonl"
+mkdir -p "$CMREPO/.claude" "$CMHOME" "$CMBIN"
+: > "$CMREPO/.claude/repo-compartido"                    # marca de repo compartido (gatea el candado)
+git -C "$CMREPO" init -q >/dev/null 2>&1
+git -C "$CMREPO" remote add origin git@gitlab.com:org/repo.git >/dev/null 2>&1   # para derivar el repo
+mock_cm_glab() { printf '#!/usr/bin/env bash\necho '\''{"target_branch":"%s"}'\''\n' "$1" > "$CMBIN/glab"; chmod +x "$CMBIN/glab"; }
+# cm "<cmd>" "<último mensaje del usuario>"  → corre el hook (HOME sin copia global → no cede por dedupe)
+cm() {
+  printf '%s\n' "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"$2\"}]}}" > "$CMTX"
+  jq -nc --arg c "$1" --arg t "$CMTX" '{tool_input:{command:$c},transcript_path:$t}' \
+    | PATH="$CMBIN:$PATH" HOME="$CMHOME" CLAUDE_PROJECT_DIR="$CMREPO" bash "$HOOKS/confirmar-merge-develop.sh"
+}
+mock_cm_glab develop
+# H3: merge REAL con un `&& git status` encadenado, SIN OK → deny (el `status` ya NO evade el gate).
+is_deny "$(cm 'glab mr merge 5 --yes && git status' 'haz el cambio')" \
+  && ok "cmd H3: 'glab mr merge 5 && git status' sin OK → deny (escape ya NO se dispara por token suelto)" \
+  || bad "cmd H3: el token 'status' encadenado evadió el gate (fail-open)"
+# H3: inspección genuina (no matchea merge|accept) → silencio.
+is_silent "$(cm 'glab mr view 5' 'haz el cambio')" \
+  && ok "cmd H3: 'glab mr view' (inspección) → silencio" || bad "cmd H3: bloqueó una inspección"
+# Con OK explícito citado → pasa (aunque traiga el `&& git status`).
+is_silent "$(cm 'glab mr merge 5 --yes && git status' 'ya lo revisé, mérgalo')" \
+  && ok "cmd: merge a develop CON OK explícito → pasa" || bad "cmd: bloqueó un merge con OK citado"
+# Baseline: merge a develop SIN OK → deny.
+is_deny "$(cm 'glab mr merge 5 --yes' 'sigue avanzando')" \
+  && ok "cmd: merge a develop sin OK ('sigue' NO cuenta) → deny" || bad "cmd: no bloqueó merge a develop sin OK"
+# H5 (lib): caché por MR-id → la 2ª consulta NO re-llama a la red (comparte destino entre squash+confirmar).
+d1=$(PATH="$CMBIN:$PATH" CLAUDE_PROJECT_DIR="$CMREPO" bash -c '. "'"$HOOKS"'/analizar-comando-git.sh"; acg_destino_de_mr "glab mr merge 123"')
+mock_cm_glab main   # si re-llamara, ahora diría main; la caché debe seguir dando develop
+d2=$(PATH="$CMBIN:$PATH" CLAUDE_PROJECT_DIR="$CMREPO" bash -c '. "'"$HOOKS"'/analizar-comando-git.sh"; acg_destino_de_mr "glab mr merge 123"')
+{ [ "$d1" = develop ] && [ "$d2" = develop ]; } \
+  && ok "cmd H5: destino cacheado por MR-id (2ª consulta lee caché, no re-llama a la red)" \
+  || bad "cmd H5: la caché por MR-id no se usó (d1='$d1' d2='$d2')"
+# H5 (lib): un glab COLGADO se acota por el timeout interno → devuelve vacío RÁPIDO (no fail-open por
+# muerte del proceso; el consumidor cae a su fail-policy y EMITE su decisión).
+printf '#!/usr/bin/env bash\nsleep 5\necho '\''{"target_branch":"develop"}'\''\n' > "$CMBIN/glab"; chmod +x "$CMBIN/glab"
+SECONDS=0
+dhang=$(PATH="$CMBIN:$PATH" CLAUDE_PROJECT_DIR="$CMREPO" ACG_MR_TIMEOUT=1 bash -c '. "'"$HOOKS"'/analizar-comando-git.sh"; acg_destino_de_mr "glab mr merge 456"')
+dur=$SECONDS
+{ [ -z "$dhang" ] && [ "$dur" -lt 4 ]; } \
+  && ok "cmd H5: glab colgado → timeout interno devuelve vacío en ${dur}s (no cuelga hasta que lo maten)" \
+  || bad "cmd H5: la consulta colgada NO fue acotada por timeout (dhang='$dhang' dur=${dur}s)"
+rm -f "${TMPDIR:-/tmp}"/acg-mrdest-* 2>/dev/null
+rm -rf "$CMROOT"
 
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
@@ -518,6 +576,7 @@ echo "== (e) sin referencias circulares NUEVAS entre elementos del cerebro =="
 CE_ALLOW="analizar-comando-git|git-branch-guard
 analizar-comando-git|merge-squash-guard
 analizar-comando-git|confirmar-merge-develop
+confirmar-merge-develop|merge-squash-guard
 cerrar-slice|merge-squash-guard
 cerrar-slice|recordar-dashboard
 delegacion-comun|delegacion-gate

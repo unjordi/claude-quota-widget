@@ -159,14 +159,14 @@ tiene gemelo manual. El mapa se re-anota (badge "⚙ lib" donde aplique), no se 
 - [ ] Reconciliar las 2 rutas de install en una lista ÚNICA de «qué es global» → un clon de la plantilla SÍ obtiene secret-scan (hoy no).
 
 ### B · lib `analizar-comando-git.sh` (Fase 1) — H1, H3, H5, H11, H13
-- [ ] `despoja_comillas(cmd)` para TODOS los git-hooks (fix #2; H13: hoy secret-scan y branch-guard-widget no despojan).
-- [ ] `es_push_a_base(cmd)` que resuelva la **rama actual + upstream** cuando el push es PELÓN (sin refspec)
-      → cierra **H1** (`git push` a secas en develop/main hoy NO se bloquea).
+- [x] `despoja_comillas(cmd)` para TODOS los git-hooks (fix #2; H13). *slice-1, `d6b17e5`: `git-branch-guard` ya la usa vía la lib; falta propagar a secret-scan (→ §D) y a la copia de la plantilla (→ §A).*
+- [x] `es_push_a_base(cmd)` que resuelva la **rama actual** cuando el push es PELÓN (sin refspec)
+      → cierra **H1** (`git push`/`--force`/`HEAD` a secas en develop/main). *slice-1, `d6b17e5` (`acg_push_toca_base`). test-brain 125/0.*
 - [ ] Anclar los escapes al **subcomando real** (`glab mr list|view`), no a cualquier token suelto (`status`)
-      → cierra **H3** (evasión de `confirmar-merge-develop` con `… && git status`).
+      → cierra **H3** (evasión de `confirmar-merge-develop` con `… && git status`). *slice-2, en curso.*
 - [ ] `destino_de_mr(cmd)` con **caché por MR-id COMPARTIDA** entre squash-guard y confirmar → 1 sola llamada
-      de red (**H5**) + degradar a **deny conservador** si la resolución hace timeout (hoy el timeout evade el hook).
-- [ ] Guarda contra falso positivo de repo-path que termina en `/develop`|`/main` (**H11**).
+      de red (**H5**) + `timeout` interno para que el proceso SIEMPRE termine y emita su decisión (hoy el timeout del hook lo mata y evade). *slice-2, en curso.*
+- [x] Guarda contra falso positivo de repo-path que termina en `/develop`|`/main` (**H11**). *slice-1, `d6b17e5` (`acg_sin_flag_repo`).*
 
 ### C · lib `definicion-de-listo.sh` (Fase 2) — H4, #1
 - [ ] STATUS_RE **claim-aware**: subordinar el escape de estatus a que NO haya claim de cierre co-ubicado →
