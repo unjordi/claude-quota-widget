@@ -92,6 +92,19 @@ El mapa tiene ⓪–⑦ pero **ninguno describe cómo se instala/actualiza el ce
 ⇒ quien clona la plantilla y corre SU bootstrap **no obtiene secret-scan** (seguridad) ni el watermark.
 Hay **dos rutas de instalación que instalan conjuntos distintos** — nadie las reconcilió.
 
+**Defectos del ciclo CONFIRMADOS por el auditor de ⑧ (contra los scripts reales):**
+- 🔴 **Drift INVERSO** (el peor): `bootstrap-claude.sh` hace `cp -f` INCONDICIONAL → un clon con plantilla
+  VIEJA **PISA** los 3 hooks globales con versiones stale. La dedup R1 es del CABLEADO (quién corre), no
+  del `.sh` (el binario siempre se sobreescribe) → un repo viejo CONTAMINA el global.
+- 🟠 `bootstrap-claude.sh` verifica **jq pero NO git** — el `.dot` y el `CLAUDE.md` dicen "ambos" (doc miente).
+- 🟠 `aplicar-plantilla-a-proyecto` **NO copia `.claude/`** (es un playbook de UI/arquitectura); sembrar el
+  cerebro en un repo existente es un paso MANUAL no scriptado → hueco de automatización.
+- 🟡 `install.sh` es **Linux/KDE-only** (systemctl/kpackagetool6) y corre el brain ANTES de checar prereqs
+  (en Mac instalaría y luego moriría). La vía global real en Mac/Windows es `install-brain.sh` directo.
+- 🟡 el cerebro **no tiene sello de versión** (el widget sí, `version.json`) → el drift es indetectable hoy.
+- 🟡 los dos instaladores siembran el dashboard con convención de bitácora **contradictoria** (install-brain
+  "más reciente ABAJO, `>>`"; bootstrap "más reciente arriba") — la norma le da la razón a install-brain.
+
 **Propuesta:**
 - Añadir el **flowchart ⑧ "Instalación / actualización del cerebro"** al mapa (primera instalación global
   vs por-repo · actualización global vs por-repo · qué se copia y cuándo). Hace visible el ciclo y su hueco.
