@@ -176,6 +176,28 @@ rm -rf "$MSBIN"
 
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
+echo "== (b1d) git-branch-guard: push PELÓN / comillas / nombre-de-repo (H1/H11/H13) =="
+GBROOT="$(mktemp -d "${TMPDIR:-/tmp}/brain-gb.XXXXXX")"; GBREPO="$GBROOT/repo"; GBHOME="$GBROOT/home"; mkdir -p "$GBREPO" "$GBHOME"
+git -C "$GBREPO" init -q >/dev/null 2>&1
+git -C "$GBREPO" config user.email t@t >/dev/null 2>&1; git -C "$GBREPO" config user.name tester >/dev/null 2>&1
+printf 'base\n' > "$GBREPO/a.txt"; git -C "$GBREPO" add a.txt >/dev/null 2>&1; git -C "$GBREPO" commit -qm base >/dev/null 2>&1
+git -C "$GBREPO" branch -M develop >/dev/null 2>&1
+# HOME sin copia global → corre la copia del repo (no cede por dedupe)
+gb() { jq -nc --arg c "$1" '{tool_name:"Bash",tool_input:{command:$c}}' | CLAUDE_PROJECT_DIR="$GBREPO" HOME="$GBHOME" bash "$HOOKS/git-branch-guard.sh"; }
+git -C "$GBREPO" checkout -q develop >/dev/null 2>&1
+printf '%s' "$(gb 'git push')"        | grep -q '"deny"' && ok "gbg H1: 'git push' pelón en develop → deny"          || bad "gbg H1: push pelón en develop NO bloqueó"
+printf '%s' "$(gb 'git push --force')"| grep -q '"deny"' && ok "gbg H1: 'git push --force' pelón en develop → deny"  || bad "gbg H1: push --force pelón NO bloqueó"
+printf '%s' "$(gb 'git push origin HEAD')" | grep -q '"deny"' && ok "gbg H1: 'git push origin HEAD' en develop → deny" || bad "gbg H1: push HEAD en develop NO bloqueó"
+git -C "$GBREPO" checkout -q -b feat/x >/dev/null 2>&1
+is_silent "$(gb 'git push')"              && ok "gbg H1: 'git push' pelón en ramita → silencio (sin falso positivo)" || bad "gbg H1: push pelón en ramita bloqueó"
+is_silent "$(gb 'git push -u origin feat/x')" && ok "gbg: push explícito de la ramita → silencio"                    || bad "gbg: push de ramita bloqueó"
+printf '%s' "$(gb 'git push origin develop')" | grep -q '"deny"' && ok "gbg: 'git push origin develop' explícito → deny (preservado)" || bad "gbg: push explícito a develop NO bloqueó"
+is_silent "$(gb 'git commit -m "doc: no hacer git push a develop"')" && ok "gbg H13: 'git push a develop' entrecomillado → silencio" || bad "gbg H13: mención entrecomillada disparó"
+is_silent "$(gb 'gh pr merge 5 -R org/develop --squash')" && ok "gbg H11: '-R org/develop' (nombre de repo) → silencio" || bad "gbg H11: -R org/develop disparó falso positivo"
+rm -rf "$GBROOT"
+
+# ─────────────────────────────────────────────────────────────────────────────
+echo ""
 echo "== (b2) secret-scan: bloquea un secreto staged, deja pasar lo limpio, respeta --no-verify =="
 SCANREPO="$(mktemp -d "${TMPDIR:-/tmp}/brain-scan.XXXXXX")"
 git -C "$SCANREPO" init -q >/dev/null 2>&1
@@ -439,6 +461,7 @@ e="$(grep -c 'END claude-brain'   "$GCLAUDE2" 2>/dev/null || echo 0)"
 [ -f "$FAKEHOME2/.claude/hooks/rehidratar-hilo.sh" ]     && ok "hook rehidratar-hilo instalado" || bad "falta hook rehidratar-hilo"
 [ -f "$FAKEHOME2/.claude/hooks/aviso-contexto.sh" ]      && ok "hook aviso-contexto instalado"  || bad "falta hook aviso-contexto"
 [ -f "$FAKEHOME2/.claude/hooks/delegacion-comun.sh" ]    && ok "lib delegacion-comun.sh instalada" || bad "falta lib delegacion-comun.sh"
+[ -f "$FAKEHOME2/.claude/hooks/analizar-comando-git.sh" ] && ok "lib analizar-comando-git.sh instalada" || bad "falta lib analizar-comando-git.sh"
 
 # Bonus: el desinstalador deja settings.json sin las entradas del cerebro y sin el bloque de normas
 if [ -f "$SCRIPT_DIR/uninstall-brain.sh" ]; then
@@ -492,7 +515,10 @@ echo "== (e) sin referencias circulares NUEVAS entre elementos del cerebro =="
 # Allowlist de pares bidireccionales BENIGNOS conocidos (skill<->hook enforcement / lib<->consumidor /
 # hooks-hermanos). Un par NUEVO fuera de aqui = posible referencia circular -> revisalo (peor que una
 # contradiccion). El test COMPUTA los pares en cada corrida, no depende de contarlos a mano.
-CE_ALLOW="cerrar-slice|merge-squash-guard
+CE_ALLOW="analizar-comando-git|git-branch-guard
+analizar-comando-git|merge-squash-guard
+analizar-comando-git|confirmar-merge-develop
+cerrar-slice|merge-squash-guard
 cerrar-slice|recordar-dashboard
 delegacion-comun|delegacion-gate
 delegacion-comun|delegacion-registrar

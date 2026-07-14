@@ -8,7 +8,7 @@
 #       confirmar-merge-develop, recordar-dashboard, secret-scan, rama-vieja, proteger-arbol (PreToolUse/Bash),
 #       delegacion-gate + limite-gasto (PreToolUse/Task), delegacion-registrar (PostToolUse/Task),
 #       rehidratar-hilo (SessionStart: reinyecta el hilo mental si existe),
-#       + delegacion-comun.sh (lib) + agentes-costo.json (config).
+#       + delegacion-comun.sh y analizar-comando-git.sh (libs) + agentes-costo.json (config).
 #   (b) CABLEADO en ~/.claude/settings.json con "shell":"bash" (idempotente).
 #   (c) SKILLS genéricas (cerrar-slice, orquestar-fanout, checkpoint, rehidratar-hilo) en ~/.claude/skills/.
 #   (d) DASHBOARD del cerebro sembrado en la memoria GLOBAL (slug del HOME) si falta.
@@ -49,7 +49,7 @@ fi
 GLOBAL_HOOKS="git-branch-guard.sh merge-squash-guard.sh confirmar-merge-develop.sh recordar-dashboard.sh \
               secret-scan.sh rama-vieja.sh proteger-arbol.sh limite-gasto.sh rehidratar-hilo.sh aviso-contexto.sh \
               delegacion-gate.sh delegacion-registrar.sh delegacion-reporte.sh delegacion-comun.sh \
-              limpiar-worktrees.sh"
+              analizar-comando-git.sh limpiar-worktrees.sh"
 for h in $GLOBAL_HOOKS; do
   if [ -f "$SRC_HOOKS/$h" ]; then
     cp -f "$SRC_HOOKS/$h" "$HOOKS_DIR/$h"

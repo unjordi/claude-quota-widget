@@ -6,7 +6,7 @@
 # Quita GLOBAL (de ~/.claude):
 #   (a) los HOOKS de tier global que copió el instalador → git-branch-guard, merge-squash-guard,
 #       confirmar-merge-develop, recordar-dashboard, secret-scan, rama-vieja, proteger-arbol,
-#       limite-gasto, rehidratar-hilo, delegacion-gate/registrar/reporte, delegacion-comun (lib),
+#       limite-gasto, rehidratar-hilo, delegacion-gate/registrar/reporte, delegacion-comun y analizar-comando-git (libs),
 #       limpiar-worktrees (script) + ~/.claude/agentes-costo.json.
 #   (b) DES-CABLEA de ~/.claude/settings.json SOLO las entradas que apuntan a esos hooks (deja
 #       intactas las demás — usa jq); poda los arrays de evento que queden vacíos.
@@ -34,7 +34,7 @@ echo "==> claude-brain: desinstalando cerebro global de $CLAUDE_DIR"
 GLOBAL_HOOKS="git-branch-guard.sh merge-squash-guard.sh confirmar-merge-develop.sh recordar-dashboard.sh \
               secret-scan.sh rama-vieja.sh proteger-arbol.sh limite-gasto.sh rehidratar-hilo.sh aviso-contexto.sh \
               delegacion-gate.sh delegacion-registrar.sh delegacion-reporte.sh delegacion-comun.sh \
-              limpiar-worktrees.sh"
+              analizar-comando-git.sh limpiar-worktrees.sh"
 for h in $GLOBAL_HOOKS; do
   rm -f "$HOOKS_DIR/$h"
 done
