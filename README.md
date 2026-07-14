@@ -67,6 +67,14 @@ Puerta por OS: **Linux/KDE** → `./install.sh` · **macOS** → [`macos/`](maco
 El cerebro se ordena por *dureza*: arriba lo que te **bloquea** sin negociar; abajo lo que apenas
 **sugiere**. Cada pieza sabe qué evento la dispara. Esta es, tal cual, la pestaña “Cerebro” del widget.
 
+> **¿Por qué unos bloquean y otros no?** Es cosa del *mecanismo*, no del tema. Un **hook** es un script
+> que el CLI corre SOLO, en un evento, **fuera de tu turno** → por eso puede **denegar** una acción (un
+> push a `develop`, un cierre sin evidencia). Un **skill** lo ejecuta el modelo **dentro** de su turno:
+> no puede bloquear nada, es una guía que invocas tú. De ahí la regla: los **dientes** (deny/block) viven
+> en hooks; la **lógica** se comparte en libs `.sh`; los **nudges** (recordar, rehidratar el hilo) pueden
+> tener un **gemelo skill** manual (`checkpoint` escribe · `rehidratar-hilo` lee) que sobrevive aunque un
+> update del CLI rompa el hook.
+
 ```
 🔒 Hooks Forzosos — hooks que bloquean (deny) · no negociables
 ├─ 🚧 git-branch-guard         push/merge a develop·main → denegado

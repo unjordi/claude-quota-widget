@@ -6,12 +6,12 @@
 > #4 secret-scan ausente sin bootstrap). Este plan ataca los cuatro de raíz con una sola reorganización.
 
 ## 1. El principio que manda: la asimetría hook ≠ skill
-- **Hook** = `.sh` que el CLI corre SOLO, en un evento, SIN turno del modelo. Es el ÚNICO que puede
-  **DENEGAR/BLOQUEAR** (deny en PreToolUse, block en Stop). Esa fuerza viene de correr fuera del turno.
-- **Skill** = markdown que EJECUTA EL MODELO con su juicio. Requiere turno. **NO puede bloquear** —
-  es guía que el modelo decide seguir.
-- **Corolario duro:** el ENFORCEMENT (los dientes) NO se puede mover a un skill sin perderlo. Lo que SÍ
-  se abstrae es la **LÓGICA/cómputo** (a una lib `.sh`) y los **nudge/inyección** (a un skill gemelo).
+> **Explicación canónica en el README** (raíz: sección "La jerarquía"; brain: "Hooks vs skills — por qué
+> unos bloquean y otros no"). No se duplica aquí para que no se desincronice.
+
+Resumen para este plan: el *enforcement* (deny/block) SOLO puede ser hook (corre fuera del turno del
+modelo); la *lógica/cómputo* se abstrae a libs `.sh`; los *nudge/inyección* pueden tener un gemelo skill
+manual. **Todo el refactor se apoya en esa asimetría.**
 
 ## 2. Arquitectura en 3 capas
 ```

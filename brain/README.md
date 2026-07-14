@@ -25,6 +25,26 @@ brain/
 └── norms/global-claude-md.md  # bloque de normas que se inyecta en ~/.claude/CLAUDE.md
 ```
 
+## Hooks vs skills — por qué unos bloquean y otros no
+
+La diferencia no es de tema, es de **mecanismo de ejecución**:
+- Un **hook** es un `.sh` que el CLI corre AUTOMÁTICAMENTE en un evento (PreToolUse, Stop, SessionStart…),
+  **sin turno del modelo**. Es el ÚNICO que puede **DENEGAR/BLOQUEAR** (`deny`/`block`) — su fuerza viene
+  de correr FUERA del turno.
+- Un **skill** es markdown que **ejecuta el modelo** con su juicio, dentro de un turno. **No puede
+  bloquear** nada: es una guía que TÚ (o el modelo) invoca.
+
+De ahí la regla de diseño del cerebro:
+- **Enforcement** (los dientes: `deny`/`block`) → SOLO puede ser hook.
+- **Lógica/cómputo** (¿empuja a develop? ¿hay un secreto? ¿destino=develop?) → se comparte en una **lib
+  `.sh`** (p. ej. `delegacion-comun.sh`) que el hook llama — misma lógica, sin duplicar ni divergir.
+- **Nudge/inyección** (recordar el dashboard, rehidratar el hilo) → puede tener un **gemelo skill**
+  invocable a mano: `checkpoint` (escribe el hilo) y `rehidratar-hilo` (lo lee, hook + skill gemelo).
+  Así sobrevive si un update del CLI rompe el evento/canal del hook.
+
+Escalera de resiliencia: `hook` (auto + puede enforce) → `skill` (manual, sin enforce) → `lib .sh`
+invocable como comando → `prompt` a mano (no depende de ninguna feature del CLI).
+
 ## Los hooks — qué hace cada uno
 
 Se dividen en dos **tiers** según su alcance:
