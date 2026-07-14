@@ -18,7 +18,12 @@
 #   acotado (p. ej. solo la lib + los wrappers que cambiaron) sin arrastrar drift de otros archivos
 #   que se reconcilian en otro momento. Siempre respeta el tier del manifiesto (solo {repo,both}).
 #
-# Uso:  bash sincronizar-cerebro.sh <ruta-repo-destino> [--apply] [--only a,b,c]
+# --prune-orphans: RETIRA (de-wire del settings.json + borra el .sh) los huérfanos = archivos en el
+#   destino que ya NO están en el manifiesto (el cerebro los retiró). Es DESTRUCTIVO → solo con --apply
+#   borra; en dry-run los lista como "RETIRARÍA". Antídoto a un hook retirado que quedó cableado y
+#   rompe (caso real: el viejo precompact-volcar-estado intentaba inyectar y el CLI lo rechazaba).
+#
+# Uso:  bash sincronizar-cerebro.sh <ruta-repo-destino> [--apply] [--only a,b,c] [--prune-orphans]
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -26,12 +31,13 @@ SRC_HOOKS="$SCRIPT_DIR/hooks"
 MANIFEST="$SRC_HOOKS/MANIFEST"
 VERSION_FILE="$SCRIPT_DIR/VERSION"
 
-DEST=""; APPLY=0; ONLY=""
+DEST=""; APPLY=0; ONLY=""; PRUNE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --apply) APPLY=1 ;;
     --only)  shift; ONLY="${1:-}" ;;
     --only=*) ONLY="${1#--only=}" ;;
+    --prune-orphans) PRUNE=1 ;;
     -*) echo "ERROR: flag desconocido: $1"; exit 2 ;;
     *) [ -z "$DEST" ] && DEST="$1" || { echo "ERROR: argumento inesperado: $1"; exit 2; } ;;
   esac
@@ -124,14 +130,39 @@ elif [ "$APPLY" = 1 ] && [ -n "$ONLY" ]; then
   echo ""; echo "  (sync parcial --only: NO estampo versión — el repo no queda completo en v$VER)"
 fi
 
-# ── Reportar huérfanos (en el destino, .sh que NO están en el manifiesto) ──
+# De-cablea del settings.json TODAS las entradas cuyo 'command' cite el basename del hook (jq).
+dewire_hook() {
+  local gset="$1" base="$2" tmp
+  command -v jq >/dev/null 2>&1 || { echo "  warn: jq no está; quita a mano '$base' de $gset"; return; }
+  [ -f "$gset" ] || return
+  tmp="$(mktemp)" || return
+  if jq --arg pat "$base\\.sh" '
+      if (.hooks|type)=="object" then
+        .hooks |= ( to_entries
+          | map(.value |= [ .[] | select((([.hooks[]?.command]|join(" "))|test($pat))|not) ])
+          | map(select((.value|type)=="array" and (.value|length)>0)) | from_entries )
+        | (if (.hooks|length)==0 then del(.hooks) else . end)
+      else . end
+    ' "$gset" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then mv "$tmp" "$gset"; else rm -f "$tmp"; echo "  warn: no pude de-cablear ($base)"; fi
+}
+
+# ── Huérfanos (en el destino, .sh que NO están en el manifiesto). Con --prune-orphans (+ --apply) se RETIRAN. ──
 echo ""
+n_orph=0
 if [ -d "$DST_HOOKS" ]; then
   for f in "$DST_HOOKS"/*.sh; do
     [ -e "$f" ] || continue
     b="$(basename "$f" .sh)"
     if ! awk '$1!~/^#/ && NF>=3 {print $1}' "$MANIFEST" | grep -qxF "$b"; then
-      echo "  HUÉRFANO   $b.sh — no está en el manifiesto (¿retirado del cerebro? candidato a retiro DELIBERADO; NO lo borro)"
+      n_orph=$((n_orph+1))
+      if [ "$PRUNE" = 1 ] && [ "$APPLY" = 1 ]; then
+        dewire_hook "$DST_SET" "$b"; rm -f "$f"
+        echo "  RETIRADO   $b.sh — de-cableado del settings.json + borrado (huérfano, retirado del cerebro)"
+      elif [ "$PRUNE" = 1 ]; then
+        echo "  RETIRARÍA  $b.sh — huérfano; de-cablearía + borraría (usa --apply)"
+      else
+        echo "  HUÉRFANO   $b.sh — no está en el manifiesto (¿retirado del cerebro? usa --prune-orphans para retirarlo; NO lo borro por default)"
+      fi
     fi
   done
 fi

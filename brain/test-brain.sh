@@ -608,5 +608,54 @@ done
 
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
+echo "== (e2) drift-check: el MANIFEST es la FUENTE ÚNICA — install/uninstall/sincronizar coinciden (A4) =="
+MF="$HOOKS/MANIFEST"
+if [ ! -f "$MF" ]; then
+  bad "drift: falta el MANIFEST ($MF)"
+else
+  # (1) todo *.sh de brain/hooks está declarado en el manifiesto (ningún hook queda fuera de la fuente única)
+  miss_mf=0
+  for f in "$HOOKS"/*.sh; do
+    b="$(basename "$f" .sh)"
+    awk '$1!~/^#/ && NF>=3{print $1}' "$MF" | grep -qxF "$b" || { bad "drift: $b.sh NO está en el MANIFEST (hook sin tier declarado)"; miss_mf=1; }
+  done
+  [ "$miss_mf" = 0 ] && ok "drift: todo *.sh de brain/hooks está declarado en el MANIFEST"
+  # (2) toda entrada del manifiesto tiene su archivo
+  miss_file=0
+  for b in $(awk '$1!~/^#/ && NF>=3{print $1}' "$MF"); do
+    [ -f "$HOOKS/$b.sh" ] || { bad "drift: el MANIFEST lista '$b' pero falta $HOOKS/$b.sh"; miss_file=1; }
+  done
+  [ "$miss_file" = 0 ] && ok "drift: toda entrada del MANIFEST tiene su .sh"
+  # (3) install-brain DERIVA GLOBAL del manifiesto (no una lista hardcodeada paralela) y no está vacía
+  derived="$(awk '$1!~/^#/ && NF>=3 && ($2=="global"||$2=="both"){print $1".sh"}' "$MF")"
+  if grep -q "awk.*global.*both.*MANIFEST\|MANIFEST.*awk" "$INSTALLER" && [ -n "$derived" ]; then
+    ok "drift: install-brain deriva GLOBAL_HOOKS del MANIFEST (fuente única, no lista paralela)"
+  else
+    bad "drift: install-brain NO deriva del MANIFEST (¿volvió a una lista hardcodeada?)"
+  fi
+  # (4) cada {global,both} kind=hook tiene su register_hook en install-brain (cableado ↔ manifiesto)
+  miss_wire=0
+  for b in $(awk '$1!~/^#/ && NF>=3 && ($2=="global"||$2=="both") && $3=="hook"{print $1}' "$MF"); do
+    grep -q "register_hook.*$b" "$INSTALLER" || { bad "drift: '$b' es {global,both} hook pero NO tiene register_hook en install-brain"; miss_wire=1; }
+  done
+  [ "$miss_wire" = 0 ] && ok "drift: cada hook {global,both} del MANIFEST está cableado en install-brain"
+  # (5) uninstall-brain también deriva del manifiesto (no una 3ª lista que driftee)
+  grep -q "MANIFEST" "$SCRIPT_DIR/uninstall-brain.sh" 2>/dev/null \
+    && ok "drift: uninstall-brain también deriva del MANIFEST" \
+    || bad "drift: uninstall-brain NO referencia el MANIFEST (lista paralela)"
+  # (6) sincronizar-cerebro existe y los archivos de tier {repo,both} que desplegaría están presentes
+  if [ -f "$SCRIPT_DIR/sincronizar-cerebro.sh" ]; then
+    miss_repo=0
+    for b in $(awk '$1!~/^#/ && NF>=3 && ($2=="repo"||$2=="both"){print $1}' "$MF"); do
+      [ -f "$HOOKS/$b.sh" ] || { bad "drift: sincronizar desplegaría '$b' pero falta su .sh"; miss_repo=1; }
+    done
+    [ "$miss_repo" = 0 ] && ok "drift: sincronizar-cerebro existe y todos sus archivos {repo,both} están presentes"
+  else
+    bad "drift: falta sincronizar-cerebro.sh (la ruta de despliegue por-repo)"
+  fi
+fi
+
+# ─────────────────────────────────────────────────────────────────────────────
+echo ""
 echo "==> resultado: $PASS PASS · $FAIL FAIL"
 [ "$FAIL" -eq 0 ]
