@@ -121,8 +121,8 @@ mergeadas y deja anotado en la bitácora el pendiente de los que sigan vivos.
 ### 🗺️ El mapa del cerebro — fuente de verdad visual
 
 [`docs/mapa-flujos.dot`](docs/mapa-flujos.dot) es el **mapa único** del cerebro: los flowcharts de
-decisión de cada hook (⓪ ciclo de sesión · ① integrar · ② comando git · ③ push-nudges · ④ dod-verificar
-↔ ⑤ cerrar-slice · ⑥ delegar · ⑦ orquestar-fanout), **fieles a la lógica real de los `.sh`**, más las
+decisión de cada hook (⓪ instalación · ① ciclo de sesión · ② integrar · ③ comando git · ④ push-nudges · ⑤ dod-verificar
+↔ ⑥ cerrar-slice · ⑦ delegar · ⑧ orquestar-fanout), **fieles a la lógica real de los `.sh`**, más las
 📜 **normas** que hacen cumplir (el cimiento), la referencia de lib/skill, y la leyenda con este mismo
 árbol. Cada flujo apunta a la norma/skill que invoca (📜/💡) y viceversa.
 

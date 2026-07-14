@@ -1,8 +1,8 @@
 // Mapa del cerebro claude-brain — MAPA ÚNICO (fuente de verdad; el .graphml de yEd se genera de aquí).
-// Contiene TODO: los flowcharts de decisión (⓪–⑦, fieles a la lógica real de cada hook leída del .sh)
+// Contiene TODO: los flowcharts de decisión (⓪–⑧, fieles a la lógica real de cada hook leída del .sh)
 // + las NORMAS que hacen cumplir (el cimiento) + la referencia de lib/skill de stack.
 // diamante = decisión con ramas sí/no · caja = hook/paso · 🟢 pasa · 🔴 DENY · 🟠 ASK/AVISA · 📜 norma.
-// Familias: sesión (⓪) · git (①②③) · «terminado» (④⑤) · delegación (⑥⑦).
+// Familias: instalación (⓪) · sesión (①) · git (②③④) · «terminado» (⑤⑥) · delegación (⑦⑧).
 // El ancho del render de Graphviz NO importa: en yEd se acomoda POR FLUJO (no en una tira).
 // Lenguaje visual del README/widget.  Render: dot -Tpng docs/mapa-flujos.dot -o docs/mapa-flujos.png
 digraph flujos {
@@ -19,9 +19,60 @@ digraph flujos {
   LEG [shape=note fillcolor="#2B2622" color="#D97757" penwidth=2 fontcolor="#F2EDE6" fontname="Menlo" fontsize=11
        label="🧠  claude-brain — MAPA ÚNICO del cerebro\l(flowcharts fieles a cada hook + las normas que hacen cumplir)\l\l◆ diamante = decisión (ramas sí/no) · ▭ caja = hook / paso\l🟢  pasa/permite · 🔴  DENY/bloquea · 🟠  ASK/AVISA\l📜 NORMA (el cimiento) — cada flujo apunta a la norma que sirve\l\lBadge de tipo (arriba de cada nodo):\l  🔒 hook FORZOSO (bloquea · deny)  ·  🔔 hook AUTOMÁTICO (inyecta/recuerda, NO bloquea)\l  💡 skill  ·  ⚙ lib  ·  📜 norma  ·  🛡 P0\l\l────────────────────────────────────────────────────────\lÁrbol del cerebro (pestaña «Cerebro» del widget):\l\l🔒 Hooks Forzosos — bloquean (deny) · no negociables  (GLOBALES; los ★ ADEMÁS viajan por-repo, DEDUPLICADOS R1: la copia del repo cede si existe la global → 1×, no 2×)\l├─ ★🚧 git-branch-guard:  push/merge a develop·main → denegado\l├─ ★🔗 merge-squash-guard:  MR a develop CONFIRMADO sin --squash → denegado (SOLO develop · G4)\l├─ 🕵️ secret-scan:  commit/push con un secreto → denegado (incl. 1er push de rama nueva · G5)\l├─ ★✋ confirmar-merge-develop:  merge sin tu OK expreso → denegado (GLOBAL; gatea en repos con marca repo-compartido)\l├─ 💸 delegacion-gate:  delegar al 90% de tu ventana 5h → pide OK (fan-out: 1 ask por LOTE · G3)\l├─ 🛑 limite-gasto:  sin ventana 5h Y sin overage → freno duro (corre ANTES del gate · G6)\l└─ 📁 solo por-repo (viaja en el .claude del repo):\l   └─ ✅ dod-verificar:  cierre sin evidencia/OK → denegado; una pregunta NO salva un claim (G1); QA visual a ciegas también\l\l🔔 Automático — inyectan / recuerdan (no bloquean)\l├─ ★📊 recordar-dashboard:  en el push recuerda dashboard + doc=realidad (merge-base cae a origin/* en clon fresco · G8)\l├─ 🕰️ rama-vieja:  avisa si la ramita arrastra base vieja\l├─ 🌳 proteger-arbol:  git destructivo que orfanaría commits sin pushear → avisa (fan-out: worktree aislado)\l├─ 📝 delegacion-registrar:  materializa el «pregunta una sola vez»\l├─ 📮 delegacion-reporte:  al terminar un agente: registra avance + limpia su worktree\l├─ 🧵 rehidratar-hilo:  reinyecta hilo-mental-actual.md al abrir/retomar/compactar + GATE DE FRESCURA (GLOBAL)\l├─ 📈 aviso-contexto:  watermark — avisa «vuelca con checkpoint y compacta TÚ» antes del auto-compact (GLOBAL)\l└─ 📁 solo por-repo:\l   └─ 🧭 sesion-inicio:  reinyecta rama + norma + memoria al abrir/retomar/compactar\l\l📜 Normas — reglas que Claude se autoimpone (CLAUDE.md)\l├─ 🎯 Definition of Done:  verde técnico ≠ Done/Listo; exige QA o un OK explícito\l├─ 🪞 Doc = realidad:  cambió algo → su doc se actualiza en la tanda\l├─ 🌿 Flujo de git:  ramita → MR → develop; main es release-only\l└─ 💰 Costo de delegación:  gratis / incluido / con costo, según tu cuota\l\l💡 Skills — opt-in, las invocas tú\l├─ 📦 cerrar-slice:  build+tests+memoria al día + MR con resumen curado\l├─ 💾 checkpoint:  vuelca el HILO a memoria para compactar sin perderlo (proactivo)\l├─ 💧 rehidratar-hilo:  relee el HILO a mano (gemelo del hook; respaldo si un update del CLI rompe el auto-rehidratado)\l└─ 🧵 orquestar-fanout:  fan-out sin niñera: asigna del backlog, auto-reporta y limpia\l"];
 
-  // ===================== ⓪ CICLO DE VIDA DE LA SESIÓN =====================
+  // ===================== ⓪ INSTALACIÓN / ACTUALIZACIÓN DEL CEREBRO =====================
+  subgraph cluster_f8 {
+    label="⓪ Instalación / actualización del cerebro   (install-brain · bootstrap-claude · aplicar-plantilla · [futuro] sincronizar-cerebro)";
+    labeljust="l"; fontcolor="#5FA89E"; fontsize=14; color="#5FA89E"; style="rounded"; penwidth=1.6; margin=16;
+
+    I8_IN [shape=box color="#8A8A8A" fillcolor="#232323" fontcolor="#CFC8C0" penwidth=1.5 label="instalar o actualizar el cerebro\nen esta máquina / repo"];
+    I8_AMBITO [shape=diamond fillcolor="#2B2622" color="#D97757" penwidth=2 label="¿ámbito?"];
+
+    // --- GLOBAL (máquina) ---
+    I8_GVEZ [shape=diamond fillcolor="#2B2622" color="#D97757" penwidth=2 label="GLOBAL (máquina):\n¿1ª vez o actualizar?"];
+    I8_GINST [color="#7FB069" label="🟢  install-brain.sh (vía global directa en Mac/Windows)\ncopia los 13 hooks + skills a ~/.claude/, cablea settings.json,\ninstala normas (bloque BEGIN/END) + siembra dashboard (idempotente).\ninstall.sh lo envuelve SOLO en Linux/KDE (+ daemon+systemd+plasmoide;\nexige systemctl/kpackagetool6 → no corre en Mac/Windows)"];
+    I8_GUPD [color="#E08E45" label="🟠  re-correr install-brain.sh\nidempotente Y ACTUALIZABLE: refresca hooks, re-cablea,\nREEMPLAZA el bloque de normas en su lugar\n(así se actualizó TIER 0)"];
+    I8_GLIVE [color="#7FB069" label="🟢  cerebro GLOBAL vivo en la máquina\n(aplica a TODOS los repos)"];
+
+    // --- POR-REPO (viaja por git) ---
+    I8_RTIPO [shape=diamond fillcolor="#2B2622" color="#D97757" penwidth=2 label="POR-REPO:\n¿repo nuevo o existente?"];
+    I8_CLON [color="#5FA89E" fillcolor="#232323" fontcolor="#CFC8C0" penwidth=1.5 label="repo NUEVO desde la plantilla:\nel clon TRAE .claude/ (hooks+settings+skills+memoria)\npor git — el tooling VIAJA en el repo"];
+    I8_APLICA [color="#E08E45" label="🟠  repo EXISTENTE: sembrar .claude/ es un paso MANUAL\n(NO scriptado). aplicar-plantilla-a-proyecto NO copia .claude/ —\nes un playbook de UI/arquitectura que ASUME el cerebro ya presente.\n🆕 hueco: no hay automatización para «sembrar el cerebro en un repo existente»"];
+    I8_BOOT [color="#E08E45" label="🔔  bootstrap-claude.sh  (UNA vez tras clonar)\nsymlinkea la memoria + siembra dashboard + norma doc=realidad\n+ instala en ~/.claude un SUBCONJUNTO de globales + verifica jq\n(git se asume por el clone — NO lo verifica, pese a lo que dice el CLAUDE.md)"];
+    I8_INV [color="#C0392B" label="🔴  DRIFT INVERSO (el peor): bootstrap hace cp -f INCONDICIONAL\n→ un clon con plantilla VIEJA PISA los 3 hooks globales con versiones\nstale. La dedup R1 es solo del CABLEADO (quién corre), NO del .sh\n(el binario siempre se sobreescribe) → un repo viejo CONTAMINA el global"];
+    I8_WARN [shape=diamond fillcolor="#2B2622" color="#C0392B" penwidth=2 label="¿el subconjunto del bootstrap\n= lo que instala install-brain?"];
+    I8_DIV [color="#C0392B" label="🔴  NO — DOS rutas de install con conjuntos DISTINTOS:\nbootstrap-claude instala 3 (git-branch · recordar-dashboard · squash);\ninstall-brain instala 13 → FALTAN secret-scan, watermark, rehidratar,\ndelegación, confirmar-merge, proteger-arbol, rama-vieja, limite-gasto\n(raíz de #4: clonar la plantilla y bootstrapear NO da secret-scan)\n🆕 reconciliar: lista ÚNICA de «qué es global»"];
+    I8_RLIVE [color="#7FB069" label="🟢  cerebro del repo vivo\n(hooks del repo por git + los globales que sí se instalaron)"];
+
+    // --- ACTUALIZACIÓN POR-REPO (el hueco) ---
+    I8_RUPD [shape=diamond fillcolor="#2B2622" color="#D97757" penwidth=2 label="el brain EVOLUCIONÓ:\n¿cómo se actualizan los .claude/\nde un repo YA instalado?"];
+    I8_HUECO [color="#C0392B" label="🔴  HUECO — NO hay mecanismo: las copias por-repo\nDRIFTEAN del brain (hallazgo #3). Hoy solo se «arregla»\nre-aplicando la plantilla a mano (nadie lo hace → envejecen)"];
+    I8_FIX [color="#C9A227" label="🆕 propuesta: sincronizar-cerebro.sh (fuente única = brain, NO cp -f\nciego) + SELLO DE VERSIÓN del cerebro (hoy no existe; el widget sí) +\ncheck de DRIFT en test-brain/CI → el desfase (en AMBOS sentidos) se DETECTA.\nTambién: rama de desinstalación/rollback (uninstall-brain.sh) fuera de este dibujo\n📜 → 🧩 toda norma nace con su mecanismo"];
+
+    I8_IN -> I8_AMBITO;
+    I8_AMBITO -> I8_GVEZ  [label="global"];
+    I8_AMBITO -> I8_RTIPO [label="por-repo"];
+    I8_GVEZ -> I8_GINST [label="1ª vez"];
+    I8_GVEZ -> I8_GUPD  [label="actualizar" color="#E08E45"];
+    I8_GINST -> I8_GLIVE;
+    I8_GUPD -> I8_GLIVE;
+    I8_RTIPO -> I8_CLON   [label="nuevo"];
+    I8_RTIPO -> I8_APLICA [label="existente"];
+    I8_CLON -> I8_BOOT;
+    I8_APLICA -> I8_BOOT;
+    I8_BOOT -> I8_WARN;
+    I8_BOOT -> I8_INV   [label="cp -f incondicional" color="#C0392B"];
+    I8_INV -> I8_FIX    [label="lo resuelve 🆕" color="#C9A227" style=dashed];
+    I8_WARN -> I8_DIV   [label="hoy: no" color="#C0392B"];
+    I8_WARN -> I8_RLIVE [label="meta: sí" color="#7FB069"];
+    I8_DIV -> I8_RLIVE;
+    I8_RLIVE -> I8_RUPD [label="con el tiempo…" style=dashed];
+    I8_RUPD -> I8_HUECO [label="hoy" color="#C0392B"];
+    I8_HUECO -> I8_FIX  [label="propuesta 🆕" color="#C9A227" style=dashed];
+  }
+
+  // ===================== ① CICLO DE VIDA DE LA SESIÓN =====================
   subgraph cluster_f0 {
-    label="⓪ Ciclo de vida de la sesión   (bootstrap 1× · SessionStart: 🔔 rehidratar-hilo GLOBAL con gate de FRESCURA + 🔔 sesion-inicio por-repo · 💾 checkpoint vuelca el hilo · 🔔 aviso-contexto = watermark anti-auto-compact)";
+    label="① Ciclo de vida de la sesión   (bootstrap 1× · SessionStart: 🔔 rehidratar-hilo GLOBAL con gate de FRESCURA + 🔔 sesion-inicio por-repo · 💾 checkpoint vuelca el hilo · 🔔 aviso-contexto = watermark anti-auto-compact)";
     labeljust="l"; fontcolor="#5B8DBF"; fontsize=14; color="#5B8DBF"; style="rounded"; penwidth=1.6; margin=16;
 
     Z_OPEN [shape=box color="#8A8A8A" fillcolor="#232323" fontcolor="#CFC8C0" penwidth=1.5 label="abres Claude Code en un folder"];
@@ -62,9 +113,9 @@ digraph flujos {
     Z_START -> Z_REHID [label="misma SessionStart\n(startup/resume/compact · global + por-repo)" style=dotted color="#8A8A8A" constraint=false];
   }
 
-  // ===================== ① INTEGRAR a develop/main =====================
+  // ===================== ② INTEGRAR a develop/main =====================
   subgraph cluster_f1 {
-    label="① Integrar rama a develop/main   (git-branch-guard → merge-squash-guard → confirmar-merge-develop)";
+    label="② Integrar rama a develop/main   (git-branch-guard → merge-squash-guard → confirmar-merge-develop)";
     labeljust="l"; fontcolor="#C0392B"; fontsize=14; color="#C0392B"; style="rounded"; penwidth=1.6; margin=16;
 
     G1_IN  [shape=box color="#8A8A8A" fillcolor="#232323" fontcolor="#CFC8C0" penwidth=1.5 label="intento de integrar\n(git push · glab mr merge · gh pr merge)"];
@@ -85,11 +136,11 @@ digraph flujos {
     G1_D3 -> G1_OK    [label="no (hay OK)" color="#7FB069"];
   }
 
-  // ===================== ② COMANDO GIT EN BASH — dos guards PARALELOS e independientes ==========
+  // ===================== ③ COMANDO GIT EN BASH — dos guards PARALELOS e independientes ==========
   // secret-scan (🔒 bloquea) y proteger-arbol (🔔 avisa) son DOS PreToolUse/Bash separados que reciben
   // la MISMA entrada; NO hay despachador — cada hook filtra por su cuenta si el comando le incumbe.
   subgraph cluster_f2 {
-    label="② Comando git en Bash · guards que lo inspeccionan   (🔒 secret-scan bloquea · 🔔 proteger-arbol avisa)";
+    label="③ Comando git en Bash · guards que lo inspeccionan   (🔒 secret-scan bloquea · 🔔 proteger-arbol avisa)";
     labeljust="l"; fontcolor="#D97757"; fontsize=14; color="#D97757"; style="rounded"; penwidth=1.6; margin=16;
 
     GG_IN   [shape=box color="#8A8A8A" fillcolor="#232323" fontcolor="#CFC8C0" penwidth=1.5 label="comando Bash con git (PreToolUse/Bash)\n→ los DOS hooks lo reciben en paralelo (sin despachador)"];
@@ -130,9 +181,9 @@ digraph flujos {
     A_D2 -> A_WARN [label="sí" color="#E08E45"];
   }
 
-  // ===================== ③ AL HACER PUSH — nudges (recordar-dashboard + rama-vieja) =====================
+  // ===================== ④ AL HACER PUSH — nudges (recordar-dashboard + rama-vieja) =====================
   subgraph cluster_f3 {
-    label="③ Al hacer push · nudges   (🔔 recordar-dashboard: dashboard+doc · 🔔 rama-vieja: base vieja)";
+    label="④ Al hacer push · nudges   (🔔 recordar-dashboard: dashboard+doc · 🔔 rama-vieja: base vieja)";
     labeljust="l"; fontcolor="#E08E45"; fontsize=14; color="#E08E45"; style="rounded"; penwidth=1.6; margin=16;
 
     G6_IN  [shape=box color="#8A8A8A" fillcolor="#232323" fontcolor="#CFC8C0" penwidth=1.5 label="comando Bash con git"];
@@ -169,9 +220,9 @@ digraph flujos {
     G6_RV -> G6_RV_WARN [label="sí" color="#E08E45"];
   }
 
-  // ===================== ④ DECLARAR «LISTO» al fin de turno (dod-verificar · Stop) =====================
+  // ===================== ⑤ DECLARAR «LISTO» al fin de turno (dod-verificar · Stop) =====================
   subgraph cluster_f4 {
-    label="④ Declarar «LISTO» al fin de turno   (dod-verificar · Stop)";
+    label="⑤ Declarar «LISTO» al fin de turno   (dod-verificar · Stop)";
     labeljust="l"; fontcolor="#C0392B"; fontsize=14; color="#C0392B"; style="rounded"; penwidth=1.6; margin=16;
 
     G2_IN  [shape=box color="#8A8A8A" fillcolor="#232323" fontcolor="#CFC8C0" penwidth=1.5 label="fin de turno (Stop)\nse mira el último mensaje del asistente"];
@@ -198,9 +249,9 @@ digraph flujos {
     G2_D4 -> G2_DENY [label="no" color="#C0392B"];
   }
 
-  // ===================== ⑤ CERRAR UN SLICE (ritual de 5 pasos · cerrar-slice) =====================
+  // ===================== ⑥ CERRAR UN SLICE (ritual de 5 pasos · cerrar-slice) =====================
   subgraph cluster_f5 {
-    label="⑤ Cerrar un slice · ritual de 5 pasos   (cerrar-slice · skill)";
+    label="⑥ Cerrar un slice · ritual de 5 pasos   (cerrar-slice · skill)";
     labeljust="l"; fontcolor="#5B8DBF"; fontsize=14; color="#5B8DBF"; style="rounded"; penwidth=1.6; margin=16;
 
     C_IN [shape=box color="#8A8A8A" fillcolor="#232323" fontcolor="#CFC8C0" penwidth=1.5 label="💡\ncrees que terminaste un slice\n📜 → 🎯 Definición de LISTO"];
@@ -231,9 +282,9 @@ digraph flujos {
     C_GEN -> C_LOCAL [label="no" color="#7FB069"];
   }
 
-  // ===================== ⑥ DELEGAR un Task/agente (limite-gasto + delegacion-gate) =====================
+  // ===================== ⑦ DELEGAR un Task/agente (limite-gasto + delegacion-gate) =====================
   subgraph cluster_f6 {
-    label="⑥ Delegar un Task/agente   (limite-gasto = FRENO · delegacion-gate = consentimiento)";
+    label="⑦ Delegar un Task/agente   (limite-gasto = FRENO · delegacion-gate = consentimiento)";
     labeljust="l"; fontcolor="#C0392B"; fontsize=14; color="#C0392B"; style="rounded"; penwidth=1.6; margin=16;
 
     G3_IN  [shape=box color="#8A8A8A" fillcolor="#232323" fontcolor="#CFC8C0" penwidth=1.5 label="reclutar un agente (tool Task)\n📜 → 💰 Consentimiento de costo"];
@@ -269,9 +320,9 @@ digraph flujos {
     G3_ASK2 -> G3_REG [label="apruebas → corre" color="#E08E45"];
   }
 
-  // ===================== ⑦ ORQUESTAR UN FAN-OUT (sin niñera · orquestar-fanout) =====================
+  // ===================== ⑧ ORQUESTAR UN FAN-OUT (sin niñera · orquestar-fanout) =====================
   subgraph cluster_f7 {
-    label="⑦ Orquestar un fan-out · sin niñera   (orquestar-fanout · skill)";
+    label="⑧ Orquestar un fan-out · sin niñera   (orquestar-fanout · skill)";
     labeljust="l"; fontcolor="#5B8DBF"; fontsize=14; color="#5B8DBF"; style="rounded"; penwidth=1.6; margin=16;
 
     OF_IN [shape=box color="#8A8A8A" fillcolor="#232323" fontcolor="#CFC8C0" penwidth=1.5 label="💡\ntrabajo PARALELIZABLE\n(varias piezas independientes)"];
@@ -281,7 +332,7 @@ digraph flujos {
     OF_DMUT [shape=diamond fillcolor="#2B2622" color="#D97757" penwidth=2 label="¿el agente MUTA\narchivos / commitea?"];
     OF_WT [color="#E08E45" label="🔔\n🌳  WORKTREE AISLADO (isolation: worktree)\nnunca el árbol compartido; si no se puede\naislar, lo hace el orquestador\n(proteger-arbol respalda)\n📜 → 🧱 Aislamiento de fan-out"];
     OF_DEPLOY [color="#E08E45" label="🟠  y NUNCA deployes desde ese worktree:\nno hereda gitignored → rompe el deploy.\nEl deploy sale del clon PRINCIPAL tras git pull"];
-    OF_GATE [color="#C0392B" penwidth=2.5 label="🔒\n💸  delegacion-gate\nconsentimiento de costo (ver flujo ⑥)"];
+    OF_GATE [color="#C0392B" penwidth=2.5 label="🔒\n💸  delegacion-gate\nconsentimiento de costo (ver flujo ⑦)"];
     OF_AG [color="#D97757" fillcolor="#2B2622" penwidth=2.5 label="🤖  agente TERMINAL — ejecuta el trabajo\nCOMPLETO en su turno (no background);\ndevuelve: qué hizo · línea-bitácora ·\npendiente · estado del worktree\nPORTA, no REHAGAS: cita+lee la fuente antes de escribir (P2)"];
     OF_DVER [shape=diamond fillcolor="#2B2622" color="#D97757" penwidth=2 label="orquestador VERIFICA read-only\n(git / archivo / compila):\n¿el resultado real existe?"];
     OF_NO [color="#C0392B" label="🔴  NO lo marques hecho\n(el reporte NO es evidencia: pudo\ndevolver un stub o alucinar «background»)"];
@@ -313,15 +364,15 @@ digraph flujos {
     label="📜 NORMAS · el cimiento   (el porqué; cada flujo de arriba las hace cumplir)";
     labeljust="l"; fontcolor="#7FB069"; fontsize=14; color="#7FB069"; style="rounded"; penwidth=1.6; margin=16;
     node [color="#7FB069" penwidth=2];
-    N_DOD  [label="📜\n🎯  Definición de LISTO\nverde técnico ≠ LISTO (build+tests+memoria es\nnecesario pero NO suficiente): falta (1) QA del\nusuario o (2) su OK expreso de cierre\nproducto INSTALABLE: verde en 1 máquina ≠ LISTO (checklist multi-OS · P3)\n— hecho cumplir en ④ ⑤ ①"];
-    N_GIT  [label="📜\n🌿  Flujo de git\nramita → MR → develop (con squash); main es\nrelease-only; NUNCA push directo a develop/main\nel gate confirmar ≠ «no puedes»: con tu OK, Claude mergea por CLI (P7)\n— hecho cumplir en ① ②"];
-    N_DOC  [label="📜\n🪞  doc = realidad\nal cambiar algo, su doc se actualiza en la MISMA\ntanda (README/memoria/dashboard/comentarios)\n— hecho cumplir en ③"];
-    N_MINI [label="📜\n🌱  Modelo MINI-DEVELOP\nramitas → rama personal/integración por merge\nLOCAL (sin fricción); solo el MR a develop se gatea\n— habilitado en ①"];
-    N_COST [label="📜\n💰  Consentimiento de costo de delegación\ndelegar cuesta por nivel: gratis (local) / incluido\n(ventana 5h) / metered (overage o API externa)\n— hecho cumplir en ⑥"];
-    N_ORQ  [label="📜\n🎼  Orquesta: delega y quédate en el loop\ncon trabajo paralelizable: fan-out + supervisión\n(no grind serial); auto-reporte sin niñera\n— operacionalizada en ⑦"];
-    N_AISL [label="📜\n🧱  Aislamiento de fan-out\ntodo agente que MUTA/commitea corre en worktree\nAISLADO, nunca en el árbol de trabajo compartido\n— hecho cumplir en ② ⑦"];
+    N_DOD  [label="📜\n🎯  Definición de LISTO\nverde técnico ≠ LISTO (build+tests+memoria es\nnecesario pero NO suficiente): falta (1) QA del\nusuario o (2) su OK expreso de cierre\nproducto INSTALABLE: verde en 1 máquina ≠ LISTO (checklist multi-OS · P3)\n— hecho cumplir en ⑤ ⑥ ②"];
+    N_GIT  [label="📜\n🌿  Flujo de git\nramita → MR → develop (con squash); main es\nrelease-only; NUNCA push directo a develop/main\nel gate confirmar ≠ «no puedes»: con tu OK, Claude mergea por CLI (P7)\n— hecho cumplir en ② ③"];
+    N_DOC  [label="📜\n🪞  doc = realidad\nal cambiar algo, su doc se actualiza en la MISMA\ntanda (README/memoria/dashboard/comentarios)\n— hecho cumplir en ④"];
+    N_MINI [label="📜\n🌱  Modelo MINI-DEVELOP\nramitas → rama personal/integración por merge\nLOCAL (sin fricción); solo el MR a develop se gatea\n— habilitado en ②"];
+    N_COST [label="📜\n💰  Consentimiento de costo de delegación\ndelegar cuesta por nivel: gratis (local) / incluido\n(ventana 5h) / metered (overage o API externa)\n— hecho cumplir en ⑦"];
+    N_ORQ  [label="📜\n🎼  Orquesta: delega y quédate en el loop\ncon trabajo paralelizable: fan-out + supervisión\n(no grind serial); auto-reporte sin niñera\n— operacionalizada en ⑧"];
+    N_AISL [label="📜\n🧱  Aislamiento de fan-out\ntodo agente que MUTA/commitea corre en worktree\nAISLADO, nunca en el árbol de trabajo compartido\n— hecho cumplir en ③ ⑧"];
     N_P0   [color="#D97757" penwidth=2.5 style="rounded,filled"
-            label="🛡\nIntegridad de los guardarraíles (P0 · activa)\nClaude NO afloja sus propios candados de supervisión\npara desatorarse; cambiar un control exige el OK\nEXPLÍCITO a cambiar ESE control (≠ el OK a la acción)\n— protege dod-verificar ④ · confirmar/squash/branch ① · proteger-arbol ②"];
+            label="🛡\nIntegridad de los guardarraíles (P0 · activa)\nClaude NO afloja sus propios candados de supervisión\npara desatorarse; cambiar un control exige el OK\nEXPLÍCITO a cambiar ESE control (≠ el OK a la acción)\n— protege dod-verificar ⑤ · confirmar/squash/branch ② · proteger-arbol ③"];
     N_MEC  [label="📜\n🧩  Toda norma nace con su mecanismo (P8)\nuna norma de higiene/cierre SIN hook/gate/paso operativo\n= el usuario es el enforcement → no se cumple sola"];
 
     N_P0 -> N_DOD [label="protege" style=dashed color="#D97757" fontcolor="#D97757" penwidth=1.4 constraint=false];
@@ -338,19 +389,19 @@ digraph flujos {
     label="🔩 REFERENCIA · lib/skill de stack (sin flujo propio)";
     labeljust="l"; fontcolor="#8A8A8A"; fontsize=14; color="#8A8A8A"; style="rounded"; penwidth=1.4; margin=14;
     R_COMUN [color="#8A8A8A" fillcolor="#232323" fontcolor="#CFC8C0" penwidth=1.5
-             label="⚙\ndelegacion-comun  (lib)\nclasificación de costo compartida (fuente ÚNICA):\nla usan delegacion-gate Y delegacion-registrar (⑥)"];
+             label="⚙\ndelegacion-comun  (lib)\nclasificación de costo compartida (fuente ÚNICA):\nla usan delegacion-gate Y delegacion-registrar (⑦)"];
     R_NET   [color="#5B8DBF" penwidth=2.5
-             label="💡\nskills .NET (plantilla, específicas de stack)\ncrear-pagina-blazor · migracion-ef · build-produccion ·\nagregar-seed… (usan el ritual cerrar-slice, ⑤)"];
+             label="💡\nskills .NET (plantilla, específicas de stack)\ncrear-pagina-blazor · migracion-ef · build-produccion ·\nagregar-seed… (usan el ritual cerrar-slice, ⑥)"];
     R_COMUN -> R_NET [style=invis];   // apílalos en columna
   }
 
   // (El acomodo espacial —normas/referencia DEBAJO de los flujos— se hace en yEd; Graphviz solo fija el CONTENIDO.)
   // (Las referencias a 📜 normas / 💡 skills van como TAG de texto DENTRO del nodo que las invoca — ver labels arriba.)
 
-  // ===== CORRELACIÓN ④↔⑤: la evidencia (1)/(2) que dod-verificar EXIGE es la que cerrar-slice PRODUCE =====
+  // ===== CORRELACIÓN ⑤↔⑥: la evidencia (1)/(2) que dod-verificar EXIGE es la que cerrar-slice PRODUCE =====
 
-  // ===== CORRELACIÓN ④↔⑤: la evidencia (1)/(2) que dod-verificar EXIGE es la que cerrar-slice PRODUCE =====
+  // ===== CORRELACIÓN ⑤↔⑥: la evidencia (1)/(2) que dod-verificar EXIGE es la que cerrar-slice PRODUCE =====
   // (adyacentes por el orden de familia → conector corto; constraint=false para no alterar el layout)
   C3 -> G2_D4 [dir=both color="#D97757" style=dashed penwidth=1.4 constraint=false
-               label="misma evidencia (1)/(2):\n⑤ la produce · ④ la exige"];
+               label="misma evidencia (1)/(2):\n⑥ la produce · ⑤ la exige"];
 }

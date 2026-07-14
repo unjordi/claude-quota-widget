@@ -75,8 +75,9 @@ envejecer. El mecanismo que lo cierra:
 - Decisión asociada (**#4**): cablear `secret-scan` (y demás global-only relevantes) TAMBIÉN por-repo, para
   que un clon sin bootstrap no pierda un guard de seguridad — o documentar explícitamente que dependen del bootstrap.
 
-## 3.1 HUECO detectado: no existe el flujo (ni el flowchart) de INSTALACIÓN/ACTUALIZACIÓN
-El mapa tiene ⓪–⑦ pero **ninguno describe cómo se instala/actualiza el cerebro mismo**. Estado real hoy:
+## 3.1 Ciclo de INSTALACIÓN/ACTUALIZACIÓN — flowchart ⓪ ✅; el HUECO de MECANISMO sigue
+El flowchart de instalación/actualización **ya existe como ⓪** del mapa (añadido en PASO 1: el mapa pasó a
+⓪–⑧). Documenta el ciclo real; el HUECO que queda es de MECANISMO (no hay update por-repo). Estado hoy:
 
 | Pregunta | Hoy | ¿Definido? |
 |---|---|---|
@@ -92,7 +93,7 @@ El mapa tiene ⓪–⑦ pero **ninguno describe cómo se instala/actualiza el ce
 ⇒ quien clona la plantilla y corre SU bootstrap **no obtiene secret-scan** (seguridad) ni el watermark.
 Hay **dos rutas de instalación que instalan conjuntos distintos** — nadie las reconcilió.
 
-**Defectos del ciclo CONFIRMADOS por el auditor de ⑧ (contra los scripts reales):**
+**Defectos del ciclo CONFIRMADOS por el auditor del flujo de instalación (⑧ entonces, hoy ⓪) (contra los scripts reales):**
 - 🔴 **Drift INVERSO** (el peor): `bootstrap-claude.sh` hace `cp -f` INCONDICIONAL → un clon con plantilla
   VIEJA **PISA** los 3 hooks globales con versiones stale. La dedup R1 es del CABLEADO (quién corre), no
   del `.sh` (el binario siempre se sobreescribe) → un repo viejo CONTAMINA el global.
@@ -106,7 +107,7 @@ Hay **dos rutas de instalación que instalan conjuntos distintos** — nadie las
   "más reciente ABAJO, `>>`"; bootstrap "más reciente arriba") — la norma le da la razón a install-brain.
 
 **Propuesta:**
-- Añadir el **flowchart ⑧ "Instalación / actualización del cerebro"** al mapa (primera instalación global
+- **[✅ PASO 1]** El **flowchart ⓪ "Instalación / actualización del cerebro"** ya está en el mapa (primera instalación global
   vs por-repo · actualización global vs por-repo · qué se copia y cuándo). Hace visible el ciclo y su hueco.
 - **Reconciliar las dos rutas:** una fuente/lista ÚNICA de qué es global (que `install-brain` y el
   `bootstrap-claude` de cada repo compartan), para que "qué guards tienes" no dependa de por dónde entraste.
@@ -118,7 +119,7 @@ Hay **dos rutas de instalación que instalan conjuntos distintos** — nadie las
 2. **`lib/dod.sh`** + unificar la `dod` genérica y la .NET en un wrapper c/u sobre la MISMA lib. *Cierra #1.*
 3. **`lib/secretos.sh`**, **`lib/contexto.sh`**, **`lib/hilo.sh`** + sus wrappers.
 4. **Gemelos-skill** faltantes (sesion-inicio; recordar-dashboard opc.) + **dry-run** opcionales.
-5. **Ciclo de instalación/actualización** (§3.1): flowchart ⑧ al mapa + reconciliar las dos rutas de
+5. **Ciclo de instalación/actualización** (§3.1): flowchart de instalación (⓪) al mapa **[✅ hecho]** + reconciliar las dos rutas de
    install (lista única de "qué es global") + `sincronizar-cerebro.sh` + check de drift en test-brain/CI.
    *Cierra #3 y #4 y llena el hueco del ciclo de vida del cerebro.*
 
@@ -134,5 +135,5 @@ Hay **dos rutas de instalación que instalan conjuntos distintos** — nadie las
   invocable como comando → `prompt` a mano (no depende de ninguna feature del CLI).
 
 ## 6. Qué NO cambia
-Los flujos ⓪–⑦ del mapa (la lógica de decisión) son los MISMOS; solo cambia DÓNDE vive el código y qué
+Los flujos ⓪–⑧ del mapa (la lógica de decisión) son los MISMOS; solo cambia DÓNDE vive el código y qué
 tiene gemelo manual. El mapa se re-anota (badge "⚙ lib" donde aplique), no se rehace.
