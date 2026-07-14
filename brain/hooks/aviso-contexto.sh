@@ -75,7 +75,7 @@ printf '%s %s\n' "$baseline" "$new_band" > "$AVISO_F" 2>/dev/null || true
 # ¿Cruzamos una banda NUEVA (>=1)? Si no, silencio (debounce).
 { [ "$band" -ge 1 ] && [ "$band" -gt "$last_band" ]; } || exit 0
 
-msg="⚠️ Contexto creciendo (~${delta} líneas de transcript desde el último /compact). Vuelca el hilo con el skill checkpoint y PROPÓN al usuario un /compact PROACTIVO ahora, con holgura, antes de que el auto-compact (contexto lleno, SIN aviso) te gane y se pierda el hilo reciente."
+msg="⚠️ Contexto creciendo (~${delta} líneas de transcript desde el último /compact). REGLA DURA DE ORDEN (no la saltes): ANTES de siquiera PROPONER o hacer un /compact, el skill \`checkpoint\` YA TIENE QUE HABER CORRIDO en este tramo (volcar el HILO a hilo-mental-actual.md, fresco y en la rama actual). El orden es OBLIGATORIO: 1) corre \`checkpoint\` AHORA → 2) SOLO DESPUÉS propón al usuario un /compact PROACTIVO (con holgura, antes de que el auto-compact —contexto lleno, SIN aviso— te gane). Proponer o ejecutar un /compact SIN el checkpoint corrido antes = perder el hilo reciente: es un ERROR, no lo hagas. (Si YA corriste checkpoint en este tramo y el hilo sigue fresco, no lo repitas: procede.)"
 
 jq -n --arg c "$msg" '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:$c}}'
 exit 0
