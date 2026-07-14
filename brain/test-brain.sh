@@ -255,6 +255,34 @@ rm -rf "$PABARE" "$PAREPO"
 
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
+echo "== (b3b) limpiar-worktrees: base de integración configurable + detección por cherry (G7) =="
+# Flujo mini-develop: la base es una rama PERSONAL (no develop) y las ramitas se integran por merge
+# LOCAL (a veces squash) → antes quedaban zombies eternos (base fija a develop + sin detección por
+# equivalencia de parche). Ahora: CLAUDE_INTEGRACION_BASE fija la base; git cherry caza el squash local.
+G7ROOT="$(mktemp -d "${TMPDIR:-/tmp}/brain-g7.XXXXXX")"; G7REPO="$G7ROOT/repo"; mkdir -p "$G7REPO"
+git -C "$G7REPO" init -q >/dev/null 2>&1
+git -C "$G7REPO" symbolic-ref HEAD refs/heads/miDevelop >/dev/null 2>&1
+git -C "$G7REPO" config user.email t@t >/dev/null 2>&1
+git -C "$G7REPO" config user.name  tester >/dev/null 2>&1
+printf 'base\n' > "$G7REPO/base.txt"; git -C "$G7REPO" add base.txt >/dev/null 2>&1; git -C "$G7REPO" commit -qm base >/dev/null 2>&1
+# ramita MERGEADA por squash LOCAL a la rama personal (no queda de ancestro, pero su parche sí está)
+git -C "$G7REPO" checkout -q -b feat/hecha >/dev/null 2>&1
+printf 'x\n' > "$G7REPO/f.txt"; git -C "$G7REPO" add f.txt >/dev/null 2>&1; git -C "$G7REPO" commit -qm hecha >/dev/null 2>&1
+git -C "$G7REPO" checkout -q miDevelop >/dev/null 2>&1
+git -C "$G7REPO" merge --squash feat/hecha >/dev/null 2>&1; git -C "$G7REPO" commit -qm "squash feat/hecha" >/dev/null 2>&1
+git -C "$G7REPO" worktree add -q "$G7ROOT/wt-hecha" feat/hecha >/dev/null 2>&1
+# ramita VIVA (commits nuevos aún no integrados)
+git -C "$G7REPO" checkout -q -b feat/viva miDevelop >/dev/null 2>&1
+printf 'y\n' > "$G7REPO/g.txt"; git -C "$G7REPO" add g.txt >/dev/null 2>&1; git -C "$G7REPO" commit -qm viva >/dev/null 2>&1
+git -C "$G7REPO" checkout -q miDevelop >/dev/null 2>&1
+git -C "$G7REPO" worktree add -q "$G7ROOT/wt-viva" feat/viva >/dev/null 2>&1
+out="$(cd "$G7REPO" && CLAUDE_INTEGRACION_BASE=miDevelop bash "$HOOKS/limpiar-worktrees.sh" --dry-run 2>&1)"
+printf '%s' "$out" | grep -q 'zombie.*feat/hecha' && ok "G7: ramita squash-mergeada a rama personal (base configurable) → zombie por cherry" || bad "G7: no detectó zombie por cherry; got: $out"
+printf '%s' "$out" | grep -q 'DEJADO.*feat/viva'  && ok "G7: ramita viva no integrada → conservada"                                     || bad "G7: no conservó la ramita viva; got: $out"
+rm -rf "$G7ROOT"
+
+# ─────────────────────────────────────────────────────────────────────────────
+echo ""
 echo "== (b4) dod-verificar: cierre/claim-visual sin evidencia bloquea; con OK o tool de navegador, no =="
 DODTX="$FAKEHOME/dod-transcript.jsonl"
 dod() { # dod "<texto final asistente>" "<línea extra de tool/edit o vacío>"
