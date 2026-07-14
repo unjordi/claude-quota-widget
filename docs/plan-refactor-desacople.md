@@ -162,14 +162,15 @@ tiene gemelo manual. El mapa se re-anota (badge "⚙ lib" donde aplique), no se 
 - [x] **Bonus (destapado por el QA de compact en cps):** retirado `precompact-volcar-estado` (de-wire + borrado
       vía `--prune-orphans`) — rompía la validación del CLI ("Hook JSON output validation failed"). OK explícito de unjordi ("no lo queremos").
 
-### B · lib `analizar-comando-git.sh` (Fase 1) — H1, H3, H5, H11, H13
+### B · lib `analizar-comando-git.sh` (Fase 1) — H1, H3, H5, H11, H13  ✅ (2026-07-14)
 - [x] `despoja_comillas(cmd)` para TODOS los git-hooks (fix #2; H13). *slice-1, `d6b17e5`: `git-branch-guard` ya la usa vía la lib; falta propagar a secret-scan (→ §D) y a la copia de la plantilla (→ §A).*
 - [x] `es_push_a_base(cmd)` que resuelva la **rama actual** cuando el push es PELÓN (sin refspec)
       → cierra **H1** (`git push`/`--force`/`HEAD` a secas en develop/main). *slice-1, `d6b17e5` (`acg_push_toca_base`). test-brain 125/0.*
-- [ ] Anclar los escapes al **subcomando real** (`glab mr list|view`), no a cualquier token suelto (`status`)
-      → cierra **H3** (evasión de `confirmar-merge-develop` con `… && git status`). *slice-2, en curso.*
-- [ ] `destino_de_mr(cmd)` con **caché por MR-id COMPARTIDA** entre squash-guard y confirmar → 1 sola llamada
-      de red (**H5**) + `timeout` interno para que el proceso SIEMPRE termine y emita su decisión (hoy el timeout del hook lo mata y evade). *slice-2, en curso.*
+- [x] Anclar los escapes al **subcomando real** (`acg_es_merge_mr`), no a cualquier token suelto (`status`)
+      → cierra **H3** (evasión de `confirmar-merge-develop` con `… && git status`). *slice-2, `035ab85`. test-brain 131/0.*
+- [x] `acg_destino_de_mr(cmd)` con **caché por MR-id COMPARTIDA** entre squash-guard y confirmar → 1 sola llamada
+      de red (**H5**) + `acg__run_timeout` interno (default 6s, fallback bash puro) para que el proceso SIEMPRE
+      termine y emita su decisión (antes el timeout del hook lo mataba y evadía). *slice-2, `035ab85`.*
 - [x] Guarda contra falso positivo de repo-path que termina en `/develop`|`/main` (**H11**). *slice-1, `d6b17e5` (`acg_sin_flag_repo`).*
 
 > **§D COMPLETO (2026-07-14):** `secret-scan` → wrapper sobre la lib nueva `detectar-secretos.sh`
