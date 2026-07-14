@@ -99,6 +99,7 @@ El cerebro se ordena por *dureza*: arriba lo que te **bloquea** sin negociar; ab
 💡 Skills — opt-in, las invocas tú
 ├─ 📦 cerrar-slice             build+tests+memoria al día + MR con resumen curado
 ├─ 💾 checkpoint               vuelca el HILO a memoria para compactar sin perderlo (proactivo)
+├─ 💧 rehidratar-hilo          relee el HILO a mano (gemelo del hook; respaldo si un update del CLI rompe el auto-rehidratado)
 └─ 🧵 orquestar-fanout         fan-out sin niñera: asigna del backlog, auto-reporta y limpia al cerrar
 ```
 

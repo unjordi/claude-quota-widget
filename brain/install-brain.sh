@@ -10,7 +10,7 @@
 #       rehidratar-hilo (SessionStart: reinyecta el hilo mental si existe),
 #       + delegacion-comun.sh (lib) + agentes-costo.json (config).
 #   (b) CABLEADO en ~/.claude/settings.json con "shell":"bash" (idempotente).
-#   (c) SKILLS genéricas (cerrar-slice, orquestar-fanout, checkpoint) en ~/.claude/skills/.
+#   (c) SKILLS genéricas (cerrar-slice, orquestar-fanout, checkpoint, rehidratar-hilo) en ~/.claude/skills/.
 #   (d) DASHBOARD del cerebro sembrado en la memoria GLOBAL (slug del HOME) si falta.
 #   (e) NORMAS globales inyectadas en ~/.claude/CLAUDE.md (bloque con marcador, solo si faltan).
 #

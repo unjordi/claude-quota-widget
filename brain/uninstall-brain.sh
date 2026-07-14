@@ -10,7 +10,7 @@
 #       limpiar-worktrees (script) + ~/.claude/agentes-costo.json.
 #   (b) DES-CABLEA de ~/.claude/settings.json SOLO las entradas que apuntan a esos hooks (deja
 #       intactas las demás — usa jq); poda los arrays de evento que queden vacíos.
-#   (c) las SKILLS genéricas (cerrar-slice, orquestar-fanout, checkpoint) de ~/.claude/skills/.
+#   (c) las SKILLS genéricas (cerrar-slice, orquestar-fanout, checkpoint, rehidratar-hilo) de ~/.claude/skills/.
 #   (d) el BLOQUE de normas de ~/.claude/CLAUDE.md (entre los marcadores BEGIN/END claude-brain).
 #
 # NO borra (son DATOS del usuario, no instalación):
@@ -74,7 +74,7 @@ else
 fi
 
 # ── (c) Quitar las skills genéricas del cerebro (cerrar-slice, orquestar-fanout, checkpoint) ──
-for sk in cerrar-slice orquestar-fanout checkpoint; do
+for sk in cerrar-slice orquestar-fanout checkpoint rehidratar-hilo; do
   if [ -d "$SKILLS_DIR/$sk" ]; then
     rm -rf "$SKILLS_DIR/$sk"
     echo "ok: skill $sk eliminada de $SKILLS_DIR"
