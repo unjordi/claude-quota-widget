@@ -3,7 +3,7 @@ name: claude-quota-widget
 description: >
   Trabaja el widget de límites de uso de Claude de unjordi (sesión 5h + semanal,
   como "Tus límites de uso" de claude.ai) que vive en su repo propio
-  github.com/unjordi/claude-quota-widget (clonado en ~/code/claude-quota-widget).
+  github.com/unjordi/claude-quota-widget (clonado en ~/code/claude-brain).
   Úsalo para instalarlo/actualizarlo en CachyOS/KDE, macOS o la VM de Windows
   (las 3 con paridad: KDE plasmoid, mac menu-bar Swift, Windows tray WinForms .NET),
   restylearlo (look del de la KDE Store: tarjeta naranja + indicador de bandeja de
@@ -20,7 +20,7 @@ la KDE Store (`github.com/FelixDes/claude-kde-usage-widget`), conservando el cos
 
 ## Dónde vive (importante)
 - **Canónico (desde 2026-06-30):** repo propio **`github.com/unjordi/claude-quota-widget`**
-  (fork público de fuziontech), clonado en `~/code/claude-quota-widget`. **Fuente de verdad
+  (fork público de fuziontech), clonado en `~/code/claude-brain`. **Fuente de verdad
   única:** código + cerebro de Claude (`.claude/memory` y `.claude/skills`) viajan juntos por
   el repo. **Edita siempre aquí.** A otra máquina (MacBook): `git clone` + `bash
   .claude/bootstrap-claude.sh` una vez. `origin`=tu fork, `upstream`=fuziontech.
@@ -48,7 +48,7 @@ la KDE Store (`github.com/FelixDes/claude-kde-usage-widget`), conservando el cos
     histograma de `"timestamp"` ajustado a hora local (`date +%z`, ojo octal: usar `10#`).
 
 ## Instalar / actualizar por OS
-- **CachyOS / KDE Plasma 6:** `cd ~/code/claude-quota-widget`
+- **CachyOS / KDE Plasma 6:** `cd ~/code/claude-brain`
   - Instalar/actualizar: `kpackagetool6 -t Plasma/Applet -i src/plasmoid`
     (o `-u` para upgrade). Recargar: `kquitapp6 plasmashell && (kstart plasmashell &)`.
   - **ccusage:** `pkexec npm i -g ccusage` (npm prefix=/usr necesita root); si el
@@ -65,7 +65,7 @@ la KDE Store (`github.com/FelixDes/claude-kde-usage-widget`), conservando el cos
       `spectacle -b -n -a/-f` en Wayland es inconsistente → para verificar pestañas
       distintas, **mejor en vivo en el panel (clic) y pedir screenshot a unjordi**.
 - **macOS (PARIDAD COMPLETA con el plasmoid desde 2026-07-04, PR #2):**
-  `cd ~/code/claude-quota-widget/macos && ./install.sh` (necesita Xcode CLT
+  `cd ~/code/claude-brain/macos && ./install.sh` (necesita Xcode CLT
   `xcode-select --install`, `jq` via brew, Node via brew + `npm i -g ccusage`).
   App de barra de menú Swift (AppKit + SwiftUI, popover de 3 pestañas y barra de
   2 filas idénticos al plasmoid) + agente launchd cada 5 min. Bundle

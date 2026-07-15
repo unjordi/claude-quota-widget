@@ -1,7 +1,7 @@
 using System.Drawing;
 using Microsoft.Win32;
 
-namespace ClaudeQuota;
+namespace ClaudeBrain;
 
 /// <summary>
 /// Entry point + tray host — the Windows analogue of macOS AppDelegate.
@@ -30,7 +30,7 @@ internal static class Program
         }
 
         // Single instance.
-        using var mutex = new Mutex(true, "io.github.unjordi.claude-quota", out bool isNew);
+        using var mutex = new Mutex(true, "io.github.unjordi.claude-brain", out bool isNew);
         if (!isNew) return;
 
         ApplicationConfiguration.Initialize();

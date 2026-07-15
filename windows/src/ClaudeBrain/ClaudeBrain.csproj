@@ -16,10 +16,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <!-- Nombre del EXE (ClaudeBrain.exe). El namespace interno se queda en ClaudeQuota
+    <!-- Nombre del EXE (ClaudeBrain.exe). El namespace interno se queda en ClaudeBrain
          a propósito: renombrarlo sería churn masivo sin valor visible. -->
     <AssemblyName>ClaudeBrain</AssemblyName>
-    <RootNamespace>ClaudeQuota</RootNamespace>
+    <RootNamespace>ClaudeBrain</RootNamespace>
     <!-- Ícono del exe (Explorer/taskbar): la ruleta FelixDes, generado del mismo master que
          el AppIcon de macOS. Sin esto Windows muestra el genérico de .NET. -->
     <ApplicationIcon>ClaudeBrain.ico</ApplicationIcon>

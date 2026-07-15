@@ -2,7 +2,7 @@ using System.Drawing;
 using System.Globalization;
 using System.Text.RegularExpressions;
 
-namespace ClaudeQuota;
+namespace ClaudeBrain;
 
 /// <summary>
 /// Formatting / color helpers, ported 1:1 from the plasmoid (main.qml) and the

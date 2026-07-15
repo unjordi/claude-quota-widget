@@ -21,7 +21,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $here    = Split-Path -Parent $MyInvocation.MyCommand.Path
-$proj    = Join-Path $here 'src\ClaudeQuota\ClaudeQuota.csproj'
+$proj    = Join-Path $here 'src\ClaudeBrain\ClaudeBrain.csproj'
 $appName  = 'ClaudeBrain'
 $dest     = Join-Path $env:LOCALAPPDATA "Programs\$appName"
 $exe      = Join-Path $dest "$appName.exe"

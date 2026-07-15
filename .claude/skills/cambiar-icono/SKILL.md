@@ -9,7 +9,7 @@ description: >
 
 # cambiar-icono — el ícono de Claude Brain en las 3 plataformas + login item
 
-Repo `~/code/claude-quota-widget` (GitHub `unjordi/claude-brain`). El ícono es **cerebro crema + chispa
+Repo `~/code/claude-brain` (GitHub `unjordi/claude-brain`). El ícono es **cerebro crema + chispa
 naranja de Claude sobre squircle grafito**. Identidad establecida el 2026-07-11 (antes era un medidor,
 de cuando el widget se llamaba "Claude Quota").
 
