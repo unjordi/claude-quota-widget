@@ -134,7 +134,7 @@ this figure ~10×, so a heavy week can read as hundreds of API-equivalent dollar
 curl -fsSL https://raw.githubusercontent.com/unjordi/claude-brain/main/bootstrap.sh | bash
 ```
 
-`bootstrap.sh` installs any missing `jq`/`node` via Homebrew, clones the repo to `~/claude-brain`,
+`bootstrap.sh` installs any missing `jq`/`node` via Homebrew, clones the repo to `~/.claude-brain`,
 and runs the top-level `install.sh`. (It won't auto-install Homebrew itself; `swift`/Xcode CLT **solo**
 hace falta si compilas con `--build` — por default se baja el `.app` precompilado.) **Or by hand** from the repo:
 
