@@ -136,6 +136,22 @@ rm -f "$CONS"; rm -rf "$CDIR"/.delegacion-ask.*.lock 2>/dev/null; write_state 99
 M="$(payload BATCHM '' gpt-4o)"  # metered (API externa de pago)
 out="$(run_gate "$M")"; is_ask "$out"    && ok "G3 · metered 1er gate → pregunta"                      || bad "G3 metered 1º → ask; got: $out"
 out="$(run_gate "$M")"; is_ask "$out"    && ok "G3 · metered hermano → SIGUE preguntando (protección)" || bad "G3 metered hermano → debía seguir preguntando; got: $out"
+
+# H6 — un ask NEGADO no persiste consentimiento (el registrar NO corre). Antes, dentro de la vieja
+# ventana de 60s, el lock de coalescencia dejaba colar el reintento en SILENCIO. Ahora la ventana es
+# corta (CLAUDE_DELEG_COALESCE_S): fuera de ella el lock se recicla → el reintento VUELVE a preguntar.
+rm -f "$CONS"; rm -rf "$CDIR"/.delegacion-ask.*.lock 2>/dev/null; write_state 19
+H6P="$(payload H6SESS '' sonnet)"   # incluido (ventana 19% < 90%)
+out="$(run_gate "$H6P")"; is_ask "$out" && ok "H6 · 1er gate (usuario luego NIEGA) → pregunta" || bad "H6: 1er gate no preguntó; got: $out"
+# sin registrar (= el usuario NEGÓ) + reintento FUERA de la ventana (COALESCE_S=0 recicla el lock)
+out="$(HOME="$FAKEHOME" XDG_CACHE_HOME="$FAKEHOME/.cache" CLAUDE_DELEG_COALESCE_S=0 bash "$HOOKS/delegacion-gate.sh" <<<"$H6P")"
+is_ask "$out" && ok "H6 · 'no' + reintento fuera de ventana → RE-pregunta (no cuela en silencio)" || bad "H6: el reintento tras negar coló en silencio; got: $out"
+# y el registrar LIBERA el lock al APROBAR → la ruta feliz no deja fantasma
+rm -rf "$CDIR"/.delegacion-ask.*.lock 2>/dev/null
+run_gate "$H6P" >/dev/null 2>&1        # crea el lock del lote
+run_registrar "$H6P"                    # aprobar → registra consentimiento + libera el lock
+ls "$CDIR"/.delegacion-ask.*.lock >/dev/null 2>&1 && bad "H6: el registrar dejó el lock del lote (fantasma)" || ok "H6 · registrar libera el lock de coalescencia al aprobar (sin fantasma)"
+rm -f "$CONS"; rm -rf "$CDIR"/.delegacion-ask.*.lock 2>/dev/null
 write_state 19
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -356,6 +372,27 @@ o="$(pa 'git status')"
 # 'git reset' entrecomillado (dato de un grep) → silencio
 o="$(pa "grep -r 'git reset --hard' .")"
 [ -z "$o" ] && ok "proteger-arbol: 'git reset' entrecomillado (dato) → silencio" || bad "proteger-arbol matcheó texto entrecomillado; got: $o"
+
+# H14 — worktree AISLADO: el desastre que vigila el hook (orfanar commits del ORQUESTADOR en el árbol
+# COMPARTIDO) es imposible ahí, y el workaround del bug H15 (reset --hard a la rama objetivo al arrancar)
+# NO debe disparar la alarma. Montamos un worktree aislado con 1 commit adelante de su upstream (n>0).
+DEFB="$(git -C "$PAREPO" rev-parse --abbrev-ref HEAD)"
+PAWT="$(mktemp -d "${TMPDIR:-/tmp}/brain-pawt.XXXXXX")/iso"
+git -C "$PAREPO" worktree add -q -b wtiso "$PAWT" "origin/$DEFB" >/dev/null 2>&1
+git -C "$PAWT" branch --set-upstream-to=origin/"$DEFB" wtiso >/dev/null 2>&1
+printf 'iso\n' >> "$PAWT/a.txt"; git -C "$PAWT" add a.txt >/dev/null 2>&1
+git -C "$PAWT" commit -q -m iso >/dev/null 2>&1   # 1 commit adelante del upstream → n=1
+paw() { printf '%s' "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$1\"}}" \
+        | CLAUDE_PROJECT_DIR="$PAWT" bash "$HOOKS/proteger-arbol.sh"; }
+o="$(paw 'git reset --hard wtiso')"
+[ -z "$o" ] && ok "proteger-arbol H14: aislado + reset a su PROPIA rama → SUPRIME (silencio)" || bad "H14: no suprimió el reset a la propia rama; got: $o"
+o="$(paw 'git reset --hard develop')"
+[ -z "$o" ] && ok "proteger-arbol H14: aislado + reset a una BASE (develop) → SUPRIME (workaround H15)" || bad "H14: no suprimió el reset a base; got: $o"
+o="$(paw 'git reset --hard HEAD~1')"
+{ printf '%s' "$o" | grep -q 'Nota (proteger-arbol)' && ! printf '%s' "$o" | grep -q 'ORFANAR'; } \
+  && ok "proteger-arbol H14: aislado + OTRO objetivo → nota SUAVE (no alarma de árbol compartido)" \
+  || bad "H14: aislado hacia otro objetivo no dio nota suave; got: $o"
+git -C "$PAREPO" worktree remove --force "$PAWT" >/dev/null 2>&1; rm -rf "$PAWT"
 rm -rf "$PABARE" "$PAREPO"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -413,6 +450,14 @@ is_block "$(dod 'Terminé el fix. ¿Lo cierro y abro el MR?' "$EDITR")" && bad "
 # SIN los tramos ¿…?: si el cierre está afirmado FUERA de la pregunta, se bloquea igual.
 is_block "$(dod 'Listo, quedó terminado el módulo. ¿Reviso algo más?' "$EDITR")" && ok "dod G1: claim afirmado + pregunta aparte → bloquea (no se salva por la pregunta)" || bad "dod G1: la pregunta co-ubicada salvó un cierre afirmado (evasión)"
 is_block "$(dod 'Todo quedó funcionando y en producción. ¿Avanzo con el siguiente?' "$EDITR")" && ok "dod G1: cierre afirmado + pregunta neutra → bloquea" || bad "dod G1: una pregunta neutra evadió un cierre afirmado"
+# H4 (precisión): un ESTATUS DÉBIL (deferir/avisar/consultar) co-ubicado NO salva un CLAIM afirmado —
+# antes "Listo, quedó terminado. Dime si reviso algo más." se salvaba con "dime si".
+is_block "$(dod 'Listo, quedó terminado. Dime si reviso algo más.' "$EDITR")" && ok "dod H4: claim afirmado + estatus débil ('dime si') → bloquea (no lo salva)" || bad "dod H4: un estatus débil salvó un cierre afirmado (evasión)"
+# H4 (contrapeso, NO sobre-disparar): el léxico PRESCRITO de downgrade escapa AUNQUE haya palabra de
+# cierre — "quedó terminado pero lo dejo EN PREVIEW, a tu revisión" es honesto, no un falso LISTO.
+is_block "$(dod 'El módulo quedó terminado, pero lo dejo en preview, a tu revisión.' "$EDITR")" && bad "dod H4: bloqueó el léxico de downgrade PRESCRITO (falso positivo)" || ok "dod H4: 'quedó terminado … en preview / a tu revisión' → no bloquea (downgrade explícito)"
+# H4: un estatus débil SIN claim de cierre sigue escapando (es puro estatus/espera)
+is_block "$(dod 'Voy avanzando; te aviso cuando termine.' "$EDITR")" && bad "dod H4: bloqueó estatus débil sin claim" || ok "dod H4: estatus débil sin claim → no bloquea"
 # G2(a): editar por Bash (sed -i / redirección) SÍ es "tocar código" aunque no haya "file_path".
 BASHSED='{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"sed -i \"s/a/b/\" src/Foo.cs"}}]}}'
 BASHREDIR='{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"cat > src/Bar.razor <<EOF\ncontenido\nEOF"}}]}}'
@@ -613,6 +658,7 @@ echo "== (e) sin referencias circulares NUEVAS entre elementos del cerebro =="
 CE_ALLOW="analizar-comando-git|git-branch-guard
 analizar-comando-git|merge-squash-guard
 analizar-comando-git|confirmar-merge-develop
+confirmar-merge-develop|git-branch-guard
 confirmar-merge-develop|merge-squash-guard
 detectar-secretos|secret-scan
 cerrar-slice|merge-squash-guard

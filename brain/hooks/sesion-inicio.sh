@@ -22,7 +22,7 @@ case "$branch" in
   develop|main) lines+=("⚠️ Estás en una rama PROTEGIDA: no se commitea ni pushea aquí. Saca una ramita feat/… desde develop.");;
 esac
 lines+=("")
-lines+=("NORMA DE GIT (dura, la hace cumplir el hook git-branch-guard): NUNCA push a develop/main; todo va a ramitas (feat/fix/chore/docs) → MR → develop; main es release-only (lo promueve el humano en la web de GitLab, jamás por CLI).")
+lines+=("NORMA DE GIT (dura, la hace cumplir el hook git-branch-guard): NUNCA push a develop/main; todo va a ramitas (feat/fix/chore/docs) → MR → develop; main es release-only (normalmente lo promueve el humano en la web de GitLab; por CLI solo con OK súper-explícito, lo vigila confirmar-merge-develop).")
 lines+=("→ FLUJO DE GIT: en una RAMITA de trabajo, commitea y pushea a la ramita LIBREMENTE, sin preguntar ('¿commiteo? ¿pusheo?' → no preguntes, hazlo). El ÚNICO punto donde te DETIENES a confirmar es CERRAR EL SLICE / integrar a develop: antes del MR (a) verifícalo tú — la verificación técnica que aplique a tu stack (build/tests/lint) verde + memoria al día (el hook Stop lo checa) y (b) el merge a develop exige confirmación EXPRESA del usuario (lo hace cumplir el hook confirmar-merge-develop). Release a main = decisión humana en la web.")
 lines+=("")
 lines+=("RITUAL ANTI-PÉRDIDA-DE-HILO:")

@@ -3,7 +3,8 @@
 # rama protegida (develop/main) y redirige al flujo ramita→MR→develop. NO pregunta: bloquea la acción
 # incorrecta. La LÓGICA de "qué toca una base" vive en la lib (fuente ÚNICA de los git-guards → no
 # divergen). Fail-open ante parseo. Vive en <repo>/.claude/hooks/ (viaja por git) y ~/.claude (por máquina).
-# Releases develop→main = acción deliberada del humano en la web de GitLab, no por CLI.
+# Releases develop→main = acción de release deliberada; normalmente el humano en la web de GitLab, por
+# CLI solo con OK súper-explícito (lo vigila confirmar-merge-develop). Este guard bloquea el PUSH a base.
 #
 # Cubre (via lib): push explícito a develop/main, push PELÓN/`HEAD`/`--force` estando EN develop/main
 # (H1), ignora menciones entrecomilladas (H13) y valores de --repo/-R (repo llamado …/develop, H11).
@@ -26,7 +27,7 @@ block() {
 }
 
 if acg_push_toca_base "$cmd"; then
-  block "NORMA DE GIT (ley interna): no se hace push a main/develop (incluye el push PELÓN estando parado EN develop/main). NO reintentes esto. Haz el cambio por el flujo: ramita (feat/fix/chore/docs) desde develop → commit → push de la ramita → MR/PR → merge a develop. A main solo llega un release deliberado que hace el humano en la web de GitLab, no por CLI."
+  block "NORMA DE GIT (ley interna): no se hace push a main/develop (incluye el push PELÓN estando parado EN develop/main). NO reintentes esto. Haz el cambio por el flujo: ramita (feat/fix/chore/docs) desde develop → commit → push de la ramita → MR/PR → merge a develop. A main solo llega un release deliberado: normalmente el humano en la web de GitLab; por CLI solo con OK súper-explícito (lo vigila confirmar-merge-develop)."
 fi
 
 if acg_merge_menciona_base "$cmd"; then
