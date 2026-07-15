@@ -942,7 +942,7 @@ PlasmoidItem {
     function checkUpdateRemote() {
         if (root.updLocalShort === "?") return   // sin version.json (build viejo) → no molesta
         var url = "https://api.github.com/repos/" + root.updSlug + "/commits/main"
-        updateCheckSource.connectSource("curl -fsSL -H 'User-Agent: claude-quota-widget' '" + url + "'")
+        updateCheckSource.connectSource("curl -fsSL -H 'User-Agent: claude-brain' '" + url + "'")
     }
     // Jala lo último (fast-forward) y reinstala el plasmoid. NO mata plasmashell (el applet vive dentro).
     // El applet toma la versión nueva al recargar el plasmoide. FAIL-OPEN: sin repo → invita a hacerlo a mano.

@@ -1,6 +1,6 @@
 using System.Drawing;
 
-namespace ClaudeQuota;
+namespace ClaudeBrain;
 
 /// <summary>
 /// Diálogo modal minimal para renombrar (proyecto/sesión). Un TextBox precargado + Guardar/Cancelar,

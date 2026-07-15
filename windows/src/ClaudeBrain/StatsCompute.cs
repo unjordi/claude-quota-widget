@@ -1,7 +1,7 @@
 using System.Drawing;
 using System.Globalization;
 
-namespace ClaudeQuota;
+namespace ClaudeBrain;
 
 /// <summary>
 /// Pure derivations over stats.json used by the Resumen / Modelos tabs.

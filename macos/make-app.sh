@@ -8,7 +8,7 @@ APP_NAME="Claude Brain Widget"
 APP="$ROOT/build/$APP_NAME.app"
 
 swift build -c release --package-path "$ROOT" >&2
-BIN="$(swift build -c release --package-path "$ROOT" --show-bin-path)/ClaudeQuota"
+BIN="$(swift build -c release --package-path "$ROOT" --show-bin-path)/ClaudeBrain"
 
 # Regenera SIEMPRE el ícono desde el SVG (assets/icon.svg). Es barato (rsvg) y CRÍTICO: si solo se
 # regenerara "cuando falta", un build/AppIcon.icns rancio (p. ej. el medidor de una versión anterior)
@@ -19,7 +19,7 @@ ICNS="$ROOT/build/AppIcon.icns"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/ClaudeQuota"
+cp "$BIN" "$APP/Contents/MacOS/ClaudeBrain"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 cp "$ICNS" "$APP/Contents/Resources/AppIcon.icns"
 

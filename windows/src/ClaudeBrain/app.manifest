@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity version="1.0.0.0" name="io.github.unjordi.ClaudeQuota" />
+  <assemblyIdentity version="1.0.0.0" name="io.github.unjordi.ClaudeBrain" />
 
   <!-- DPI awareness is configured via <ApplicationHighDpiMode> in the csproj
        (ApplicationConfiguration.Initialize), per WinForms guidance WFO0003. -->
