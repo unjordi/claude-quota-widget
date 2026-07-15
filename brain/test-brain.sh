@@ -442,6 +442,9 @@ echo "== (b3d) confirmar-merge-develop: el CONF_RE reconoce el imperativo 'haz m
 CMDCR=$(grep "CONF_RE=" "$HOOKS/confirmar-merge-develop.sh" | sed "s/^[^']*'//; s/'\$//")
 printf '%s' "tonces, haz merge a develop de la rama X" | grep -qiE "$CMDCR" && ok "confirmar: reconoce 'haz merge a develop' (imperativo)" || bad "confirmar: NO reconoce 'haz merge a develop' (regresión del CONF_RE)"
 printf '%s' "ya mergea eso"                            | grep -qiE "$CMDCR" && ok "confirmar: reconoce 'mergea'"                            || bad "confirmar: NO reconoce 'mergea'"
+printf '%s' "sí, plz, súbelo hasta develop"            | grep -qiE "$CMDCR" && ok "confirmar: reconoce 'súbelo hasta develop' (precisión: subir/llevar/mandar → develop)" || bad "confirmar: NO reconoce 'súbelo hasta develop' (falso-FRENO)"
+printf '%s' "llévalo a develop porfa"                  | grep -qiE "$CMDCR" && ok "confirmar: reconoce 'llévalo a develop'"                   || bad "confirmar: NO reconoce 'llévalo a develop'"
+printf '%s' "sigue trabajando, no pares"               | grep -qiE "$CMDCR" && bad "confirmar: FALSO POSITIVO con 'sigue trabajando'"          || ok "confirmar: 'sigue/avanza' NO dispara CONF (correcto)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""

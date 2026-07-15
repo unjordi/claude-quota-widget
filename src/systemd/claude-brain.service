@@ -4,7 +4,7 @@ Documentation=https://github.com/anthropics/claude-code
 
 [Service]
 Type=oneshot
-EnvironmentFile=-%h/.config/claude-quota/limits.env
+EnvironmentFile=-%h/.config/claude-brain/limits.env
 ExecStart=%h/.local/bin/claude-brain-fetch
 Nice=10
 IOSchedulingClass=best-effort

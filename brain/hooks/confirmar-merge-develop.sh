@@ -82,7 +82,7 @@ if [ "$destino" = "main" ]; then
 fi
 
 # Destino develop (o desconocido → conservador): confirmación normal. "sigue/avanza" NO cuenta.
-CONF_RE='merg[eé]a|mérga(lo|los)?|dale( el)? merge|haz(lo|le)?( el)? *merge|merge a develop|integra[a-zé ]*a? *develop|s[ií],? merge|ci[eé]rra(lo)?|cierra el slice|ll[eé]valo a develop|ya (puedes|podés|puedo) mergear|adelante[a-zé ]*(el )?merge|autoriz|luz verde (para|de|expresa)|visto bueno|aprob(ado|é|ó)?|va! *(merge|mr|develop|cierra)'
+CONF_RE='merg[eé]a|mérga(lo|los)?|dale( el)? merge|haz(lo|le)?( el)? *merge|merge a develop|integra[a-zé ]*a? *develop|s[ií],? merge|ci[eé]rra(lo)?|cierra el slice|ll[eé]va(lo|los)?[a-zé ,]*develop|s[uú]b(e|elo|elos|ir|an|í)[a-zé ,]*develop|m[aá]nda(lo|los)?[a-zé ,]*develop|ya (puedes|podés|puedo) mergear|adelante[a-zé ]*(el )?merge|autoriz|luz verde (para|de|expresa)|visto bueno|aprob(ado|é|ó)?|va! *(merge|mr|develop|cierra)'
 printf '%s' "$recent" | grep -qiE "$CONF_RE" && exit 0
 
 jq -n --arg r "FRENO (definición de LISTO): integrar a develop por MR exige la confirmación EXPRESA del usuario para ESTE cierre, y no la encuentro en el contexto reciente.

@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace ClaudeQuota;
+namespace ClaudeBrain;
 
 // ---------------------------------------------------------------------------
 // state.json (límites) — same schema the bash/mac fetch writes, so the cache is

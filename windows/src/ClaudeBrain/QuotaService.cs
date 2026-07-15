@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 
-namespace ClaudeQuota;
+namespace ClaudeBrain;
 
 /// <summary>
 /// The Windows data pipeline — the C# analogue of src/bin/claude-brain-fetch.
@@ -44,7 +44,7 @@ public sealed class QuotaService
     /// stats-global.json — vista fusionada de todas las máquinas (sync (e)); mismo dir del cache.
     public static string StatsGlobalFile => Path.Combine(CacheDir, "stats-global.json");
     /// Config del sync (e): ruta de la carpeta de nube. Texto plano (como el archivo `account`), o
-    /// "auto" para autodetectar Google Drive. El env CLAUDE_QUOTA_SYNC_DIR gana sobre este archivo.
+    /// "auto" para autodetectar Google Drive. El env CLAUDE_BRAIN_SYNC_DIR gana sobre este archivo.
     public static string SyncDirConfigFile => Path.Combine(CacheDir, "sync-dir");
     /// chats.json / sessions.json — mismo dir del cache que state/stats (los emite node).
     public static string ChatsFile => Path.Combine(CacheDir, "chats.json");

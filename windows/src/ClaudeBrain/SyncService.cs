@@ -1,12 +1,12 @@
 using System.Text.Json;
 
-namespace ClaudeQuota;
+namespace ClaudeBrain;
 
 /// <summary>
 /// (e) Sync entre máquinas vía carpeta de nube — el análogo C# del bloque "(e) Sync entre máquinas"
 /// del script bash src/bin/claude-brain-fetch (mac/linux).
 ///
-/// OPT-IN: se activa solo si CLAUDE_QUOTA_SYNC_DIR (env) o el archivo de config `sync-dir` está puesto,
+/// OPT-IN: se activa solo si CLAUDE_BRAIN_SYNC_DIR (env) o el archivo de config `sync-dir` está puesto,
 /// así ninguna máquina sube nada sin que lo actives. El valor "auto" autodetecta Google Drive en Windows.
 /// Cada máquina escribe su snapshot &lt;host&gt;.json en la carpeta (que tu nube ya replica), lee los de
 /// TODAS las de la MISMA cuenta y fusiona -> stats-global.json (lo consume el toggle "todas" del widget).
@@ -62,13 +62,13 @@ public static class SyncService
     // ---- resolución de SYNC_DIR (espeja resolve_sync_dir del bash) ---------
 
     /// <summary>
-    /// env CLAUDE_QUOTA_SYNC_DIR gana; si no, el archivo de config `sync-dir` (texto plano) en cacheDir.
+    /// env CLAUDE_BRAIN_SYNC_DIR gana; si no, el archivo de config `sync-dir` (texto plano) en cacheDir.
     /// Vacío/ausente = off (null). Valor "auto" autodetecta Google Drive en Windows; cualquier otro valor
     /// se usa TAL CUAL (sin subcarpeta, igual que el bash). En "auto" se agrega la subcarpeta claude-brain-sync.
     /// </summary>
     public static string? ResolveSyncDir(string cacheDir)
     {
-        string v = Environment.GetEnvironmentVariable("CLAUDE_QUOTA_SYNC_DIR") ?? "";
+        string v = Environment.GetEnvironmentVariable("CLAUDE_BRAIN_SYNC_DIR") ?? "";
         if (string.IsNullOrWhiteSpace(v))
         {
             try

@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
-namespace ClaudeQuota;
+namespace ClaudeBrain;
 
 /// <summary>
 /// Estado de instalación de una pieza del cerebro, leído de la realidad (`~/.claude`).

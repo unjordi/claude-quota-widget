@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# brain-scan.sh — helper del plasmoid Claude Quota (KDE).
+# brain-scan.sh — helper del plasmoid Claude Brain Widget (KDE).
 #
 # El plasmoid NO puede leer archivos ni correr procesos por sí mismo: lo hace a través del
 # DataSource "executable" de Plasma5Support (el mismo mecanismo con que ya lee state.json/stats.json).
@@ -67,14 +67,14 @@ heal() {
   self="$0"
   here="$(cd "$(dirname "$self")" 2>/dev/null && pwd)"
   for c in \
-    "$HOME/.local/share/plasma/plasmoids/io.github.unjordi.claude-quota-widget/contents/brain/install-brain.sh" \
+    "$HOME/.local/share/plasma/plasmoids/io.github.unjordi.claude-brain/contents/brain/install-brain.sh" \
     "$here/brain/install-brain.sh" \
     "$here/../../brain/install-brain.sh" \
     "$here/../../../brain/install-brain.sh" \
-    "$HOME/code/claude-quota-widget/brain/install-brain.sh" \
-    "$HOME/claude-quota-widget/brain/install-brain.sh" \
-    "$HOME/src/claude-quota-widget/brain/install-brain.sh" \
-    "$HOME/Projects/claude-quota-widget/brain/install-brain.sh"; do
+    "$HOME/code/claude-brain/brain/install-brain.sh" \
+    "$HOME/claude-brain/brain/install-brain.sh" \
+    "$HOME/src/claude-brain/brain/install-brain.sh" \
+    "$HOME/Projects/claude-brain/brain/install-brain.sh"; do
     if [ -f "$c" ]; then
       echo "==> usando $c"
       bash "$c"

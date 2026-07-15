@@ -4,7 +4,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 
-namespace ClaudeQuota;
+namespace ClaudeBrain;
 
 /// <summary>
 /// Autoactualización LIGERA del widget, estilo winturbo — puerto Windows de macos/Updater.swift.
@@ -112,7 +112,7 @@ internal sealed class Updater
         {
             using var req = new HttpRequestMessage(HttpMethod.Get,
                 $"https://api.github.com/repos/{Slug}/commits/main");
-            req.Headers.UserAgent.ParseAdd("claude-quota-widget");   // GitHub lo exige
+            req.Headers.UserAgent.ParseAdd("claude-brain");   // GitHub lo exige
             req.Headers.Accept.ParseAdd("application/vnd.github+json");
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(6));
             using var resp = await Http.SendAsync(req, cts.Token);
@@ -151,7 +151,7 @@ internal sealed class Updater
     {
         using var req = new HttpRequestMessage(HttpMethod.Get,
             $"https://api.github.com/repos/{Slug}/releases/tags/windows-latest");
-        req.Headers.UserAgent.ParseAdd("claude-quota-widget");
+        req.Headers.UserAgent.ParseAdd("claude-brain");
         req.Headers.Accept.ParseAdd("application/vnd.github+json");
         using var resp = await Http.SendAsync(req, ct);
         if (!resp.IsSuccessStatusCode) return false;   // sin release aún (404) → fallback git-based
@@ -260,7 +260,7 @@ internal sealed class Updater
         // (Re)crea el acceso directo del menu Inicio, para que un install viejo (sin .lnk) lo gane al
         // autoactualizar y para refrescar el icono/target. Best-effort. Espeja install.ps1.
         sb.Append("$sm=[Environment]::GetFolderPath('Programs')\n");
-        sb.Append("Remove-Item (Join-Path $sm 'Claude Quota.lnk') -Force\n");   // nombre viejo
+        sb.Append("Remove-Item (Join-Path $sm 'Claude Quota.lnk') -Force -EA SilentlyContinue\n");   // limpia el shortcut legacy (pre-rebrand)
         sb.Append("try { $ws=New-Object -ComObject WScript.Shell; $lk=$ws.CreateShortcut((Join-Path $sm 'Claude Brain.lnk')); $lk.TargetPath=$exe; $lk.WorkingDirectory=$dir; $lk.IconLocation=$exe; $lk.Description='Claude Brain Widget'; $lk.Save() } catch {}\n");
         sb.Append("Remove-Item $tmp -Force\n");
         sb.Append("Start-Process $exe\n");

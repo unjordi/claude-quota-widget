@@ -45,7 +45,7 @@ final class Updater: ObservableObject {
         guard localShort != "?" else { return }   // sin version.json (build viejo) → no molesta
         var req = URLRequest(url: URL(string: "https://api.github.com/repos/\(Self.slug)/commits/main")!)
         req.timeoutInterval = 6
-        req.setValue("claude-quota-widget", forHTTPHeaderField: "User-Agent")   // GitHub lo exige
+        req.setValue("claude-brain", forHTTPHeaderField: "User-Agent")   // GitHub lo exige
         req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
         guard let (data, resp) = try? await URLSession.shared.data(for: req),
               (resp as? HTTPURLResponse)?.statusCode == 200,
@@ -73,7 +73,7 @@ final class Updater: ObservableObject {
         // la nueva). Si el merge aborta (árbol sucio / no-ff), NO mata nada y la app sigue viva → sin
         // riesgo de quedarte sin widget. El `pkill` va justo antes de reinstalar, no a ciegas.
         let inner = "sleep 1; cd '\(repoPath)' && git fetch origin --quiet && git merge --ff-only origin/main "
-            + "&& { pkill -f 'Claude Brain Widget.app/Contents/MacOS/ClaudeQuota'; bash '\(repoPath)/macos/install.sh' --no-brain; }"
+            + "&& { pkill -f 'Claude Brain Widget.app/Contents/MacOS/ClaudeBrain'; bash '\(repoPath)/macos/install.sh' --no-brain; }"
         let cmd = "nohup bash -lc \"\(inner)\" >/tmp/claude-brain-update.log 2>&1 &"
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/bash")
