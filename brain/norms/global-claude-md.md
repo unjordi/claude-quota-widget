@@ -15,6 +15,13 @@ y su UI, varias plataformas, un ejemplo, un diagrama, un valor repetido — y **
 (p. ej. un `grep` del nombre/valor viejo) en vez de asumir que solo hay una. Una sola copia
 desincronizada YA es una doc que miente.
 
+## QA visual de imágenes: ábrelas, no las dejes en una ruta (norma de estilo)
+Cuando le pidas al usuario **QA visual de una imagen que TÚ generaste** (un ícono, un render, un
+screenshot, un diagrama), **ábrela con el visualizador del OS** para que la vea de inmediato — NO basta
+con dar la ruta ni solo publicar un artifact. macOS: `open <archivo>`; Linux: `xdg-open <archivo>`;
+Windows: `start <archivo>`. Puede ir JUNTO con un artifact de comparación (varios tamaños / claro-oscuro)
+cuando ayude, pero el `open` no se omite. Antídoto a dejarle la QA "a un clic" y agregar fricción.
+
 ## Definición de "LISTO" (norma dura, MUTUA e inviolable)
 Algo es **LISTO** (terminado / funciona / en producción / "quedó" / "a la par" / "de punta a punta")
 **solo** si se cumple UNA de estas dos, y **jamás** fuera de ellas:
