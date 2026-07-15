@@ -30,10 +30,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Evita RECOMPILAR en el runner macOS (el caro) si el .app de ESTE commit ya está publicado.
+      # Lee el 'build-sha:' del release rolling y lo compara con el sha actual → si coincide, salta
+      # todo (brew + swift build + publish). Antídoto a que GitHub "se ponga roñoso con el servertime".
+      - name: ¿El .app de este commit ya está publicado? (evita recompilar)
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha="${{ github.sha }}"
+          published="$(gh release view macos-latest --repo "$GITHUB_REPOSITORY" --json body -q .body 2>/dev/null | grep -oE 'build-sha: [0-9a-f]+' | head -1 | awk '{print $2}' || true)"
+          if [ "$published" = "$sha" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "El .app de $sha ya está en 'macos-latest' → SALTO compilación (ahorro de runner macOS)."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Publicado: '${published:-<ninguno>}' != actual: $sha → compilo."
+          fi
+
       - name: Install librsvg (para rasterizar el icono del .app)
+        if: steps.guard.outputs.skip != 'true'
         run: brew install librsvg
 
       - name: Build + assemble the .app (swift build release)
+        if: steps.guard.outputs.skip != 'true'
         run: |
           APP="$(bash macos/make-app.sh)"
           test -d "$APP" || { echo "no se genero el .app"; exit 1; }
@@ -42,6 +62,7 @@ jobs:
           ls -la ClaudeBrainWidget.app.zip
 
       - name: Publish rolling 'macos-latest' release with the .app
+        if: steps.guard.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
