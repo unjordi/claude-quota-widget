@@ -5,11 +5,13 @@
 #
 # Quita GLOBAL (de ~/.claude):
 #   (a) los HOOKS de tier global que copió el instalador → git-branch-guard, merge-squash-guard,
-#       recordar-dashboard, delegacion-gate, delegacion-registrar, delegacion-comun (lib)
-#       + ~/.claude/agentes-costo.json.
+#       confirmar-merge-develop, recordar-dashboard, secret-scan, rama-vieja, proteger-arbol,
+#       limite-gasto, rehidratar-hilo, delegacion-gate/registrar/reporte, libs (delegacion-comun,
+#       analizar-comando-git, detectar-secretos), limpiar-worktrees (script) + ~/.claude/agentes-costo.json.
+#       La lista EXACTA se deriva de brain/hooks/MANIFEST (misma fuente que install-brain).
 #   (b) DES-CABLEA de ~/.claude/settings.json SOLO las entradas que apuntan a esos hooks (deja
 #       intactas las demás — usa jq); poda los arrays de evento que queden vacíos.
-#   (c) la SKILL genérica cerrar-slice de ~/.claude/skills/.
+#   (c) las SKILLS genéricas (cerrar-slice, orquestar-fanout, checkpoint, rehidratar-hilo) de ~/.claude/skills/.
 #   (d) el BLOQUE de normas de ~/.claude/CLAUDE.md (entre los marcadores BEGIN/END claude-brain).
 #
 # NO borra (son DATOS del usuario, no instalación):
@@ -21,6 +23,8 @@
 # cableado (los hooks ya no existen en disco → fallan abierto, no rompen) para que lo quites tú.
 set -u
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+MANIFEST="$SCRIPT_DIR/hooks/MANIFEST"
 CLAUDE_DIR="$HOME/.claude"
 HOOKS_DIR="$CLAUDE_DIR/hooks"
 SKILLS_DIR="$CLAUDE_DIR/skills"
@@ -30,9 +34,16 @@ GCLAUDE="$CLAUDE_DIR/CLAUDE.md"
 echo "==> claude-brain: desinstalando cerebro global de $CLAUDE_DIR"
 
 # ── (a) Borrar los hooks de tier global + la lib compartida + la config de costo ──
-GLOBAL_HOOKS="git-branch-guard.sh merge-squash-guard.sh recordar-dashboard.sh \
-              secret-scan.sh rama-vieja.sh limite-gasto.sh \
-              delegacion-gate.sh delegacion-registrar.sh delegacion-comun.sh"
+# Derivado del MANIFEST (fuente única, igual que install-brain) → no es una 3ª lista que driftee.
+if [ -f "$MANIFEST" ]; then
+  GLOBAL_HOOKS="$(awk '$1!~/^#/ && NF>=3 && ($2=="global"||$2=="both"){print $1".sh"}' "$MANIFEST")"
+else
+  echo "warn: falta $MANIFEST; caigo a la lista embebida (compatibilidad)"
+  GLOBAL_HOOKS="git-branch-guard.sh merge-squash-guard.sh confirmar-merge-develop.sh recordar-dashboard.sh \
+                secret-scan.sh rama-vieja.sh proteger-arbol.sh limite-gasto.sh rehidratar-hilo.sh aviso-contexto.sh \
+                delegacion-gate.sh delegacion-registrar.sh delegacion-reporte.sh delegacion-comun.sh \
+                analizar-comando-git.sh limpiar-worktrees.sh"
+fi
 for h in $GLOBAL_HOOKS; do
   rm -f "$HOOKS_DIR/$h"
 done
@@ -41,7 +52,7 @@ echo "ok: hooks globales + lib + config de costo eliminados de $HOOKS_DIR"
 
 # ── (b) Des-cablear del settings.json SOLO las entradas de esos hooks (idempotente, jq) ──
 # Patrón que casa el 'command' de las entradas que sembró el instalador (por basename del hook).
-BRAIN_PAT='git-branch-guard\.sh|merge-squash-guard\.sh|recordar-dashboard\.sh|secret-scan\.sh|rama-vieja\.sh|limite-gasto\.sh|delegacion-gate\.sh|delegacion-registrar\.sh'
+BRAIN_PAT='git-branch-guard\.sh|merge-squash-guard\.sh|confirmar-merge-develop\.sh|recordar-dashboard\.sh|secret-scan\.sh|rama-vieja\.sh|proteger-arbol\.sh|limite-gasto\.sh|rehidratar-hilo\.sh|aviso-contexto\.sh|delegacion-gate\.sh|delegacion-registrar\.sh|delegacion-reporte\.sh'
 if command -v jq >/dev/null 2>&1; then
   if [ -f "$GSET" ]; then
     tmp="$(mktemp)" || tmp=""
@@ -71,11 +82,13 @@ else
   echo "  cableado, instala jq y re-corre, o quita a mano las entradas que citen: $BRAIN_PAT"
 fi
 
-# ── (c) Quitar la skill genérica cerrar-slice ──
-if [ -d "$SKILLS_DIR/cerrar-slice" ]; then
-  rm -rf "$SKILLS_DIR/cerrar-slice"
-  echo "ok: skill cerrar-slice eliminada de $SKILLS_DIR"
-fi
+# ── (c) Quitar las skills genéricas del cerebro (cerrar-slice, orquestar-fanout, checkpoint) ──
+for sk in cerrar-slice orquestar-fanout checkpoint rehidratar-hilo; do
+  if [ -d "$SKILLS_DIR/$sk" ]; then
+    rm -rf "$SKILLS_DIR/$sk"
+    echo "ok: skill $sk eliminada de $SKILLS_DIR"
+  fi
+done
 
 # ── (d) Quitar el bloque de normas de ~/.claude/CLAUDE.md (entre los marcadores) ──
 if [ -f "$GCLAUDE" ] && grep -q 'BEGIN claude-brain' "$GCLAUDE"; then

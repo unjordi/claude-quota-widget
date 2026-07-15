@@ -32,8 +32,12 @@ pasos. Versión **genérica** (agnóstica de stack): sirve para cualquier proyec
   para declarar LISTO (falta (1) confirmación funcional del usuario o (2) su autorización expresa).
 
 ## 2. Actualiza la memoria Y la doc (en la misma tanda — doc = realidad)
-Modelo de estado: **`estado-proyecto.md` = hub vivo** (dónde estamos + backlog + prioridad); **`bitacora.md`
-= log append-only**. Un dato en UN lugar (bitácora=qué pasó, estado=qué sigue), no en tres (ver skill `orquestar-fanout`).
+Este paso ES el "volcado" del skill `checkpoint`: **cerrar-slice = ese volcado + verificar + git + cosecha.**
+Modelo de estado (tres archivos, un dato en UN lugar — ver skill `orquestar-fanout`): **`estado-proyecto.md`
+= hub vivo** (dónde estamos + backlog + prioridad); **`bitacora.md` = log append-only** (qué pasó);
+**`hilo-mental-actual.md` = el hilo de trabajo vivo** (de qué va ESTO ahora — lo sobrescribe `checkpoint`, lo
+rehidrata el hook `rehidratar-hilo` al retomar/compactar). Al cerrar, **refresca (o vacía) `hilo-mental-actual.md`**
+para que no quede apuntando a un tema ya terminado.
 - `.claude/memory/estado-proyecto.md`: mueve el ítem a **HECHO** (commit+fecha al mergear); registra
   **DECISIONES**; lo descartado a propósito va en **FUERA POR DECISIÓN** (no en pendiente). **Estado
   BIDIRECCIONAL:** ni dejes "pendiente" algo que YA está hecho, ni marques "hecho" algo sin verificar —
