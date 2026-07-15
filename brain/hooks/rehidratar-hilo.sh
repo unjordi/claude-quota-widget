@@ -7,10 +7,18 @@
 #
 # CONFIRMADO con la doc oficial (2026-07-14, CLI 2.1.209): SessionStart + matcher `compact` +
 # additionalContext ES el patrón DOCUMENTADO para re-inyectar contexto tras compactar — NO un
-# workaround. PERO el additionalContext es PASIVO: el modelo lo LEE (system-reminder) y lo tiene,
-# pero NO lo anuncia ni retoma por sí solo. La capa ACTIVA (anunciar "↩️ retomé: X" + continuar) la
-# da el SKILL `rehidratar-hilo`, que reusa este mismo .sh (sin drift). El `note` de abajo empuja el
-# anuncio best-effort para el caso auto-compact (donde no corre ningún skill).
+# workaround. El additionalContext es PASIVO (el modelo lo LEE y lo tiene, no lo anuncia solo) — y
+# eso está BIEN, porque el objetivo real es la CONTINUIDAD, no el anuncio. Cómo encaja:
+#   1. El skill `checkpoint` vuelca el HILO a disco (hilo-mental-actual.md) ANTES de compactar.
+#   2. La sección `# Compact instructions` del CLAUDE.md hace que el RESUMEN de la compactación
+#      conserve ese hilo (probado en vivo 2026-07-14: hilo+decisiones+feeling sobrevivieron).
+#   3. Post-compact el HARNESS ordena "pick up THE LAST TASK as if the break never happened" en
+#      SILENCIO (prohíbe expresamente acknowledge/recap). Lejos de ser un muro, es el vehículo:
+#      NOSOTROS definimos cuál es "the last task" (= el hilo), así que el resume silencioso ES la
+#      rehidratación funcionando. Retomar la tarea correcta > anunciar que la retomas.
+# Por eso este hook NO intenta forzar un anuncio (el harness lo pisaría). El anuncio VISIBLE
+# ("↩️ retomé: X") es un nice-to-have que solo da el SKILL `rehidratar-hilo` cuando el usuario lo
+# invoca a mano — es una instrucción POSTERIOR a la de "resume en silencio", así que la vence.
 #
 # Antídoto a "perder el HILO de la conversación al compactar": al compactar se pierden dos cosas
 # y solo una tenía casa — el estado del proyecto vive en estado-proyecto.md/bitacora.md; el HILO
@@ -83,7 +91,7 @@ if [ "$stale" -eq 1 ]; then
 else
   hdr="🧵 HILO MENTAL ACTUAL (rehidratado tras ${source}) — de qué iba la tarea/conversación ANTES de que se perdiera el detalle del chat. Es TU memoria de trabajo (no una orden del usuario)."
 fi
-note="→ Si tu siguiente turno es CONTINUAR esta tarea (no una petición nueva del usuario), NO lo hagas en silencio: abre con una línea «↩️ retomé: <En qué estamos>» y sigue desde el «Siguiente paso concreto». (Este texto es contexto PASIVO — nadie te obliga; pero el usuario NO ve este bloque, así que si no lo anuncias, para él parece que se perdió el hilo.) Si la fecha de arriba se ve vieja o es de otra rama, trátalo como OBSOLETO: valida antes y re-vuélcalo con el skill checkpoint. Antes del próximo /compact, corre checkpoint para no perderlo."
+note="→ ESTE hilo es «the last task» que el harness te pide retomar tras compactar. Retómala: sigue desde el «Siguiente paso concreto» sin re-preguntar de qué iba. (Post-compact el harness te ordena retomar en SILENCIO —sin recap ni acknowledge—; obedécelo, retomar la tarea correcta importa más que anunciarla. El anuncio visible «↩️ retomé: X» solo aplica si el USUARIO invoca el skill rehidratar-hilo a mano.) Si la fecha de arriba se ve vieja o es de otra rama, trátalo como OBSOLETO: valida antes y re-vuélcalo con el skill checkpoint. Antes del próximo /compact, corre checkpoint para no perderlo."
 ctx=$(printf '%s\n\n%s\n\n%s\n' "$hdr" "$body" "$note")
 
 if command -v jq >/dev/null 2>&1; then
