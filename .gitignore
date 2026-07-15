@@ -29,3 +29,6 @@ docs/plan-refactor-desacople.md
 docs/auditoria-flowcharts.md
 docs/mapa-flujos.dot
 docs/mapa-flujos.svg
+
+# memoria de dev PRIVADA del widget (historia de debugging/backlog; NO describe el código y NO viaja a repos consumidores)
+.claude/memory/backlog-desarrollo.md
