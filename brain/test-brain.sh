@@ -713,7 +713,8 @@ delegacion-reporte|orquestar-fanout
 cerrar-slice|checkpoint
 cerrar-slice|rehidratar-hilo
 checkpoint|rehidratar-hilo
-aviso-contexto|rehidratar-hilo"
+aviso-contexto|rehidratar-hilo
+aviso-contexto|checkpoint"
 ce_els=()
 for d in "$SCRIPT_DIR"/skills/*/; do [ -d "$d" ] && ce_els+=("$(basename "$d")"); done
 for h in "$HOOKS"/*.sh; do [ -e "$h" ] && ce_els+=("$(basename "$h" .sh)"); done
