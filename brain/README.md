@@ -21,7 +21,7 @@ brain/
 ├── test-brain.sh         # pruebas versionadas y repetibles (contra un $HOME falso aislado)
 ├── README.md             # este archivo
 ├── hooks/                # los hooks .sh + agentes-costo.json + dashboard_cerebro.template.md
-├── skills/               # skills genéricas: cerrar-slice, orquestar-fanout, checkpoint, rehidratar-hilo (SKILL.md c/u)
+├── skills/               # skills genéricas: cerrar-slice, orquestar-fanout, checkpoint, rehidratar-hilo, turno-nocturno (SKILL.md c/u)
 └── norms/global-claude-md.md  # bloque de normas que se inyecta en ~/.claude/CLAUDE.md
 ```
 
