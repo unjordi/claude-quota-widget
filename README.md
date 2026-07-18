@@ -20,7 +20,7 @@ Un `install-brain.sh` y tu máquina queda con el candado puesto. Idempotente y a
 
 |  |  |  |  |
 |:--|:--|:--|:--|
-| **13** · hooks globales | **2** · hooks por-repo | **114** · pruebas verdes | **3** · plataformas |
+| **13** · hooks globales | **2** · hooks por-repo | **187** · pruebas verdes | **3** · plataformas |
 
 > El cerebro **no es propietario**: no trae skills de proyecto (ni .NET, ni repos de empresa) — solo
 > hooks agnósticos, normas y una skill genérica `cerrar-slice` que cualquier proyecto puede adoptar.
@@ -108,12 +108,13 @@ El cerebro se ordena por *dureza*: arriba lo que te **bloquea** sin negociar; ab
 ├─ 📦 cerrar-slice             build+tests+memoria al día + MR con resumen curado
 ├─ 💾 checkpoint               vuelca el HILO a memoria para compactar sin perderlo (proactivo)
 ├─ 💧 rehidratar-hilo          relee el HILO a mano (gemelo del hook; respaldo si un update del CLI rompe el auto-rehidratado)
-└─ 🧵 orquestar-fanout         fan-out sin niñera: asigna del backlog, auto-reporta y limpia al cerrar
+├─ 🧵 orquestar-fanout         fan-out sin niñera: asigna del backlog, auto-reporta y limpia al cerrar
+└─ 🌙 turno-nocturno           protocolo del turno de noche: eco del contrato, decide-dentro-de-la-cerca, grants durables a disco
 ```
 
 Los hooks **por-repo** son fuente en [`brain/hooks/`](brain/hooks/) que cada repo copia a su propio
 `.claude/` y cablea en su `settings.json` — se cargan solo cuando una sesión *inicia* en ese repo. El
-cerebro **se autoprueba**: [`brain/test-brain.sh`](brain/test-brain.sh) corre 114 checks contra un
+cerebro **se autoprueba**: [`brain/test-brain.sh`](brain/test-brain.sh) corre 187 checks contra un
 `$HOME` aislado, y la CI repite `bash -n` + `jq empty` + `shellcheck` en cada push. Tras un fan-out,
 el helper [`limpiar-worktrees.sh`](brain/hooks/limpiar-worktrees.sh) barre los worktrees de ramas ya
 mergeadas y deja anotado en la bitácora el pendiente de los que sigan vivos.

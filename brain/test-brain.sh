@@ -268,6 +268,49 @@ dur=$SECONDS
   && ok "cmd H5: glab colgado → timeout interno devuelve vacío en ${dur}s (no cuelga hasta que lo maten)" \
   || bad "cmd H5: la consulta colgada NO fue acotada por timeout (dhang='$dhang' dur=${dur}s)"
 rm -f "${TMPDIR:-/tmp}"/acg-mrdest-* 2>/dev/null
+
+# ── (b1f) confirmar: AUTORIZACIÓN DURABLE en disco (sobrevive compactaciones) + vocabulario "empuja/mete" ──
+# El grant lo escribe el skill turno-nocturno con la CITA textual del usuario y vence_epoch; SOLO
+# cubre scope=merge-develop. Caso real 2026-07-12: un OK blanket murió al compactarse el contexto.
+echo ""
+echo "== (b1f) confirmar-merge-develop: autorización durable (vence_epoch) + vocabulario empuja/mete =="
+AUTHF="$CMREPO/.claude/memory/autorizaciones-vigentes.local.md"
+mkdir -p "$CMREPO/.claude/memory"
+mock_cm_glab develop
+# (1) grant VIGENTE → permite el merge a develop aunque el transcript no traiga OK.
+printf -- '- scope=merge-develop vence_epoch=%s vence="mañana 10am" cita="autorizo todos los merges a develop hasta mañana 10am" registrada=2026-07-18\n' "$(( $(date +%s) + 3600 ))" > "$AUTHF"
+is_silent "$(cm 'glab mr merge 61 --squash --yes' 'sigue avanzando')" \
+  && ok "cmd b1f: grant durable VIGENTE → merge a develop pasa (sobrevive compactación)" \
+  || bad "cmd b1f: grant durable vigente NO destrabó el merge a develop"
+# (2) grant VENCIDO → freno normal.
+printf -- '- scope=merge-develop vence_epoch=%s vence="ayer" cita="autorizo hasta ayer" registrada=2026-07-17\n' "$(( $(date +%s) - 60 ))" > "$AUTHF"
+is_deny "$(cm 'glab mr merge 62 --squash --yes' 'sigue avanzando')" \
+  && ok "cmd b1f: grant VENCIDO → deny (no se estira)" \
+  || bad "cmd b1f: un grant vencido dejó pasar el merge"
+# (3) línea malformada (sin vence_epoch) → freno normal (fail-safe).
+printf -- '- scope=merge-develop cita="sin vencimiento"\n' > "$AUTHF"
+is_deny "$(cm 'glab mr merge 63 --squash --yes' 'sigue avanzando')" \
+  && ok "cmd b1f: grant malformado (sin vence_epoch) → deny (fail-safe)" \
+  || bad "cmd b1f: una línea malformada dejó pasar el merge"
+# (4) EL MÁS IMPORTANTE: grant vigente pero destino MAIN → sigue exigiendo release súper-explícito.
+printf -- '- scope=merge-develop vence_epoch=%s vence="+1h" cita="autorizo todos los merges a develop" registrada=hoy\n' "$(( $(date +%s) + 3600 ))" > "$AUTHF"
+mock_cm_glab main
+is_deny "$(cm 'glab mr merge 64 --yes' 'sigue avanzando')" \
+  && ok "cmd b1f: grant develop vigente + destino MAIN → deny (main intacto, JAMÁS lo cubre el grant)" \
+  || bad "cmd b1f: ¡el grant de develop destrabó un RELEASE a main! (aflojamiento grave)"
+# (5) archivo ausente → comportamiento de siempre.
+rm -f "$AUTHF"
+mock_cm_glab develop
+is_deny "$(cm 'glab mr merge 65 --squash --yes' 'sigue avanzando')" \
+  && ok "cmd b1f: sin archivo de grants → deny normal (sin cambios de baseline)" \
+  || bad "cmd b1f: sin archivo el guard dejó de frenar"
+# (6) vocabulario: "empuja todo a develop" y "mete todo a develop" cuentan como OK explícito.
+CMDCR2=$(grep "^CONF_RE=" "$HOOKS/confirmar-merge-develop.sh" | sed "s/^[^']*'//; s/'\$//")
+printf '%s' "empuja todo lo que ya tienes a develop" | grep -qiE "$CMDCR2" && ok "cmd b1f: reconoce 'empuja todo … a develop'" || bad "cmd b1f: NO reconoce 'empuja … a develop' (falso-FRENO real)"
+printf '%s' "mete todo eso a develop porfa"          | grep -qiE "$CMDCR2" && ok "cmd b1f: reconoce 'mete todo … a develop'"   || bad "cmd b1f: NO reconoce 'mete … a develop'"
+printf '%s' "empújalo cuando puedas, a develop"      | grep -qiE "$CMDCR2" && ok "cmd b1f: reconoce 'empújalo … a develop'"     || bad "cmd b1f: NO reconoce 'empújalo'"
+printf '%s' "no empujes nada todavía"                | grep -qiE "$CMDCR2" && bad "cmd b1f: FALSO POSITIVO con 'no empujes nada' (sin develop)" || ok "cmd b1f: 'empujes' sin develop NO dispara (acotado)"
+rm -f "${TMPDIR:-/tmp}"/acg-mrdest-* 2>/dev/null
 rm -rf "$CMROOT"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -491,6 +534,26 @@ is_block "$(dod 'Listo, quedó terminado el módulo.' "$BASHREAD")" && bad "dod 
 # G2(b): el bloqueo de QA-visual-a-ciegas NO se suprime por la palabra "screenshot" en PROSA;
 # solo un tool_use REAL de navegador lo evita (estructura, no substring).
 is_block "$(dod 'Quedó igual al mockup. No corrí screenshot, pero confío en que se ve bien.' "$EDITR")" && ok "dod G2b: 'screenshot' en prosa (sin browser-tool) → sigue bloqueando (a ciegas)" || bad "dod G2b: la palabra 'screenshot' en prosa suprimió el bloqueo visual"
+# P2a (precisión): un PASO MECÁNICO del proceso ("checkpoint hecho", "push hecho", "MR abierto",
+# "memoria actualizada") NO es un cierre de entregable → no dispara (caso real 2026-07-15: el freno
+# saltó por "✅ Listo — checkpoint hecho"). Se enmascara la frase mecánica y el claim se evalúa
+# sobre el residuo.
+is_block "$(dod '✅ Checkpoint hecho' "$EDITR")" && bad "dod P2a: bloqueó '✅ Checkpoint hecho' (paso mecánico, falso positivo)" || ok "dod P2a: '✅ Checkpoint hecho' → no bloquea (paso mecánico)"
+is_block "$(dod '✅ Listo — checkpoint hecho, hilo volcado.' "$EDITR")" && bad "dod P2a: bloqueó '✅ Listo — checkpoint hecho' (el caso real del 2026-07-15)" || ok "dod P2a: '✅ Listo — checkpoint hecho, hilo volcado' → no bloquea (caso real)"
+is_block "$(dod 'Push hecho a la ramita, MR abierto.' "$EDITR")" && bad "dod P2a: bloqueó 'push hecho…MR abierto' (proceso git, falso positivo)" || ok "dod P2a: 'push hecho a la ramita, MR abierto' → no bloquea (proceso git)"
+is_block "$(dod 'Memoria actualizada y bitácora al día. ✅ Hecho el commit.' "$EDITR")" && bad "dod P2a: bloqueó 'memoria actualizada / bitácora al día / hecho el commit'" || ok "dod P2a: 'memoria actualizada, bitácora al día, hecho el commit' → no bloquea"
+# P2a FAIL-SAFE: si la frase mezcla paso mecánico Y claim de ENTREGABLE, el claim manda → bloquea.
+is_block "$(dod 'Push hecho y la feature ya funciona.' "$EDITR")" && ok "dod P2a fail-safe: 'push hecho Y la feature ya funciona' → bloquea (el claim de entregable manda)" || bad "dod P2a fail-safe: el paso mecánico tapó un claim de entregable (evasión)"
+is_block "$(dod 'MR abierto y el endpoint quedó terminado.' "$EDITR")" && ok "dod P2a fail-safe: 'MR abierto Y el endpoint quedó terminado' → bloquea" || bad "dod P2a fail-safe: 'MR abierto' tapó el cierre del endpoint (evasión)"
+# P2b (precisión): celebración SIN entregable no dispara por sí sola — 🎉 dejó de ser gatillo
+# standalone ("quedó el día" no es "quedó listo/terminado" → no hay claim textual); 🏁 sigue siendo cierre.
+is_block "$(dod '🎉 ¡Qué bonito quedó el día!' "$EDITR")" && bad "dod P2b: bloqueó celebración sin entregable ('🎉 qué bonito quedó el día')" || ok "dod P2b: '🎉 ¡qué bonito quedó el día!' → no bloquea (celebración sin entregable)"
+is_block "$(dod '¡Genial! ¡Vamos! ✨🚀' "$EDITR")" && bad "dod P2b: bloqueó interjecciones/emojis sin claim" || ok "dod P2b: interjecciones + emojis sin claim → no bloquea"
+is_block "$(dod '🎉 El módulo quedó listo.' "$EDITR")" && ok "dod P2b fail-safe: '🎉 el módulo quedó listo' → bloquea (el claim textual dispara solo)" || bad "dod P2b fail-safe: el 🎉 dejó pasar un cierre de entregable"
+# Dientes intactos: cierres de ENTREGABLE reales siguen exigiendo la marca (1)/(2).
+is_block "$(dod 'El módulo de auth quedó listo.' "$EDITR")" && ok "dod dientes: 'el módulo de auth quedó listo' → sigue bloqueando" || bad "dod dientes: dejó pasar 'el módulo de auth quedó listo' (aflojado)"
+is_block "$(dod 'Ya funciona el widget.' "$EDITR")" && ok "dod dientes: 'ya funciona el widget' → sigue bloqueando" || bad "dod dientes: dejó pasar 'ya funciona el widget' (aflojado)"
+is_block "$(dod 'Terminamos la migración.' "$EDITR")" && ok "dod dientes: 'terminamos la migración' → sigue bloqueando" || bad "dod dientes: dejó pasar 'terminamos la migración' (aflojado)"
 rm -f "$DODTX"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -620,6 +683,7 @@ e="$(grep -c 'END claude-brain'   "$GCLAUDE2" 2>/dev/null || echo 0)"
 [ -f "$FAKEHOME2/.claude/skills/cerrar-slice/SKILL.md" ] && ok "skill cerrar-slice instalada" || bad "falta skill cerrar-slice"
 [ -f "$FAKEHOME2/.claude/skills/checkpoint/SKILL.md" ]   && ok "skill checkpoint instalada"   || bad "falta skill checkpoint"
 [ -f "$FAKEHOME2/.claude/skills/rehidratar-hilo/SKILL.md" ] && ok "skill rehidratar-hilo instalada (gemelo manual del hook)" || bad "falta skill rehidratar-hilo"
+[ -f "$FAKEHOME2/.claude/skills/turno-nocturno/SKILL.md" ] && ok "skill turno-nocturno instalada (protocolo del turno de noche)" || bad "falta skill turno-nocturno"
 [ -f "$FAKEHOME2/.claude/hooks/rehidratar-hilo.sh" ]     && ok "hook rehidratar-hilo instalado" || bad "falta hook rehidratar-hilo"
 [ -f "$FAKEHOME2/.claude/hooks/aviso-contexto.sh" ]      && ok "hook aviso-contexto instalado"  || bad "falta hook aviso-contexto"
 [ -f "$FAKEHOME2/.claude/hooks/delegacion-comun.sh" ]    && ok "lib delegacion-comun.sh instalada" || bad "falta lib delegacion-comun.sh"
@@ -693,7 +757,8 @@ delegacion-reporte|orquestar-fanout
 cerrar-slice|checkpoint
 cerrar-slice|rehidratar-hilo
 checkpoint|rehidratar-hilo
-aviso-contexto|rehidratar-hilo"
+aviso-contexto|rehidratar-hilo
+aviso-contexto|checkpoint"
 ce_els=()
 for d in "$SCRIPT_DIR"/skills/*/; do [ -d "$d" ] && ce_els+=("$(basename "$d")"); done
 for h in "$HOOKS"/*.sh; do [ -e "$h" ] && ce_els+=("$(basename "$h" .sh)"); done

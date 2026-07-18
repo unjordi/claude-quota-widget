@@ -12,7 +12,7 @@
 #       PostToolUse) + libs `delegacion-comun.sh`, `analizar-comando-git.sh`, `detectar-secretos.sh`
 #       + agentes-costo.json (config). La lista EXACTA se deriva de brain/hooks/MANIFEST.
 #   (b) CABLEADO en ~/.claude/settings.json con "shell":"bash" (idempotente).
-#   (c) SKILLS genéricas (cerrar-slice, orquestar-fanout, checkpoint, rehidratar-hilo) en ~/.claude/skills/.
+#   (c) SKILLS genéricas (cerrar-slice, orquestar-fanout, checkpoint, rehidratar-hilo, turno-nocturno) en ~/.claude/skills/.
 #   (d) DASHBOARD del cerebro sembrado en la memoria GLOBAL (slug del HOME) si falta.
 #   (e) NORMAS globales inyectadas en ~/.claude/CLAUDE.md (bloque con marcador, solo si faltan).
 #

@@ -21,7 +21,7 @@ brain/
 ├── test-brain.sh         # pruebas versionadas y repetibles (contra un $HOME falso aislado)
 ├── README.md             # este archivo
 ├── hooks/                # los hooks .sh + agentes-costo.json + dashboard_cerebro.template.md
-├── skills/               # skills genéricas: cerrar-slice, orquestar-fanout, checkpoint, rehidratar-hilo (SKILL.md c/u)
+├── skills/               # skills genéricas: cerrar-slice, orquestar-fanout, checkpoint, rehidratar-hilo, turno-nocturno (SKILL.md c/u)
 └── norms/global-claude-md.md  # bloque de normas que se inyecta en ~/.claude/CLAUDE.md
 ```
 
@@ -55,7 +55,7 @@ Se dividen en dos **tiers** según su alcance:
 |---|---|---|
 | `git-branch-guard.sh` | PreToolUse/Bash | Bloquea `git push`/merge a `develop`/`main` y redirige al flujo ramita→MR→develop. |
 | `merge-squash-guard.sh` | PreToolUse/Bash | Bloquea un `glab mr merge`/`gh pr merge` sin `--squash` **solo si el destino es `develop` CONFIRMADO** (la ramita colapsa a 1 commit limpio); `main` (release), ramas personales y destino indeterminado van libres (fail-safe hacia NO forzar squash — nunca aplasta un release ni estorba el día a día). |
-| `confirmar-merge-develop.sh` | PreToolUse/Bash | Exige confirmación EXPRESA antes de integrar a `develop`; autorización súper-explícita para un release a `main`. |
+| `confirmar-merge-develop.sh` | PreToolUse/Bash | Exige confirmación EXPRESA antes de integrar a `develop` (en el contexto reciente O como autorización DURABLE en `.claude/memory/autorizaciones-vigentes.local.md` con vencimiento — la escribe `turno-nocturno`, sobrevive compactaciones, JAMÁS cubre `main`); autorización súper-explícita para un release a `main`. |
 | `proteger-arbol.sh` | PreToolUse/Bash | Protege el árbol de trabajo compartido: bloquea que un agente de fan-out corra `git reset`/`checkout`/`rebase` en el árbol principal (orfanaría commits del orquestador). |
 | `secret-scan.sh` | PreToolUse/Bash | Bloquea un `git commit`/`git push` si lo que entra al repo trae un SECRETO (AWS/PEM/Anthropic/OpenAI/GitHub/GitLab/Slack/Google). Escanea también el **1er push de una rama nueva** (sin upstream) vs el merge-base con `develop`/`main`. Escapes: `--no-verify` / `CLAUDE_SKIP_SECRET_SCAN=1`. |
 | `rama-vieja.sh` | PreToolUse/Bash | Antes de un `git push`, AVISA (no bloquea) si la ramita está muy atrás de `origin/develop` (base vieja → MR con ruido). Umbral `RAMA_VIEJA_UMBRAL` (def 40). |
@@ -79,7 +79,7 @@ la sesión INICIA en ese repo**.
 | Hook | Evento | Qué hace |
 |---|---|---|
 | `sesion-inicio.sh` | SessionStart | Reinyecta rama + norma de git + orden de leer la memoria al abrir/retomar sesión o tras compactar. (Complementa al global `rehidratar-hilo`: éste hace el hilo, aquél el ritual del proyecto.) |
-| `dod-verificar.sh` | Stop | Hace cumplir la **definición de LISTO**: bloquea declarar algo "listo/terminado/funciona" tras tocar código sin una marca CITADA de (1) QA confirmado por el usuario o (2) su OK expreso. Distingue estatus/pregunta de cierre (una pregunta co-ubicada NO salva un claim afirmado); cuenta como "código tocado" también la edición por Bash (`sed -i`/`patch`/redirección); detecta la tool de navegador por estructura del transcript (no por la palabra "screenshot"). |
+| `dod-verificar.sh` | Stop | Hace cumplir la **definición de LISTO**: bloquea declarar algo "listo/terminado/funciona" tras tocar código sin una marca CITADA de (1) QA confirmado por el usuario o (2) su OK expreso. Distingue estatus/pregunta de cierre (una pregunta co-ubicada NO salva un claim afirmado); cuenta como "código tocado" también la edición por Bash (`sed -i`/`patch`/redirección); detecta la tool de navegador por estructura del transcript (no por la palabra "screenshot"). Precisión (P2): un paso MECÁNICO del proceso ("checkpoint hecho", "push hecho", "MR abierto", "memoria actualizada") y la celebración sin entregable (🎉 standalone, interjecciones) NO disparan; fail-safe: si la frase mezcla paso mecánico y claim de entregable ("push hecho y la feature ya funciona"), el claim manda y bloquea. |
 
 > **`precompact-volcar-estado.sh` se RETIRÓ** (PreCompact no puede inyectar contexto ni pedir acción): compactar sin perder el hilo lo cubren el skill `checkpoint` (escribe el hilo) + `rehidratar-hilo` (lo relee, con gate de frescura) + el watermark `aviso-contexto` (avisa antes del auto-compact).
 
