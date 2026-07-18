@@ -37,9 +37,15 @@ Reglas que lo blindan:
   avanzar sin pedir permiso a cada paso; cada entregable sigue necesitando (1) o (2) para llamarse LISTO.
 - **"revisamos en la mañana / al rato" ⇒ todo queda "en preview / a revisión", NUNCA LISTO**, hasta
   la confirmación.
-- **Léxico obligatorio** mientras no haya (1) o (2): "en preview", "a tu revisión", "verificado
-  técnicamente", "pendiente de tu QA", "armado sin mergear". **Prohibido**: listo/terminado/funciona/
-  quedó/a la par/de punta a punta/**cerrado/terminamos/de trancazo/🏁🎉/✅-de-hecho**.
+- **Contrato SEMÁNTICO de estatus (no de vocabulario).** Lo inviolable es NO declarar el cierre de un
+  entregable sin (1) o (2): "listo/terminado/funciona/quedó/a la par/de punta a punta/cerrado/
+  terminamos/🏁🎉/✅-de-hecho" como **claim de cierre** sigue prohibido sin la marca. Pero el estatus se
+  comunica en **lenguaje natural**, con una sola exigencia: que quede **INEQUÍVOCO qué está verificado
+  y qué falta** ("compila y está en la rama; fáltale tu QA en vivo" comunica lo mismo que la fórmula
+  tiesa). Las frases clásicas — "en preview", "a tu revisión", "verificado técnicamente", "pendiente de
+  tu QA", "armado sin mergear" — son EJEMPLOS válidos, no uniforme obligatorio. Porqué: un léxico de
+  tokens produce comunicación defensiva/acartonada (fórmulas para no disparar el hook en vez de
+  comunicar) — el contrato es la CLARIDAD del estatus, no el vocabulario.
 - **QA visual NO se declara a ciegas.** Afirmar una observación visual ("se ve / quedó como el mockup /
   en Chrome / la pantalla muestra…") **exige haber mirado la pantalla ESE turno** (una tool de
   navegador/screenshot). Sin eso, el estatus honesto es "verificado técnicamente, SIN QA visual (a
@@ -73,6 +79,18 @@ o por conveniencia. Cambiar un control de supervisión exige **consentimiento EX
 cambiar ESE control** — distinto del consentimiento a la ACCIÓN que el control vigila. Los cambios
 permitidos son de **PRECISIÓN/CORRECCIÓN** (menos falsos positivos, arreglar un target mal detectado),
 **nunca** "para que deje de bloquearme". El clasificador auto-mode es el backstop externo de esto.
+
+### Bitácora de falsos positivos de los guards (afinar con corpus, no con anécdotas)
+Cada vez que un guard/hook **frene EN FALSO** (dispara sobre algo que NO era lo que vigila), Claude
+appendea **EN EL MOMENTO** una línea al final de `~/.claude/memory/guards-falsos-positivos.md`
+(créalo, con su dir, si no existe) con `>>` (append-only, nunca un Edit):
+`- <fecha> · <guard> · "<frase o comando citado que disparó>" · <por qué era falso positivo>`.
+Cuando se acumulen **~5 casos de un MISMO guard**, propón al usuario una pasada de **TUNING DE
+PRECISIÓN** con ese corpus (cada fix nace con su test). Razón de ser: el afinamiento de guards no debe
+depender de la anécdota de UNA sesión — el corpus cross-sesión es lo que permite tunear con datos
+(terapia con información de más de una experiencia, no de una sola). Esto **NO autoriza aflojar
+guards**: la norma de Integridad de arriba sigue aplicando — cambios solo de precisión, con OK
+explícito del usuario.
 
 ## Toda norma nace con su mecanismo (norma dura)
 Una norma de higiene/cierre **SIN un mecanismo que la haga cumplir** (hook, gate o paso operativo) deja
