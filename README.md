@@ -20,7 +20,7 @@ Un `install-brain.sh` y tu máquina queda con el candado puesto. Idempotente y a
 
 |  |  |  |  |
 |:--|:--|:--|:--|
-| **13** · hooks globales | **2** · hooks por-repo | **207** · pruebas verdes | **3** · plataformas |
+| **13** · hooks globales | **2** · hooks por-repo | **208** · pruebas verdes | **3** · plataformas |
 
 > El cerebro **no es propietario**: no trae skills de proyecto (ni .NET, ni repos de empresa) — solo
 > hooks agnósticos, normas y una skill genérica `cerrar-slice` que cualquier proyecto puede adoptar.
@@ -117,7 +117,7 @@ El cerebro se ordena por *dureza*: arriba lo que te **bloquea** sin negociar; ab
 
 Los hooks **por-repo** son fuente en [`brain/hooks/`](brain/hooks/) que cada repo copia a su propio
 `.claude/` y cablea en su `settings.json` — se cargan solo cuando una sesión *inicia* en ese repo. El
-cerebro **se autoprueba**: [`brain/test-brain.sh`](brain/test-brain.sh) corre 207 checks contra un
+cerebro **se autoprueba**: [`brain/test-brain.sh`](brain/test-brain.sh) corre 208 checks contra un
 `$HOME` aislado, y la CI repite `bash -n` + `jq empty` + `shellcheck` en cada push. Tras un fan-out,
 el helper [`limpiar-worktrees.sh`](brain/hooks/limpiar-worktrees.sh) barre los worktrees de ramas ya
 mergeadas y deja anotado en la bitácora el pendiente de los que sigan vivos.
