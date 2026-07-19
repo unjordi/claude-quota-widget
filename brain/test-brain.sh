@@ -777,11 +777,19 @@ e="$(grep -c 'END claude-brain'   "$GCLAUDE2" 2>/dev/null || echo 0)"
 [ -f "$FAKEHOME2/.claude/skills/checkpoint/SKILL.md" ]   && ok "skill checkpoint instalada"   || bad "falta skill checkpoint"
 [ -f "$FAKEHOME2/.claude/skills/rehidratar-hilo/SKILL.md" ] && ok "skill rehidratar-hilo instalada (gemelo manual del hook)" || bad "falta skill rehidratar-hilo"
 [ -f "$FAKEHOME2/.claude/skills/turno-nocturno/SKILL.md" ] && ok "skill turno-nocturno instalada (protocolo del turno de noche)" || bad "falta skill turno-nocturno"
+[ -f "$FAKEHOME2/.claude/skills/diagramar/SKILL.md" ] && ok "skill diagramar instalada (dot2yed para editar · Mermaid para GitHub)" || bad "falta skill diagramar"
 [ -f "$FAKEHOME2/.claude/hooks/rehidratar-hilo.sh" ]     && ok "hook rehidratar-hilo instalado" || bad "falta hook rehidratar-hilo"
 [ -f "$FAKEHOME2/.claude/hooks/aviso-contexto.sh" ]      && ok "hook aviso-contexto instalado"  || bad "falta hook aviso-contexto"
 [ -f "$FAKEHOME2/.claude/hooks/delegacion-comun.sh" ]    && ok "lib delegacion-comun.sh instalada" || bad "falta lib delegacion-comun.sh"
 [ -f "$FAKEHOME2/.claude/hooks/analizar-comando-git.sh" ] && ok "lib analizar-comando-git.sh instalada" || bad "falta lib analizar-comando-git.sh"
 [ -f "$FAKEHOME2/.claude/hooks/detectar-secretos.sh" ] && ok "lib detectar-secretos.sh instalada" || bad "falta lib detectar-secretos.sh"
+# sello de VERSIÓN del brain instalado en ~/.claude/.brain-version (lo lee el tab Cerebro del widget)
+if [ -f "$FAKEHOME2/.claude/.brain-version" ] && \
+   [ "$(cat "$FAKEHOME2/.claude/.brain-version")" = "$(cat "$SCRIPT_DIR/VERSION")" ]; then
+  ok "sello .brain-version estampado en ~/.claude (= brain/VERSION)"
+else
+  bad "falta ~/.claude/.brain-version o no coincide con brain/VERSION"
+fi
 
 # Bonus: el desinstalador deja settings.json sin las entradas del cerebro y sin el bloque de normas
 if [ -f "$SCRIPT_DIR/uninstall-brain.sh" ]; then
