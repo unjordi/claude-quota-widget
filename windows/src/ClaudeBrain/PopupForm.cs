@@ -986,14 +986,28 @@ public sealed class PopupForm : Form
         // Salvaguarda: si nunca se leyó el estado (p. ej. paint directo en tab 4), léelo ahora.
         _brainState ??= BrainInspector.Inspect();
 
-        // Encabezado de marca: destello acento + 🧠 Cerebro global.
+        // Encabezado de marca: destello acento + ícono claude-brain + "Cerebro global".
         using (var spFont = Px(12f, FontStyle.Bold))
         using (var spBrush = new SolidBrush(_accent))
             g.DrawString("✦", spFont, spBrush, pad, y + Sc(1));
         int hx = pad + Sc(16);
-        using (var emj = PxFont("Segoe UI Emoji", 13f, FontStyle.Regular))
-        using (var b = new SolidBrush(_fg))
-            g.DrawString("🧠", emj, b, hx, y);
+        // El ícono de marca (icon-small.svg rasterizado, vía BrandIcon) en vez del emoji 🧠: GDI+ no
+        // dibuja SVG, así que es un PNG embebido. Si por lo que sea no decodifica, cae al emoji.
+        var brainIcon = BrandIcon.Small();
+        if (brainIcon != null)
+        {
+            var prevInterp = g.InterpolationMode;
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            int isz = Sc(18);
+            g.DrawImage(brainIcon, new Rectangle(hx, y + Sc(1), isz, isz));
+            g.InterpolationMode = prevInterp;
+        }
+        else
+        {
+            using var emj = PxFont("Segoe UI Emoji", 13f, FontStyle.Regular);
+            using var bEmj = new SolidBrush(_fg);
+            g.DrawString("🧠", emj, bEmj, hx, y);
+        }
         hx += Sc(22);
         using (var h = Px(13.5f, FontStyle.Bold))
         using (var b = new SolidBrush(_fg))
