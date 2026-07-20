@@ -1770,15 +1770,10 @@ PlasmoidItem {
                 ColumnLayout {
                     width: cerebroScroll.availableWidth
                     spacing: Kirigami.Units.largeSpacing
-                    // Encabezado de marca: destello acento naranja + 🧠.
+                    // Encabezado de marca: ícono claude-brain (ya incluye el destello) + "Cerebro global".
                     RowLayout {
                         Layout.fillWidth: true
                         spacing: Kirigami.Units.smallSpacing
-                        Kirigami.Icon {
-                            source: "starred-symbolic"; isMask: true; color: "#e8884a"
-                            Layout.preferredWidth: Kirigami.Units.iconSizes.small
-                            Layout.preferredHeight: Kirigami.Units.iconSizes.small
-                        }
                         Image {
                             source: Qt.resolvedUrl("brand-icon.svg")
                             Layout.preferredWidth: Kirigami.Units.iconSizes.small

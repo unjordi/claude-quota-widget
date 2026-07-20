@@ -999,11 +999,8 @@ public sealed class PopupForm : Form
         // Salvaguarda: si nunca se leyó el estado (p. ej. paint directo en tab 4), léelo ahora.
         _brainState ??= BrainInspector.Inspect();
 
-        // Encabezado de marca: destello acento + ícono claude-brain + "Cerebro global".
-        using (var spFont = Px(12f, FontStyle.Bold))
-        using (var spBrush = new SolidBrush(_accent))
-            g.DrawString("✦", spFont, spBrush, pad, y + Sc(1));
-        int hx = pad + Sc(16);
+        // Encabezado de marca: ícono claude-brain (ya incluye el destello) + "Cerebro global".
+        int hx = pad;
         // El ícono de marca (icon-small.svg rasterizado, vía BrandIcon) en vez del emoji 🧠: GDI+ no
         // dibuja SVG, así que es un PNG embebido. Si por lo que sea no decodifica, cae al emoji.
         var brainIcon = BrandIcon.Small();

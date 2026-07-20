@@ -896,11 +896,8 @@ struct PopoverView: View {
     /// Contenido ESTÁTICO (refleja `brain/`); se mantiene a mano cuando cambian las piezas.
     private var cerebroTab: some View {
         VStack(alignment: .leading, spacing: 14) {
-            // Encabezado de marca: destello Claude + ícono claude-brain (icon-small).
+            // Encabezado de marca: ícono claude-brain (icon-small; ya incluye el destello).
             HStack(spacing: 7) {
-                Image(systemName: "sparkle")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(accent)
                 if let brand = BrandIcon.small {
                     Image(nsImage: brand)
                         .resizable()
