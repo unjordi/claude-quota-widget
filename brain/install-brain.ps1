@@ -46,6 +46,18 @@ if (($userPath -split ';') -notcontains $gitBin) {
   $script:pathChanged = $true
 }
 
+# -- Forzar que Claude Code (CLI) use ESTE Git Bash, NO el de WSL --
+# En una maquina con WSL, 'bash' del PATH resuelve a System32\bash.exe (WSL); Claude Code lo ve como
+# "Git Bash no disponible" y corre los hooks con WSL/PowerShell -> los .sh (rutas Windows, jq) fallan
+# y los guardrails NO aplican. La env var oficial CLAUDE_CODE_GIT_BASH_PATH apunta a Claude Code al
+# bash.exe de Git Bash explicitamente, sin depender del orden del PATH (persistente, por usuario).
+# (Fuente: docs de Claude Code, troubleshoot-install.) Bug real diagnosticado 2026-07-20 (Windows+WSL).
+if ([Environment]::GetEnvironmentVariable('CLAUDE_CODE_GIT_BASH_PATH','User') -ne $bashExe) {
+  [Environment]::SetEnvironmentVariable('CLAUDE_CODE_GIT_BASH_PATH', $bashExe, 'User')
+  $env:CLAUDE_CODE_GIT_BASH_PATH = $bashExe
+  Write-Host "==> claude-brain: CLAUDE_CODE_GIT_BASH_PATH -> $bashExe (Claude Code usara Git Bash, no WSL)"
+}
+
 # -- Auto-sanar CRLF: Git for Windows (core.autocrlf=true) clona los .sh con CRLF y bash muere con el \r --
 # El .gitattributes del repo lo previene en clones FUTUROS, pero un clon ya existente (o con config
 # rara) sigue con CRLF. Aqui quitamos los CR (byte 0x0D) de TODO .sh del repo antes de correr bash,
