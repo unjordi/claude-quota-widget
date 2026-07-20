@@ -53,7 +53,17 @@ Get-ChildItem -Path $RepoRoot -Recurse -Filter *.sh -File -ErrorAction SilentlyC
 if ($fixed -gt 0) { Write-Host "==> claude-brain: normalice a LF $fixed script(s) .sh que venian con CRLF (fix Git-for-Windows)" }
 
 # -- Dependencia de los hooks: jq (sin jq los guards fallan abierto y no puedo cablear settings.json) --
-& $bashExe -lc "command -v jq >/dev/null 2>&1"
+# jq lo instala winget en %LOCALAPPDATA%\Microsoft\WinGet\Links (u otra carpeta): ese dir SI esta en el
+# PATH de Windows y PowerShell lo ve, pero un bash de LOGIN (-l) reconstruye su PATH desde /etc/profile
+# y puede NO incluirlo. Resolvemos jq desde PowerShell y prependemos su carpeta a $env:PATH del proceso,
+# para que el bash hijo (que hereda este PATH) lo vea igual que PowerShell. Verificamos con un bash
+# NO-login (-c), el MISMO modo con que abajo corre install-brain.sh (el check refleja el run).
+$jqCmd = Get-Command jq -ErrorAction SilentlyContinue
+if ($jqCmd) {
+  $jqDir = Split-Path -Parent $jqCmd.Source
+  if (($env:PATH -split ';') -notcontains $jqDir) { $env:PATH = $jqDir + ';' + $env:PATH }
+}
+& $bashExe -c "command -v jq >/dev/null 2>&1"
 if ($LASTEXITCODE -ne 0) {
   Write-Host "ADVERTENCIA: 'jq' no esta disponible en bash. Los hooks lo REQUIEREN (sin jq el"
   Write-Host "  git-branch-guard falla abierto y el instalador no cablea el settings.json)."
@@ -68,7 +78,11 @@ if (-not (Test-Path $Installer)) {
   exit 1
 }
 Write-Host "==> claude-brain: delegando en bash $Installer"
-& $bashExe "$Installer"
+# Pasar la ruta a bash con '/' (NO '\'): bash lee cada '\U','\A','\L'... de una ruta Windows como
+# secuencia de escape y se COME los backslashes -> "No such file or directory" y el instalador real
+# nunca corre (bug real en Windows, 2026-07-20). Una ruta con forward-slashes (C:/Users/.../
+# install-brain.sh) la entiende Git Bash sin ambiguedad.
+& $bashExe ($Installer -replace '\\','/')
 $rc = $LASTEXITCODE
 if ($script:pathChanged) {
   Write-Host ""
