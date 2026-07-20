@@ -285,8 +285,21 @@ public sealed class PopupForm : Form
         var (refreshR, quitR) = BottomButtons();
         using (var b1 = new SolidBrush(Blend(_bg, _fg, 0.7)))
             g.DrawString("⟳", Px(15f, FontStyle.Regular), b1, refreshR, Center());
-        using (var b2 = new SolidBrush(Blend(_bg, _fg, 0.45)))
-            g.DrawString("⏻", PxFont("Segoe UI Symbol", 13f, FontStyle.Regular), b2, quitR, Center());
+        // Glifo de "salir" (encendido) dibujado A MANO con GDI+: anillo con hueco arriba + línea
+        // vertical. Fuente-INDEPENDIENTE — el carácter ⏻ (U+23FB) no lo trae ni Segoe UI Emoji ni
+        // Segoe UI Symbol en algunas máquinas Windows (salía como recuadro). Vectorial = idéntico
+        // en cualquier Windows, sin tofu posible.
+        {
+            float d = Sc(11);                                  // diámetro del anillo
+            float cx = quitR.X + quitR.Width / 2f;
+            float cy = quitR.Y + quitR.Height / 2f;
+            using var powerPen = new Pen(Blend(_bg, _fg, 0.45), Math.Max(1f, Sc(1.4f)))
+            { StartCap = LineCap.Round, EndCap = LineCap.Round };
+            // anillo con hueco de ~60° centrado arriba (empieza en -60° y barre 300° en sentido horario)
+            g.DrawArc(powerPen, cx - d / 2f, cy - d / 2f, d, d, -60f, 300f);
+            // barra vertical: de arriba del anillo hacia su centro
+            g.DrawLine(powerPen, cx, cy - d / 2f - Sc(1), cx, cy);
+        }
     }
 
     private (RectangleF refresh, RectangleF quit) BottomButtons()
