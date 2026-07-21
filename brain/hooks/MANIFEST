@@ -39,6 +39,7 @@ delegacion-registrar     global  hook
 delegacion-reporte       global  hook
 limpiar-worktrees        global  script
 limpiar-ramas            global  script
+verificar-cerebro        global  script
 delegacion-comun         global  lib
 ramas-zombie             global  lib
 
