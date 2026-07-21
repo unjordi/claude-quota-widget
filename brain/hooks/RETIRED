@@ -1,0 +1,12 @@
+# RETIRED — hooks que el cerebro (claude-brain) YA RETIRÓ (nombres sin .sh, uno por línea).
+# Un huérfano en el destino (un `.sh` que NO está en el MANIFEST) que ESTÉ en esta lista se PODA
+# SOLO —de-cablear del settings.json + borrar el .sh— en cualquier `--apply` de sincronizar-cerebro.sh,
+# SIN necesidad de --prune-orphans: el brain lo declaró muerto, así que retirarlo es seguro y automático.
+# Un huérfano que NO esté aquí (posible hook PROPIO del repo) solo se reporta; --prune-orphans lo retira.
+# aviso-drift-cerebro cuenta los retirados-presentes como drift → un repo con uno colgado deja de verse
+# "al día" y se limpia en la próxima sesión (auto-sync en la mini-develop) o se propone propagarlo.
+#
+# Al retirar un hook del cerebro: bórralo de brain/hooks/ + quítalo del MANIFEST + AGRÉGALO AQUÍ.
+# Líneas '#' y en blanco se ignoran.
+
+precompact-volcar-estado
