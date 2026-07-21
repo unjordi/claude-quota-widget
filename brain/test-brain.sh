@@ -750,6 +750,32 @@ brslug=$(printf '%s' "$BRREPO" | cksum | awk '{print $1}')
 is_silent "$(br)" && ok "barrer-ramas: throttle — 2ª corrida inmediata → silencio" || bad "barrer-ramas: no respetó el throttle"
 rm -rf "$BRFIX"
 
+# ── (b5f) verificar-cerebro: DOCTOR de instalación por-máquina (sano→exit 0, roto→exit 1) ──
+echo ""
+echo "== (b5f) verificar-cerebro: doctor por-máquina (hooks instalados+cableados+jq) =="
+VCFIX="$(mktemp -d "${TMPDIR:-/tmp}/brain-vc.XXXXXX")"
+VCHOME="$VCFIX/home"; VCBRAIN="$VCFIX/clon"
+mkdir -p "$VCHOME/.claude/hooks" "$VCBRAIN/brain/hooks"
+# MANIFEST minimal CONTROLADO: un hook global (se exige instalado+cableado) + un script (no se exige cableado)
+printf '%s\n' 'foo   global  hook' 'baz   global  script' > "$VCBRAIN/brain/hooks/MANIFEST"
+vc() { HOME="$VCHOME" CLAUDE_BRAIN_DIR="$VCBRAIN" bash "$HOOKS/verificar-cerebro.sh" "${1:-}"; }
+# (1) SANO: foo.sh instalado + cableado en settings.json → exit 0 y dice "sano"
+: > "$VCHOME/.claude/hooks/foo.sh"
+printf '{"hooks":{"SessionStart":[{"hooks":[{"command":"bash foo.sh"}]}]}}' > "$VCHOME/.claude/settings.json"
+vout="$(vc 2>&1)"; vrc=$?
+{ [ "$vrc" = 0 ] && printf '%s' "$vout" | grep -q 'sano'; } \
+  && ok "verificar-cerebro: instalación sana → exit 0" || bad "verificar-cerebro: esperaba sano/0; rc=$vrc; out=$vout"
+# (2) ROTO: el hook existe pero NO está cableado en settings.json → exit 1 y lo señala
+printf '{"hooks":{}}' > "$VCHOME/.claude/settings.json"
+vout2="$(vc 2>&1)"; vrc2=$?
+{ [ "$vrc2" = 1 ] && printf '%s' "$vout2" | grep -q 'NO cableado'; } \
+  && ok "verificar-cerebro: hook sin cablear → exit 1 + lo señala" || bad "verificar-cerebro: esperaba fallo/1 por cableado; rc=$vrc2"
+# (3) ROTO: falta el .sh instalado → exit 1
+rm -f "$VCHOME/.claude/hooks/foo.sh"
+printf '{"hooks":{"SessionStart":[{"hooks":[{"command":"bash foo.sh"}]}]}}' > "$VCHOME/.claude/settings.json"
+if vc >/dev/null 2>&1; then bad "verificar-cerebro: esperaba fallo/1 por .sh faltante"; else ok "verificar-cerebro: hook sin instalar → exit 1"; fi
+rm -rf "$VCFIX"
+
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
 echo "== (b6) aviso-contexto: avisa al cruzar banda, debounce, y se resetea con el baseline (compact) =="
