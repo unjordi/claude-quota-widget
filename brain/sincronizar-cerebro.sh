@@ -8,8 +8,10 @@
 #   - estampa la VERSIÓN del cerebro en <repo>/.claude/hooks/.brain-version (drift por versión detectable),
 #   - CABLEA en <repo>/.claude/settings.json (idempotente, "shell":"bash", ruta ${CLAUDE_PROJECT_DIR}/...)
 #     los hooks de kind=hook de tier {repo, both} (evento por el mapa de abajo),
-#   - REPORTA huérfanos: .sh en el destino que NO están en el manifiesto (candidatos a retiro; NO los
-#     borra — podrían estar cableados; el retiro es una decisión deliberada).
+#   - PODA los hooks RETIRADOS: un .sh en el destino que NO está en el manifiesto PERO SÍ en la lista
+#     brain/hooks/RETIRED (hooks que el cerebro ya retiró, p. ej. precompact-volcar-estado) se de-cablea
+#     + borra SOLO en cualquier --apply (seguro: el brain lo declaró muerto). Los demás huérfanos
+#     (posibles hooks PROPIOS del repo) solo se REPORTAN; --prune-orphans los retira (decisión deliberada).
 #
 # SEGURO por default: DRY-RUN (muestra qué cambiaría, no escribe). Con --apply copia y cablea.
 # NO es `cp -f` ciego: diffea archivo por archivo y solo toca los que cambian. Requiere jq para cablear.
@@ -151,27 +153,43 @@ dewire_hook() {
     ' "$gset" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then mv "$tmp" "$gset"; else rm -f "$tmp"; echo "  warn: no pude de-cablear ($base)"; fi
 }
 
-# ── Huérfanos (en el destino, .sh que NO están en el manifiesto). Con --prune-orphans (+ --apply) se RETIRAN. ──
+# ── Huérfanos (.sh en el destino que NO están en el manifiesto). Dos clases:
+#    (a) RETIRADOS por el cerebro (en la lista brain/hooks/RETIRED) → se PODAN SOLOS en cualquier
+#        --apply (de-cablear + borrar), sin --prune-orphans: el brain los declaró muertos = seguro.
+#    (b) DESCONOCIDOS (posible hook PROPIO del repo) → solo se reportan; --prune-orphans los retira. ──
+RETIRED_FILE="$SRC_HOOKS/RETIRED"
+es_retirado() { [ -f "$RETIRED_FILE" ] && awk '$1!~/^#/ && NF{print $1}' "$RETIRED_FILE" | grep -qxF "$1"; }
 echo ""
-n_orph=0
+n_orph=0; n_retired=0
 if [ -d "$DST_HOOKS" ]; then
   for f in "$DST_HOOKS"/*.sh; do
     [ -e "$f" ] || continue
     b="$(basename "$f" .sh)"
-    if ! awk '$1!~/^#/ && NF>=3 {print $1}' "$MANIFEST" | grep -qxF "$b"; then
+    awk '$1!~/^#/ && NF>=3 {print $1}' "$MANIFEST" | grep -qxF "$b" && continue   # en el manifiesto → no es huérfano
+    if es_retirado "$b"; then
+      # (a) RETIRADO por el cerebro → poda AUTOMÁTICA (no requiere --prune-orphans).
+      n_retired=$((n_retired+1))
+      if [ "$APPLY" = 1 ]; then
+        dewire_hook "$DST_SET" "$b"; rm -f "$f"
+        echo "  RETIRADO   $b.sh — retirado del cerebro (RETIRED): de-cableado + borrado (auto)"
+      else
+        echo "  RETIRARÍA  $b.sh — retirado del cerebro (RETIRED): --apply lo de-cablea + borra SOLO (auto)"
+      fi
+    else
+      # (b) huérfano DESCONOCIDO → solo --prune-orphans lo retira.
       n_orph=$((n_orph+1))
       if [ "$PRUNE" = 1 ] && [ "$APPLY" = 1 ]; then
         dewire_hook "$DST_SET" "$b"; rm -f "$f"
-        echo "  RETIRADO   $b.sh — de-cableado del settings.json + borrado (huérfano, retirado del cerebro)"
+        echo "  RETIRADO   $b.sh — de-cableado + borrado (--prune-orphans)"
       elif [ "$PRUNE" = 1 ]; then
         echo "  RETIRARÍA  $b.sh — huérfano; de-cablearía + borraría (usa --apply)"
       else
-        echo "  HUÉRFANO   $b.sh — no está en el manifiesto (¿retirado del cerebro? usa --prune-orphans para retirarlo; NO lo borro por default)"
+        echo "  HUÉRFANO   $b.sh — no está en el manifiesto NI en RETIRED (¿hook propio del repo? usa --prune-orphans para retirarlo)"
       fi
     fi
   done
 fi
 
 echo ""
-echo "==> resumen: $n_new nuevos · $n_upd a actualizar · $n_ok ya al día · $n_wire hooks cableados (kind=hook)"
+echo "==> resumen: $n_new nuevos · $n_upd a actualizar · $n_ok ya al día · $n_retired retirado(s) del cerebro · $n_wire hooks cableados (kind=hook)"
 [ "$APPLY" = 1 ] || echo "    (DRY-RUN — nada escrito. Re-corre con --apply para aplicar.)"

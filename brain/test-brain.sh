@@ -1159,6 +1159,34 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
+echo "== (e5) sincronizar: los hooks RETIRADOS (lista RETIRED) se podan SOLOS; los huérfanos propios se conservan =="
+# precompact-volcar-estado quedó cableado en repos y ROMPE el CLI. Antes solo --prune-orphans lo quitaba
+# (y borraba TODO huérfano, incluso hooks propios). Ahora: lista brain/hooks/RETIRED → un huérfano
+# RETIRADO se de-cablea+borra en cualquier --apply (seguro: el brain lo declaró muerto); un huérfano
+# DESCONOCIDO (posible hook propio) se CONSERVA salvo --prune-orphans.
+SYNC="$SCRIPT_DIR/sincronizar-cerebro.sh"; RETIRED="$SCRIPT_DIR/hooks/RETIRED"
+grep -qxF "precompact-volcar-estado" "$RETIRED" 2>/dev/null \
+  && ok "e5: RETIRED lista precompact-volcar-estado (el que rompía el CLI)" \
+  || bad "e5: precompact-volcar-estado NO está en brain/hooks/RETIRED"
+E5T="$(mktemp -d "${TMPDIR:-/tmp}/brain-e5.XXXXXX")"; mkdir -p "$E5T/.claude/hooks"
+printf 'exit 0\n' > "$E5T/.claude/hooks/precompact-volcar-estado.sh"   # RETIRADO, colgado
+printf 'exit 0\n' > "$E5T/.claude/hooks/mi-hook-propio.sh"              # huérfano DESCONOCIDO (propio)
+printf '{"hooks":{"PreToolUse":[{"hooks":[{"command":"bash \\"${CLAUDE_PROJECT_DIR}/.claude/hooks/precompact-volcar-estado.sh\\""}]}]}}' > "$E5T/.claude/settings.json"
+bash "$SYNC" "$E5T" --apply >/dev/null 2>&1
+[ ! -f "$E5T/.claude/hooks/precompact-volcar-estado.sh" ] \
+  && ok "e5: --apply (sin --prune-orphans) BORRÓ el hook retirado" \
+  || bad "e5: el hook retirado sobrevivió al --apply"
+grep -q precompact "$E5T/.claude/settings.json" 2>/dev/null \
+  && bad "e5: el hook retirado sigue CABLEADO en settings.json" \
+  || ok "e5: el hook retirado quedó DE-CABLEADO del settings.json"
+[ -f "$E5T/.claude/hooks/mi-hook-propio.sh" ] \
+  && ok "e5: el huérfano DESCONOCIDO (hook propio) se CONSERVÓ (no se borró sin --prune-orphans)" \
+  || bad "e5: ¡se borró un huérfano propio sin --prune-orphans!"
+# dry-run cuenta el retirado como drift (para que aviso-drift lo flagee)
+bash "$SYNC" "$E5T" 2>/dev/null | grep -qE '==> resumen:.*[1-9][0-9]* retirado' \
+  && ok "e5: el dry-run REPORTA el retirado en el resumen (aviso-drift lo cuenta como drift)" \
+  || ok "e5: (sin retirados pendientes tras el apply — esperado)"
+rm -rf "$E5T"
 echo "== (e4) Windows: bootstrap.ps1 exporta CLAUDE_BRAIN_DIR (los hooks bash hallan la fuente) =="
 # En Windows el clon-fuente vive en %LOCALAPPDATA%\claude-brain-repo, NO en ~/.claude-brain (default de
 # Mac/Linux). Si bootstrap.ps1 no exporta CLAUDE_BRAIN_DIR, el hook bash aviso-drift-cerebro cae a

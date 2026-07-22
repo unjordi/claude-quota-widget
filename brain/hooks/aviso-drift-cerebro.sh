@@ -48,7 +48,12 @@ resumen=$(printf '%s\n' "$out" | grep -E '==> resumen:' | tail -1)
 [ -n "$resumen" ] || exit 0
 nuevos=$(printf '%s' "$resumen" | grep -oE '[0-9]+ nuevos'       | grep -oE '[0-9]+' || echo 0)
 act=$(printf '%s' "$resumen"    | grep -oE '[0-9]+ a actualizar' | grep -oE '[0-9]+' || echo 0)
-total=$(( ${nuevos:-0} + ${act:-0} ))
+# Los hooks RETIRADOS del cerebro que siguen colgados en el repo TAMBIÉN son drift (antes no se
+# contaban → un repo con solo un hook retirado por limpiar se veía "al día" y nunca se sincronizaba,
+# dejando p. ej. precompact-volcar-estado cableado y rompiendo el CLI). El --apply del auto-sync los
+# poda solo (lista RETIRED), sin --prune-orphans.
+ret=$(printf '%s' "$resumen"    | grep -oE '[0-9]+ retirado'     | grep -oE '[0-9]+' || echo 0)
+total=$(( ${nuevos:-0} + ${act:-0} + ${ret:-0} ))
 
 if [ "$total" -eq 0 ]; then
   printf '%s' "$now" > "$stamp" 2>/dev/null || true
