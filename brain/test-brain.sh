@@ -251,6 +251,18 @@ is_silent "$(cm 'glab mr merge 5 --yes && git status' 'ya lo revisé, mérgalo')
 # Baseline: merge a develop SIN OK → deny.
 is_deny "$(cm 'glab mr merge 5 --yes' 'sigue avanzando')" \
   && ok "cmd: merge a develop sin OK ('sigue' NO cuenta) → deny" || bad "cmd: no bloqueó merge a develop sin OK"
+# FIX 2026-07-20 (precisión): una autorización de RELEASE-a-main también cubre el merge INTERMEDIO a
+# develop (el release pasa forzosamente por develop). Antes daba falso-negativo: "empujar el brain a
+# main" frenaba el PR intermedio a develop porque el CONF_RE de develop no reconocía lenguaje de release.
+is_silent "$(cm 'glab mr merge 62 --squash --yes' 'ya puedes empujar el brain a main')" \
+  && ok "cmd: merge a develop con OK de RELEASE-a-main → pasa (el release cubre su paso a develop)" \
+  || bad "cmd: falso-negativo — 'empujar a main' NO destrabó el merge intermedio a develop"
+# Blindaje (NO se afloja el camino inverso): un OK de develop NUNCA autoriza un RELEASE a main.
+mock_cm_glab main
+is_deny "$(cm 'glab mr merge 63 --yes' 'mérgalo a develop')" \
+  && ok "cmd: 'mérgalo a develop' NO autoriza un RELEASE a main (main sigue exigiendo release explícito)" \
+  || bad "cmd: AFLOJAMIENTO GRAVE — un OK de develop destrabó un release a main"
+mock_cm_glab develop
 # H5 (lib): caché por MR-id → la 2ª consulta NO re-llama a la red (comparte destino entre squash+confirmar).
 d1=$(PATH="$CMBIN:$PATH" CLAUDE_PROJECT_DIR="$CMREPO" bash -c '. "'"$HOOKS"'/analizar-comando-git.sh"; acg_destino_de_mr "glab mr merge 123"')
 mock_cm_glab main   # si re-llamara, ahora diría main; la caché debe seguir dando develop
