@@ -145,6 +145,93 @@ else
   echo "ok: dashboard ya existe ($DASH)"
 fi
 
+# ── (d2) Entorno de ESTA máquina en la memoria GLOBAL per-máquina (lo detecta y lo siembra) ──
+# Norma dura "el entorno de MÁQUINA vive GLOBAL, jamás en un repo": OS/shell/aliases/rutas/runtime son
+# de UNA instancia; en un repo mentirían al clonar en otra compu/OS. Por eso viven AQUÍ (memoria global,
+# NO viaja por git). El bootstrap lo SIEMBRA con lo que cada quien tenga configurado; Claude lo MANTIENE
+# después. IDEMPOTENTE y no-destructivo: si el archivo no existe → lo crea (encabezado curado + bloque
+# detectado); si existe CON el bloque marcado <!-- detectado-por-bootstrap --> → refresca SOLO ese bloque;
+# si existe SIN marcadores (curado 100% a mano) → NO lo toca (respeta el trabajo del humano/Claude).
+ENTORNO="$CLAUDE_DIR/projects/$HOME_SLUG/memory/entorno-esta-maquina.md"
+
+# --- detección (best-effort; todo fail-safe a "?") ---
+det_os="$(uname -srm 2>/dev/null || echo '?')"
+det_shell_path="${SHELL:-}"; det_shell="$(basename "${det_shell_path:-sh}")"
+# Aliases: se resuelven en el shell de LOGIN del usuario (ahí viven sus rc), en modo interactivo (-i)
+# para que cargue el .zshrc/.bashrc. Filtramos SOLO líneas 'nombre=...' → el ruido de un rc que imprime
+# algo al arrancar (neofetch, etc.) no matchea. 2>/dev/null traga stderr sin tty.
+alias_dump=""
+if [ -n "$det_shell_path" ] && command -v "$det_shell_path" >/dev/null 2>&1; then
+  alias_dump="$("$det_shell_path" -ic 'alias' 2>/dev/null || true)"
+fi
+alias_of() {  # $1 = comando; imprime a qué apunta el alias, o "" si no hay
+  printf '%s\n' "$alias_dump" | sed 's/^alias //' \
+    | grep -E "^$1=" | head -1 | sed "s/^$1=//; s/^'//; s/'\$//; s/^\"//; s/\"\$//"
+}
+alias_bullets=""
+any_alias=0
+for a in ls rm cp mv grep; do
+  v="$(alias_of "$a")"
+  if [ -n "$v" ]; then alias_bullets="${alias_bullets}  - \`$a\` → \`$v\`\n"; any_alias=1
+  else alias_bullets="${alias_bullets}  - \`$a\` → (sin alias)\n"; fi
+done
+tool_bullets=""
+for t in eza trash rg fd bat docker colima; do
+  if p="$(command -v "$t" 2>/dev/null)" && [ -n "$p" ]; then tool_bullets="${tool_bullets}  - \`$t\` ✓ (\`$p\`)\n"
+  else tool_bullets="${tool_bullets}  - \`$t\` ✗ (no está)\n"; fi
+done
+
+# El bloque DETECTADO (con sus marcadores) — se regenera en cada corrida.
+blk="$(mktemp)" || blk=""
+if [ -n "$blk" ]; then
+  {
+    printf '<!-- detectado-por-bootstrap:INICIO — install-brain REFRESCA esto en cada corrida; edita FUERA de estos marcadores -->\n'
+    printf '## Detectado por el bootstrap (%s)\n' "$(date +%Y-%m-%d 2>/dev/null || echo '?')"
+    printf -- '- **OS / arch:** `%s`\n' "$det_os"
+    printf -- '- **Shell de login:** `%s` (`%s`)\n' "$det_shell" "${det_shell_path:-?}"
+    printf -- '- **Aliases que pueden morder comandos** (salta el alias con `/bin/<cmd>` o `\\<cmd>`; comilla los globs en zsh):\n'
+    printf '%b' "$alias_bullets"
+    printf -- '- **Tools clave (presencia):**\n'
+    printf '%b' "$tool_bullets"
+    printf '<!-- detectado-por-bootstrap:FIN -->\n'
+  } > "$blk"
+fi
+
+if [ -z "$blk" ]; then
+  echo "warn: no pude crear el bloque detectado (mktemp); omito el sembrado de entorno-esta-maquina.md"
+elif [ ! -f "$ENTORNO" ]; then
+  mkdir -p "$(dirname "$ENTORNO")"
+  {
+    printf -- '---\nname: entorno-esta-maquina\ndescription: Entorno de ESTA máquina (shell/aliases, OS/arch, runtime local). Es PER-MÁQUINA: vive SOLO en la memoria global, NUNCA en un repo (viajaría por git y mentiría en otra compu/OS). Lo siembra el bootstrap del cerebro y Claude lo va actualizando.\nmetadata:\n  node_type: memory\n  type: reference\n---\n\n'
+    printf '# Entorno de ESTA máquina — sembrado por claude-brain\n\n'
+    printf '> **REGLA DURA — por qué este archivo es GLOBAL y no de repo:** el entorno de MÁQUINA (OS,\n'
+    printf '> shell, aliases, rutas de tu `$HOME`, runtime local: Docker/BD/certs) es de **esta** compu;\n'
+    printf '> en un repo viajaría por git y **mentiría** al clonar en otra máquina/OS. Por eso vive AQUÍ\n'
+    printf '> (memoria global per-máquina, NO viaja por git). El bootstrap lo **sembró** detectando la\n'
+    printf '> config real; **Claude lo MANTIENE** después: agrega tus mañas (BD, certs, despliegue, cachés\n'
+    printf '> del navegador) en la sección de abajo, **FUERA** del bloque `detectado-por-bootstrap` (ese\n'
+    printf '> lo REFRESCA `install-brain` en cada corrida — no lo edites a mano).\n\n'
+    cat "$blk"
+    printf '\n## Notas que Claude va agregando\n(Aún vacío. Aquí van las mañas de esta máquina que no detecta el bootstrap: runtime Docker/BD, certs de dev, despliegue local, cachés, etc.)\n'
+  } > "$ENTORNO"
+  echo "ok: entorno-esta-maquina.md sembrado en $ENTORNO"
+elif grep -q 'detectado-por-bootstrap:INICIO' "$ENTORNO"; then
+  tmp="$(mktemp)" || tmp=""
+  if [ -n "$tmp" ] && awk -v b="$blk" '
+      /<!-- detectado-por-bootstrap:INICIO/ { while ((getline l < b) > 0) print l; close(b); skip=1; next }
+      /<!-- detectado-por-bootstrap:FIN/    { skip=0; next }
+      skip==0 { print }
+    ' "$ENTORNO" > "$tmp" && [ -s "$tmp" ]; then
+    mv "$tmp" "$ENTORNO"
+    echo "ok: entorno-esta-maquina.md — bloque detectado REFRESCADO ($ENTORNO)"
+  else
+    rm -f "$tmp"; echo "warn: no pude refrescar el bloque detectado en $ENTORNO (lo dejo intacto)"
+  fi
+else
+  echo "ok: entorno-esta-maquina.md ya existe y está CURADO a mano (sin bloque detectado) — no lo toco ($ENTORNO)"
+fi
+rm -f "$blk" 2>/dev/null || true
+
 # ── (e) Normas globales en ~/.claude/CLAUDE.md (bloque con marcador; REFRESCA, no solo siembra) ──
 # Idempotente Y actualizable: si el bloque BEGIN/END ya existe, se REEMPLAZA EN SU LUGAR con la versión
 # actual (así las normas nuevas SÍ llegan a instalaciones existentes al re-correr); si no existe, se
