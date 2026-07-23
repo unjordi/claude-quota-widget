@@ -24,6 +24,7 @@ merge-squash-guard       both    hook
 confirmar-merge-develop  both    hook
 recordar-dashboard       both    hook
 secret-scan              both    hook
+entorno-maquina-guard    both    hook
 analizar-comando-git     both    lib
 detectar-secretos        both    lib
 

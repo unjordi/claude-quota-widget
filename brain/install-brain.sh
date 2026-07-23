@@ -92,6 +92,7 @@ register_hook PreToolUse  Bash 'bash "$HOME/.claude/hooks/merge-squash-guard.sh"
 register_hook PreToolUse  Bash 'bash "$HOME/.claude/hooks/confirmar-merge-develop.sh"' 'confirmar-merge-develop'
 register_hook PreToolUse  Bash 'bash "$HOME/.claude/hooks/recordar-dashboard.sh"'  'recordar-dashboard'
 register_hook PreToolUse  Bash 'bash "$HOME/.claude/hooks/secret-scan.sh"'         'secret-scan'
+register_hook PreToolUse  Bash 'bash "$HOME/.claude/hooks/entorno-maquina-guard.sh"' 'entorno-maquina-guard'
 register_hook PreToolUse  Bash 'bash "$HOME/.claude/hooks/rama-vieja.sh"'          'rama-vieja'
 register_hook PreToolUse  Bash 'bash "$HOME/.claude/hooks/proteger-arbol.sh"'     'proteger-arbol'
 register_hook PreToolUse  Task 'bash "$HOME/.claude/hooks/limite-gasto.sh"'        'limite-gasto'
@@ -106,7 +107,7 @@ register_hook SessionStart '' 'bash "$HOME/.claude/hooks/aviso-drift-cerebro.sh"
 register_hook SessionStart '' 'bash "$HOME/.claude/hooks/barrer-ramas.sh"'           'barrer-ramas'
 # PostToolUse sin matcher (casa TODA tool) — watermark anti-auto-compact: avisa de compactar proactivo
 register_hook PostToolUse '' 'bash "$HOME/.claude/hooks/aviso-contexto.sh"'          'aviso-contexto'
-echo "ok: hooks cableados en $GSET (git-branch-guard, merge-squash-guard, confirmar-merge-develop, recordar-dashboard, secret-scan, rama-vieja, proteger-arbol, limite-gasto, delegacion-gate/registrar, rehidratar-hilo, aviso-contexto, aviso-drift-cerebro, barrer-ramas)"
+echo "ok: hooks cableados en $GSET (git-branch-guard, merge-squash-guard, confirmar-merge-develop, recordar-dashboard, secret-scan, entorno-maquina-guard, rama-vieja, proteger-arbol, limite-gasto, delegacion-gate/registrar, rehidratar-hilo, aviso-contexto, aviso-drift-cerebro, barrer-ramas)"
 
 # ── (c) Skills genéricas del cerebro (cerrar-slice, orquestar-fanout, …) ──
 if [ -d "$SRC_SKILLS" ]; then

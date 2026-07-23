@@ -55,6 +55,7 @@ struct BrainState {
         "recordar-dashboard", "secret-scan", "rama-vieja", "proteger-arbol",
         "limite-gasto", "delegacion-gate", "delegacion-registrar", "delegacion-reporte",
         "rehidratar-hilo", "aviso-contexto", "aviso-drift-cerebro", "barrer-ramas",
+        "entorno-maquina-guard",
     ]
     /// Hooks de tier repo (kind=hook): viajan por-repo, se cargan si la sesión INICIA en el repo.
     /// DEBE coincidir con brain/hooks/MANIFEST {repo} (lo verifica test-brain.sh).

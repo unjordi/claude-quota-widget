@@ -840,6 +840,9 @@ PlasmoidItem {
                 { emoji: "📊", name: "recordar-dashboard",        desc: "antes de un push, recuerda actualizar el dashboard del cerebro",
                   event: "PreToolUse · Bash",
                   detail: "Antes de un `git push` recuerda (no bloquea) actualizar el dashboard del cerebro: una línea a la bitácora + ajustar el mapa si cambió el layout de repos/proyectos." },
+                { emoji: "🖥️", name: "entorno-maquina-guard",     desc: "commit de algo machine-specific al .claude/memory/ del repo → aviso",
+                  event: "PreToolUse · Bash",
+                  detail: "Mecanismo de la norma 'el entorno de MÁQUINA vive GLOBAL, jamás en un repo': si un `git commit` mete al .claude/memory/ del repo algo específico-de-esta-máquina (un entorno-maquina.md, aliases personales, rutas de tu $HOME, 'Rosetta' sin condicional) avisa —no bloquea—, porque viaja por git y miente al clonar en otra compu/OS. Eso vive SOLO en la memoria GLOBAL per-máquina (entorno-esta-maquina.md); el repo deja lo portable/condicional." },
                 { emoji: "🕰️", name: "rama-vieja",                desc: "push de ramita muy atrás de develop → aviso (no bloquea)",
                   event: "PreToolUse · Bash",
                   detail: "Antes de un push, si la ramita está muchos commits detrás de origin/develop (base vieja → el MR trae ruido/conflictos), avisa —no bloquea— y sugiere rebasar. Umbral configurable (RAMA_VIEJA_UMBRAL, def 40)." },
@@ -931,7 +934,7 @@ PlasmoidItem {
 
     // Catálogo conocido (mismos conjuntos que BrainState.knownGlobalHooks / knownRepoHooks del Swift).
     // DEBE coincidir con brain/hooks/MANIFEST; lo verifica el drift-check del widget (test-brain.sh).
-    readonly property var brainGlobalHooks: ["git-branch-guard","merge-squash-guard","confirmar-merge-develop","recordar-dashboard","secret-scan","rama-vieja","proteger-arbol","limite-gasto","delegacion-gate","delegacion-registrar","delegacion-reporte","rehidratar-hilo","aviso-contexto","aviso-drift-cerebro","barrer-ramas"]
+    readonly property var brainGlobalHooks: ["git-branch-guard","merge-squash-guard","confirmar-merge-develop","recordar-dashboard","secret-scan","rama-vieja","proteger-arbol","limite-gasto","delegacion-gate","delegacion-registrar","delegacion-reporte","rehidratar-hilo","aviso-contexto","aviso-drift-cerebro","barrer-ramas","entorno-maquina-guard"]
     readonly property var brainRepoHooks:   ["sesion-inicio","dod-verificar","recordar-cosechar","recordar-unificar-cerebro"]
 
     // Ruta del helper bash, resuelta relativa a este main.qml (…/contents/ui/ → …/contents/brain-scan.sh).
