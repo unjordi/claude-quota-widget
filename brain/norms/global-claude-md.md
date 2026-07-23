@@ -15,6 +15,20 @@ y su UI, varias plataformas, un ejemplo, un diagrama, un valor repetido — y **
 (p. ej. un `grep` del nombre/valor viejo) en vez de asumir que solo hay una. Una sola copia
 desincronizada YA es una doc que miente.
 
+## El entorno de MÁQUINA vive GLOBAL, jamás en un repo (norma dura)
+Hermana de "doc = realidad": una doc que dice la verdad en ESTA compu y **miente en la de al lado** ya
+es una doc que miente. El entorno de MÁQUINA —OS, shell, aliases, rutas personales de un `$HOME`,
+runtime local (Docker/BD/certs)— es específico de **UNA instancia**; metido en un repo viajaría por git
+y mentiría al clonar el proyecto en otra compu u otro OS (p. ej. hablar de `eza`/`trash`/colima/Rosetta
+en un Windows, o de `/Users/<fulano>/…` en un Linux). Por eso vive **SOLO en la memoria GLOBAL
+per-máquina** (`~/.claude/projects/-Users-<user>/memory/entorno-esta-maquina.md`) — que NO viaja por
+git —, la **siembra** `install-brain`/`bootstrap-claude` detectando la config real, y **Claude la
+mantiene** al descubrir mañas nuevas. Un **repo** documenta solo cómo correr EL PROYECTO de forma
+**portable o CONDICIONAL** ("si estás en Apple Silicon: `platform: linux/amd64`"; "en Windows usa Git
+Bash") — **nunca** afirmando lo personal-de-instancia como universal. Y **nómbralos por lo que son**
+(`correr-en-local.md`, `requisitos.md`): un `entorno-maquina.md` dentro del `.claude/memory/` de un repo
+es la trampa misma (invita a volcar ahí lo de tu compu) — lo AVISA el guard `entorno-maquina-guard`.
+
 ## QA visual de imágenes: ábrelas, no las dejes en una ruta (norma de estilo)
 Cuando le pidas al usuario **QA visual de una imagen que TÚ generaste** (un ícono, un render, un
 screenshot, un diagrama), **ábrela con el visualizador del OS** para que la vea de inmediato — NO basta

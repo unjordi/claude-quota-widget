@@ -400,6 +400,54 @@ rm -rf "$G5ROOT"
 
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
+echo "== (b2b) entorno-maquina-guard: AVISA (no bloquea) si entra algo machine-specific al .claude/memory/ del repo =="
+EMREPO="$(mktemp -d "${TMPDIR:-/tmp}/brain-em.XXXXXX")"
+git -C "$EMREPO" init -q >/dev/null 2>&1
+git -C "$EMREPO" config user.email t@t >/dev/null 2>&1
+git -C "$EMREPO" config user.name  tester >/dev/null 2>&1
+mkdir -p "$EMREPO/.claude/memory"
+# HOME sin copia global del guard → la dedupe no cede (corre la copia bajo prueba).
+emg() { printf '%s' "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$1\"}}" \
+        | HOME="$EMREPO" CLAUDE_PROJECT_DIR="$EMREPO" bash "$HOOKS/entorno-maquina-guard.sh"; }
+emreset() { git -C "$EMREPO" reset -q >/dev/null 2>&1; rm -f "$EMREPO"/.claude/memory/*.md 2>/dev/null; }
+# (1) FILENAME-trampa entorno-maquina.md staged → AVISA (additionalContext, NO deny)
+printf 'contenido portable\n' > "$EMREPO/.claude/memory/entorno-maquina.md"
+git -C "$EMREPO" add .claude/memory/entorno-maquina.md >/dev/null 2>&1
+o="$(emg 'git commit -m x')"
+printf '%s' "$o" | jq -e '.hookSpecificOutput.additionalContext' >/dev/null 2>&1 \
+  && ! printf '%s' "$o" | grep -q '"deny"' \
+  && ok "entorno-maquina-guard: filename-trampa entorno-maquina.md → AVISA (no bloquea)" \
+  || bad "entorno-maquina-guard: no avisó (o bloqueó) el filename-trampa; got: $o"
+# (2) CONTENIDO machine-specific (alias + ruta de \$HOME + Rosetta sin condicional) → AVISA
+emreset
+printf 'alias ls=eza\nruta /Users/fulano/code/x\nSQL corre via Rosetta.\n' > "$EMREPO/.claude/memory/correr-en-local.md"
+git -C "$EMREPO" add .claude/memory/correr-en-local.md >/dev/null 2>&1
+o="$(emg 'git commit -m x')"
+printf '%s' "$o" | grep -q 'CONTENIDO machine-specific' \
+  && ok "entorno-maquina-guard: contenido machine-specific → AVISA con detalle" \
+  || bad "entorno-maquina-guard: no detectó contenido machine-specific; got: $o"
+# (3) contenido PORTABLE/CONDICIONAL → silencio (sin falso positivo)
+emreset
+printf 'Si estas en Apple Silicon usa platform: linux/amd64 (SQL via Rosetta, condicional).\nEn Windows usa Git Bash.\n' > "$EMREPO/.claude/memory/correr-en-local.md"
+git -C "$EMREPO" add .claude/memory/correr-en-local.md >/dev/null 2>&1
+o="$(emg 'git commit -m x')"
+[ -z "$o" ] && ok "entorno-maquina-guard: contenido portable/condicional → silencio (sin falso positivo)" || bad "entorno-maquina-guard: falso positivo en contenido condicional; got: $o"
+# (4) un no-commit → silencio
+o="$(emg 'ls -la')"
+[ -z "$o" ] && ok "entorno-maquina-guard: comando no-commit → silencio" || bad "entorno-maquina-guard: reaccionó a un no-commit; got: $o"
+# (5) mención entrecomillada de 'git commit' en un grep → silencio
+o="$(emg 'grep -r \"git commit\" .')"
+[ -z "$o" ] && ok "entorno-maquina-guard: 'git commit' entrecomillado (grep) → silencio" || bad "entorno-maquina-guard: mordió una mención entrecomillada; got: $o"
+# (6) archivo machine-specific FUERA de .claude/memory/ → silencio (fuera de alcance)
+emreset
+printf 'alias ls=eza\n' > "$EMREPO/notas.md"
+git -C "$EMREPO" add notas.md >/dev/null 2>&1
+o="$(emg 'git commit -m x')"
+[ -z "$o" ] && ok "entorno-maquina-guard: archivo fuera de .claude/memory/ → silencio (fuera de alcance)" || bad "entorno-maquina-guard: reaccionó fuera de .claude/memory/; got: $o"
+rm -rf "$EMREPO"
+
+# ─────────────────────────────────────────────────────────────────────────────
+echo ""
 echo "== (b3) proteger-arbol: avisa si un git destructivo orfanaría commits sin pushear =="
 PABARE="$(mktemp -d "${TMPDIR:-/tmp}/brain-pa.XXXXXX")/remote.git"
 PAREPO="$(mktemp -d "${TMPDIR:-/tmp}/brain-pa.XXXXXX")/wt"
