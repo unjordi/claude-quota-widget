@@ -14,8 +14,13 @@
  * Idempotencia: si el destino local ya tiene esa sesión, la SALTA (no pisa una sesión viva) salvo
  * --force. SIN red. Salida (stdout): JSON {ok, repo, slug, imported:[], skipped:[], errors:[]}.
  *
+ * El slug/cwd LOCAL se derivan de --repo (el proyecto real). De DÓNDE se leen los `.gz` es, por
+ * defecto, `<repo>/.claude/sessions/`, pero se puede separar con --sessions-dir (p. ej. apuntándolo al
+ * worktree de la rama de transporte `sesiones/<usuario>`, mientras --repo sigue siendo el proyecto real).
+ *
  * Uso:
- *   node session-import.js --repo <ruta-raiz-del-repo> [--force] [--only <sessionId>] [--dry-run]
+ *   node session-import.js --repo <ruta-del-proyecto> [--sessions-dir <dir-con-los-.gz>]
+ *                          [--force] [--only <sessionId>] [--dry-run]
  */
 const fs = require('fs');
 const path = require('path');
@@ -25,9 +30,10 @@ const lib = require('./session-lib.js');
 function fail(msg) { process.stdout.write(JSON.stringify({ ok: false, error: msg }) + '\n'); process.exit(1); }
 
 function parseArgs(argv) {
-  const a = { repo: null, force: false, only: null, dryRun: false };
+  const a = { repo: null, sessionsDir: null, force: false, only: null, dryRun: false };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--repo') a.repo = argv[++i];
+    else if (argv[i] === '--sessions-dir') a.sessionsDir = argv[++i];
     else if (argv[i] === '--force') a.force = true;
     else if (argv[i] === '--only') a.only = argv[++i];
     else if (argv[i] === '--dry-run') a.dryRun = true;
@@ -36,18 +42,18 @@ function parseArgs(argv) {
 }
 
 function main() {
-  const { repo, force, only, dryRun } = parseArgs(process.argv.slice(2));
-  if (!repo) fail('falta --repo <ruta-raiz-del-repo>');
+  const { repo, sessionsDir, force, only, dryRun } = parseArgs(process.argv.slice(2));
+  if (!repo) fail('falta --repo <ruta-del-proyecto>');
 
   let repoRoot;
   try { repoRoot = fs.realpathSync(repo); } catch (_) { fail('el repo no existe: ' + repo); }
 
-  const srcDir = path.join(repoRoot, '.claude', 'sessions');
+  const srcDir = sessionsDir ? sessionsDir : path.join(repoRoot, '.claude', 'sessions');
   let gzs;
   try {
     gzs = fs.readdirSync(srcDir).filter(f => f.endsWith('.jsonl.gz'));
   } catch (_) {
-    process.stdout.write(JSON.stringify({ ok: true, repo: repoRoot, slug: null, imported: [], skipped: [], errors: [], note: 'sin .claude/sessions/ en el repo' }) + '\n');
+    process.stdout.write(JSON.stringify({ ok: true, repo: repoRoot, slug: null, imported: [], skipped: [], errors: [], note: 'sin sesiones que importar en ' + srcDir }) + '\n');
     return;
   }
   if (only) gzs = gzs.filter(f => f === only + '.jsonl.gz');
