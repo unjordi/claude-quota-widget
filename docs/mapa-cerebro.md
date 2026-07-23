@@ -46,6 +46,7 @@ flowchart LR
     SS["🕵️ secret-scan<br/>commit/push con secreto → DENEGADO"]
     RV["🕰️ rama-vieja<br/>base vieja al push → AVISA"]
     RD["📊 recordar-dashboard<br/>al push: dashboard + doc=realidad → RECUERDA"]
+    EMG["🖥️ entorno-maquina-guard<br/>commit de algo machine-specific<br/>al .claude/memory/ del repo → AVISA"]
     LIB["📚 lib analizar-comando-git.sh<br/>(lógica compartida: qué comando toca una base)"]
 
     GBG -.->|vigila| DEVELOP
@@ -56,6 +57,7 @@ flowchart LR
     SS -.->|escanea lo que ENTRA| RAMITA
     RV -.->|aviso en el push| RAMITA
     RD -.->|nudge en el push| RAMITA
+    EMG -.->|escanea lo que ENTRA al commit| RAMITA
     LIB -.-> GBG
     LIB -.-> MSG
     LIB -.-> CMD
@@ -66,6 +68,7 @@ flowchart LR
     style SS fill:#7f1d1d,color:#fff
     style RV fill:#78350f,color:#fff
     style RD fill:#78350f,color:#fff
+    style EMG fill:#78350f,color:#fff
     style LIB fill:#374151,color:#fff
 ```
 
@@ -180,7 +183,7 @@ flowchart LR
     MANIFEST["📜 brain/hooks/MANIFEST<br/>fuente ÚNICA: tier + kind por pieza"]
 
     subgraph tiers["Tiers declarados"]
-        BOTH["tier <b>both</b> — global + por-repo<br/>(con cláusula de dedupe:<br/>la copia del repo cede a la global)<br/><br/>hooks: git-branch-guard ·<br/>merge-squash-guard ·<br/>confirmar-merge-develop ·<br/>recordar-dashboard · secret-scan<br/>libs: analizar-comando-git ·<br/>detectar-secretos"]
+        BOTH["tier <b>both</b> — global + por-repo<br/>(con cláusula de dedupe:<br/>la copia del repo cede a la global)<br/><br/>hooks: git-branch-guard ·<br/>merge-squash-guard ·<br/>confirmar-merge-develop ·<br/>recordar-dashboard · secret-scan ·<br/>entorno-maquina-guard<br/>libs: analizar-comando-git ·<br/>detectar-secretos"]
         GLOBAL["tier <b>global</b> — solo ~/.claude<br/><br/>hooks: proteger-arbol · rama-vieja ·<br/>limite-gasto · rehidratar-hilo ·<br/>aviso-contexto · aviso-drift-cerebro ·<br/>delegacion-gate · delegacion-registrar ·<br/>delegacion-reporte<br/>lib: delegacion-comun · ramas-zombie<br/>script: limpiar-worktrees · limpiar-ramas"]
         REPO["tier <b>repo</b> — solo &lt;repo&gt;/.claude<br/>(se cargan si la sesión INICIA ahí)<br/><br/>hooks: dod-verificar · sesion-inicio"]
     end
